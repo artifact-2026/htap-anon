@@ -1,11 +1,12 @@
-#ifndef CABINDB_DSTORE_H
-#define CABINDB_DSTORE_H
+#ifndef CABINDB_CABINDB_H
+#define CABINDB_CABINDB_H
 
 #include <string>
 #include <vector>
 #include "cabindb_namespace.h"
 #include "compactor.h"
 #include <rocksdb/options.h>
+#include "column_families.h"
 
 namespace rocksdb{
   class DB;
@@ -17,6 +18,7 @@ namespace rocksdb{
   class WriteBatch;
   class Iterator;
   class Logger;
+  class ColumnFamilyDescriptor;
   class ColumnFamilyHandle;
   class Status;
   struct Options;
@@ -27,6 +29,8 @@ namespace rocksdb{
 
 namespace CABINDB_NAMESPACE {
 
+const int kNumOfLevels = 4;
+
 enum Status {
   kOK = 0,
   kError,
@@ -36,9 +40,9 @@ enum Status {
 
 typedef std::pair<std::string, std::string> KVPair;
 
-class Dstore {
+class CabinDB {
   public:
-    Dstore(const char *dbfilename, rocksdb::Options& options, std::vector<std::string> &cfshards);
+    CabinDB(const char *dbfilename, rocksdb::Options& options, std::vector<std::string> &cfshards);
 
     Status Read(const std::string &table, const std::string &key, std::string &value);
 
@@ -48,7 +52,7 @@ class Dstore {
 
     Status Delete(const std::string &table, const std::string &key);
 
-    ~Dstore() {}
+    ~CabinDB() {}
 
   private:
     rocksdb::DB *db_;

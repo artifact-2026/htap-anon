@@ -15,7 +15,7 @@
 
 #include "core/properties.h"
 #include "core/core_workload.h"
-#include "cabindb/Dstore.h"
+#include "cabindb/cabin_db.h"
 #include "cabindb/cabindb_namespace.h"
 
 namespace ycsbc {
@@ -42,7 +42,7 @@ class CabinDB : public DB{
         ~CabinDB() {};
     
     private:
-        cabindb::Dstore* dstore_;
+        cabindb::CabinDB* cabindb_;
         std::vector<std::string> cfshards_;
         unsigned noResultsInDefaultColumnFamily;
         unsigned noResults;

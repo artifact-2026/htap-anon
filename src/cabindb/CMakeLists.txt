@@ -1,5 +1,5 @@
 set(cabindb_srcs
-    Dstore.cc
+    cabin_db.cc
 )
 
 list(APPEND cabindb_srcs rocksdb-rados-env/env_librados.cc)

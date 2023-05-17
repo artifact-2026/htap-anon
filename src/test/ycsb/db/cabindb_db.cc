@@ -15,7 +15,7 @@ namespace ycsbc {
             cfshards_.push_back("field"+std::to_string(i));
         }
 
-        dstore_ = new cabindb::Dstore(dbfilename, options, cfshards_);
+        cabindb_ = new cabindb::CabinDB(dbfilename, options, cfshards_);
     }
 
     void CabinDB::SetOptions(rocksdb::Options *options, utils::Properties &props) {
@@ -57,7 +57,7 @@ namespace ycsbc {
                       std::vector<KVPair> &result) 
     {
         std::string value;
-        cabindb::Status s = dstore_->Read(table, key, value);
+        cabindb::Status s = cabindb_->Read(table, key, value);
         if (s == cabindb::Status::kOK) {
             DeSerializeValue(value, result);
             return 0;
@@ -68,7 +68,7 @@ namespace ycsbc {
             std::vector<std::string> values;
             for (auto field : *fields) {
                 value.clear();
-                cabindb::Status ss = dstore_->Read(field, key, value);
+                cabindb::Status ss = cabindb_->Read(field, key, value);
                 if (ss == cabindb::Status::kOK) {
                     values.push_back(value);
                     continue;
@@ -93,7 +93,7 @@ namespace ycsbc {
                       std::vector<std::vector<KVPair>> &result) 
     {
         std::vector<std::string> values;
-        cabindb::Status s = dstore_->Scan(table, key, len, values);
+        cabindb::Status s = cabindb_->Scan(table, key, len, values);
         result.clear();
         if (s == cabindb::Status::kOK) {
             DeSerializeValues(values, result);
@@ -114,7 +114,7 @@ namespace ycsbc {
         std::string value;
         SerializeValue(values, value);
 
-        cabindb::Status s = dstore_->Insert(table, key, value);
+        cabindb::Status s = cabindb_->Insert(table, key, value);
         if (s == cabindb::Status::kOK) {
             return 0;
         }
@@ -129,7 +129,7 @@ namespace ycsbc {
 
     int CabinDB::Delete(const std::string &table, const std::string &key)
     {
-        cabindb::Status s = dstore_->Delete(table, key);
+        cabindb::Status s = cabindb_->Delete(table, key);
         if (s == cabindb::Status::kOK) {
             return 0;
         }

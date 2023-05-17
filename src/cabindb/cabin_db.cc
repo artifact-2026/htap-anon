@@ -1,16 +1,17 @@
 #include <iostream>
+#include <cmath>
 
-#include "Dstore.h"
+#include "cabin_db.h"
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
 #include "rocksdb-rados-env/env_librados.h"
 
 namespace CABINDB_NAMESPACE {
-    class CephCabinDBLogger : public rocksdb::Logger {
+    class CabinDBLogger : public rocksdb::Logger {
       public:
-        explicit CephCabinDBLogger() {};
-        ~CephCabinDBLogger() override {};
+        explicit CabinDBLogger() {};
+        ~CabinDBLogger() override {};
 
         void Logv(const char* format, va_list ap) override {
             Logv(rocksdb::INFO_LEVEL, format, ap);
@@ -25,7 +26,7 @@ namespace CABINDB_NAMESPACE {
 
     };
 
-   Dstore::Dstore(const char *dbfilename, rocksdb::Options& options, std::vector<std::string> &cfshards) {
+   CabinDB::CabinDB(const char *dbfilename, rocksdb::Options& options, std::vector<std::string> &cfshards) {
 
         std::string db_name = "cabindb";
         std::string config_path = "/etc/ceph/ceph.conf";
@@ -41,7 +42,7 @@ namespace CABINDB_NAMESPACE {
         options.level0_stop_writes_trigger = 5000;
         options.listeners.emplace_back(new CabinCompactor(options));;
 
-        options.info_log.reset(new CephCabinDBLogger());
+        options.info_log.reset(new CabinDBLogger());
 
         rocksdb::Status s = rocksdb::DB::Open(options,dbfilename,&db_);
         if(!s.ok()){
@@ -61,7 +62,7 @@ namespace CABINDB_NAMESPACE {
         }
     }
 
-    Status Dstore::Read(const std::string &table, const std::string &key, std::string &value)
+    Status CabinDB::Read(const std::string &table, const std::string &key, std::string &value)
     {
         value.clear();
         rocksdb::Status s = db_->Get(rocksdb::ReadOptions(),key,&value);
@@ -74,7 +75,7 @@ namespace CABINDB_NAMESPACE {
         return Status::kError;
     }
 
-    Status Dstore::Scan(const std::string &table, const std::string &key, int len, std::vector<std::string> &values)
+    Status CabinDB::Scan(const std::string &table, const std::string &key, int len, std::vector<std::string> &values)
     {
         auto it = db_->NewIterator(rocksdb::ReadOptions());
         values.clear();
@@ -90,7 +91,7 @@ namespace CABINDB_NAMESPACE {
         return Status::kNotFound;
     }
 
-    Status Dstore::Insert(const std::string &table, const std::string &key, std::string &value)
+    Status CabinDB::Insert(const std::string &table, const std::string &key, std::string &value)
     {
         rocksdb::WriteOptions write_options = rocksdb::WriteOptions();
         rocksdb::Status s = db_->Put(write_options, key, value);
@@ -102,7 +103,7 @@ namespace CABINDB_NAMESPACE {
         return Status::kOK;
     }
 
-    Status Dstore::Delete(const std::string &table, const std::string &key)
+    Status CabinDB::Delete(const std::string &table, const std::string &key)
     {
         rocksdb::WriteOptions write_options = rocksdb::WriteOptions();
         rocksdb::Status s = db_->Delete(write_options,key);
