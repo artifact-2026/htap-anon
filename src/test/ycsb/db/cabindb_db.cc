@@ -187,23 +187,27 @@ namespace ycsbc {
         kvs.clear();
         uint64_t offset = 0;
         for (unsigned int i = 0; i < values.size(); i++) {
-            ycsbc::DB::KVPair pair;
             uint64_t kv_num = DecodeFixed64(values[i].c_str());
             offset += 8;
 
-            uint64_t key_size = DecodeFixed64(values[i].c_str() + offset);
-            offset += 8;
+            for (unsigned int j = 0; j < kv_num; j++) {
+                ycsbc::DB::KVPair pair;
 
-            pair.first.assign(values[i].c_str() + offset, key_size);
-            offset += key_size;
+                uint64_t key_size = DecodeFixed64(values[i].c_str() + offset);
+                offset += 8;
 
-            uint64_t value_size = DecodeFixed64(values[i].c_str() + offset);
-            offset += 8;
+                pair.first.assign(values[i].c_str() + offset, key_size);
+                offset += key_size;
 
-            pair.second.assign(values[i].c_str() + offset, value_size);
+                uint64_t value_size = DecodeFixed64(values[i].c_str() + offset);
+                offset += 8;
 
-            kvs.push_back(pair);
+                pair.second.assign(values[i].c_str() + offset, value_size);
+
+                kvs.push_back(pair);
+            }
         }
+
     }
 
 }

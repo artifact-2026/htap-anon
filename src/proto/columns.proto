@@ -1,0 +1,21 @@
+syntax = "proto2";
+
+package data;
+
+message Table {
+    repeated Row rows = 1;
+}
+
+message Row {
+  required int32 key = 1;
+  required Columns value = 2;
+}
+
+message Columns {
+  repeated Column columns = 1;
+}
+
+message Column {
+  required string name = 1;
+  required string content = 2;
+}  

@@ -2,11 +2,16 @@ cmake_minimum_required(VERSION 3.16.3)
 
 project(HTAP)
 
-SET(CMAKE_CXX_FLAGS "-std=c++17")
+SET(CMAKE_CXX_FLAGS "-g -Wall -Werror -std=c++17")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+
+FIND_PACKAGE(Protobuf REQUIRED)
+
 
 add_subdirectory(lib/rocksdb)
 add_subdirectory(src/cabindb)
 add_subdirectory(src/test/ycsb)
+add_subdirectory(src/proto)
 
 include_directories(${CMAKE_SOURCE_DIR}/lib/rocksdb/include)
 include_directories(/usr/include)
