@@ -2,7 +2,7 @@
 
 #include <string>
 #include <iostream>
-#include "db/cabindb_db.h"
+#include "db/test_cabin_db.h"
 
 using namespace std;
 

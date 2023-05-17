@@ -1,5 +1,5 @@
 #include "core/core_workload.h"
-#include "cabindb_db.h"
+#include "test_cabin_db.h"
 #include "lib/coding.h"
 
 using namespace std;
