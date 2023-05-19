@@ -54,7 +54,7 @@ namespace ycsbc {
     }
 
     int TestCabinDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
-                      data::Columns &result) 
+                      data::Row &result) 
     {
         std::string value;
         cabindb::Status s = cabindb_->Read(table, key, value);
@@ -90,7 +90,7 @@ namespace ycsbc {
 
     int TestCabinDB::Scan(const std::string &table, const std::string &key, int len,
                       const std::vector<std::string> *fields,
-                      std::vector<data::Columns> &result) 
+                      std::vector<data::Row> &result) 
     {
         std::vector<std::string> values;
         cabindb::Status s = cabindb_->Scan(table, key, len, values);

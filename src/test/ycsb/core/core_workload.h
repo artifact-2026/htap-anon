@@ -144,8 +144,8 @@ class CoreWorkload {
   ///
   virtual void Init(const utils::Properties &p);
   
-  virtual void BuildRecord(data::Columns &value);
-  virtual void BuildColumn(data::Columns &update);
+  virtual void BuildRecord(data::Row &value);
+  virtual void BuildColumn(data::Row &update);
   virtual std::string BuildMaxKey();
   virtual size_t GetRecordLength();
 

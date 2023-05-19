@@ -48,7 +48,7 @@ class Client {
 inline bool Client::DoInsert() {
   std::string key = workload_.NextSequenceKey();
 
-  data::Columns value;
+  data::Row value;
   workload_.BuildRecord(value);
   std::string serializedValue;
   value.SerializeToString(&serializedValue);
@@ -102,7 +102,7 @@ inline int Client::TransactionRead() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
   //std::vector<DB::KVPair> result;
-  data::Columns result;
+  data::Row result;
   if (!workload_.read_all_fields()) {
     std::vector<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
@@ -117,7 +117,7 @@ inline int Client::TransactionReadModifyWrite() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
   //std::vector<DB::KVPair> result;
-  data::Columns result;
+  data::Row result;
 
   if (!workload_.read_all_fields()) {
     std::vector<std::string> fields;
@@ -128,7 +128,7 @@ inline int Client::TransactionReadModifyWrite() {
     db_.Read(table, key, NULL, result);
   }
 
-  data::Columns columns;
+  data::Row columns;
   if (workload_.write_all_fields()) {
     workload_.BuildRecord(columns);
   } else {
@@ -148,7 +148,7 @@ inline int Client::TransactionScan() {
   std::string max_key;
   workload_.NextTransactionScanKey(key, max_key);
   int len = workload_.NextScanLength();
-  std::vector<data::Columns> result;
+  std::vector<data::Row> result;
   if (!workload_.read_all_fields()) {
     std::vector<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
@@ -163,7 +163,7 @@ inline int Client::TransactionUpdate() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
 
-  data::Columns columns;
+  data::Row columns;
   if (workload_.write_all_fields()) {
     workload_.BuildRecord(columns);
   } else {
@@ -178,7 +178,7 @@ inline int Client::TransactionInsert() {
   data::Column column;
   std::string serializedString;
   column.set_name("field1");
-  column.set_content("value1");
+  column.set_value("value1");
   column.SerializeToString(&serializedString);
 
   data::Column column2;
@@ -189,7 +189,7 @@ inline int Client::TransactionInsert() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextSequenceKey();
 
-  data::Columns columns;
+  data::Row columns;
   workload_.BuildRecord(columns);
   std::string serializedColumns;
   columns.SerializeToString(&serializedColumns);

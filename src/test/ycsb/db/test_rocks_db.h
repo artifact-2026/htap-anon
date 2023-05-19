@@ -24,11 +24,11 @@ class TestRocksDB : public DB{
         TestRocksDB(const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::vector<std::string> *fields,
-                 data::Columns &result);
+                 data::Row &result);
 
         int Scan(const std::string &table, const std::string &begin_key,
                  int32_t len, const std::vector<std::string> *fields,
-                 std::vector<data::Columns> &result);
+                 std::vector<data::Row> &result);
 
         int Insert(const std::string &table, const std::string &key,
                    std::string &values);

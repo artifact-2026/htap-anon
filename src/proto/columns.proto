@@ -7,15 +7,10 @@ message Table {
 }
 
 message Row {
-  required int32 key = 1;
-  required Columns value = 2;
-}
-
-message Columns {
   repeated Column columns = 1;
 }
 
 message Column {
   required string name = 1;
-  required string content = 2;
-}  
+  required string value = 2;
+} 

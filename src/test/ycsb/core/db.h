@@ -38,7 +38,7 @@ class DB {
   ///
   virtual int Read(const std::string &table, const std::string &key,
                    const std::vector<std::string> *fields,
-		   data::Columns &result) = 0;
+		   data::Row &result) = 0;
   ///
   /// Performs a range scan for a set of records in the database.
   /// Field/value pairs from the result are stored in a vector.
@@ -54,7 +54,7 @@ class DB {
   ///
   virtual int Scan(const std::string &table, const std::string &begin_key,
                    int32_t len, const std::vector<std::string> *fields,
-                   std::vector<data::Columns> &result) = 0;
+                   std::vector<data::Row> &result) = 0;
   ///
   /// Updates a record in the database.
   /// Field/value pairs in the specified vector are written to the record,

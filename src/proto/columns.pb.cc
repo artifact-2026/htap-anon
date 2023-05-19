@@ -21,7 +21,6 @@
 
 namespace protobuf_columns_2eproto {
 extern PROTOBUF_INTERNAL_EXPORT_protobuf_columns_2eproto ::google::protobuf::internal::SCCInfo<0> scc_info_Column;
-extern PROTOBUF_INTERNAL_EXPORT_protobuf_columns_2eproto ::google::protobuf::internal::SCCInfo<1> scc_info_Columns;
 extern PROTOBUF_INTERNAL_EXPORT_protobuf_columns_2eproto ::google::protobuf::internal::SCCInfo<1> scc_info_Row;
 }  // namespace protobuf_columns_2eproto
 namespace data {
@@ -35,11 +34,6 @@ class RowDefaultTypeInternal {
   ::google::protobuf::internal::ExplicitlyConstructed<Row>
       _instance;
 } _Row_default_instance_;
-class ColumnsDefaultTypeInternal {
- public:
-  ::google::protobuf::internal::ExplicitlyConstructed<Columns>
-      _instance;
-} _Columns_default_instance_;
 class ColumnDefaultTypeInternal {
  public:
   ::google::protobuf::internal::ExplicitlyConstructed<Column>
@@ -75,21 +69,6 @@ static void InitDefaultsRow() {
 
 ::google::protobuf::internal::SCCInfo<1> scc_info_Row =
     {{ATOMIC_VAR_INIT(::google::protobuf::internal::SCCInfoBase::kUninitialized), 1, InitDefaultsRow}, {
-      &protobuf_columns_2eproto::scc_info_Columns.base,}};
-
-static void InitDefaultsColumns() {
-  GOOGLE_PROTOBUF_VERIFY_VERSION;
-
-  {
-    void* ptr = &::data::_Columns_default_instance_;
-    new (ptr) ::data::Columns();
-    ::google::protobuf::internal::OnShutdownDestroyMessage(ptr);
-  }
-  ::data::Columns::InitAsDefaultInstance();
-}
-
-::google::protobuf::internal::SCCInfo<1> scc_info_Columns =
-    {{ATOMIC_VAR_INIT(::google::protobuf::internal::SCCInfoBase::kUninitialized), 1, InitDefaultsColumns}, {
       &protobuf_columns_2eproto::scc_info_Column.base,}};
 
 static void InitDefaultsColumn() {
@@ -109,11 +88,10 @@ static void InitDefaultsColumn() {
 void InitDefaults() {
   ::google::protobuf::internal::InitSCC(&scc_info_Table.base);
   ::google::protobuf::internal::InitSCC(&scc_info_Row.base);
-  ::google::protobuf::internal::InitSCC(&scc_info_Columns.base);
   ::google::protobuf::internal::InitSCC(&scc_info_Column.base);
 }
 
-::google::protobuf::Metadata file_level_metadata[4];
+::google::protobuf::Metadata file_level_metadata[3];
 
 const ::google::protobuf::uint32 TableStruct::offsets[] GOOGLE_PROTOBUF_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
   GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Table, _has_bits_),
@@ -128,16 +106,7 @@ const ::google::protobuf::uint32 TableStruct::offsets[] GOOGLE_PROTOBUF_ATTRIBUT
   ~0u,  // no _extensions_
   ~0u,  // no _oneof_case_
   ~0u,  // no _weak_field_map_
-  GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Row, key_),
-  GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Row, value_),
-  1,
-  0,
-  GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Columns, _has_bits_),
-  GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Columns, _internal_metadata_),
-  ~0u,  // no _extensions_
-  ~0u,  // no _oneof_case_
-  ~0u,  // no _weak_field_map_
-  GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Columns, columns_),
+  GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Row, columns_),
   ~0u,
   GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Column, _has_bits_),
   GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Column, _internal_metadata_),
@@ -145,21 +114,19 @@ const ::google::protobuf::uint32 TableStruct::offsets[] GOOGLE_PROTOBUF_ATTRIBUT
   ~0u,  // no _oneof_case_
   ~0u,  // no _weak_field_map_
   GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Column, name_),
-  GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Column, content_),
+  GOOGLE_PROTOBUF_GENERATED_MESSAGE_FIELD_OFFSET(::data::Column, value_),
   0,
   1,
 };
 static const ::google::protobuf::internal::MigrationSchema schemas[] GOOGLE_PROTOBUF_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
   { 0, 6, sizeof(::data::Table)},
-  { 7, 14, sizeof(::data::Row)},
-  { 16, 22, sizeof(::data::Columns)},
-  { 23, 30, sizeof(::data::Column)},
+  { 7, 13, sizeof(::data::Row)},
+  { 14, 21, sizeof(::data::Column)},
 };
 
 static ::google::protobuf::Message const * const file_default_instances[] = {
   reinterpret_cast<const ::google::protobuf::Message*>(&::data::_Table_default_instance_),
   reinterpret_cast<const ::google::protobuf::Message*>(&::data::_Row_default_instance_),
-  reinterpret_cast<const ::google::protobuf::Message*>(&::data::_Columns_default_instance_),
   reinterpret_cast<const ::google::protobuf::Message*>(&::data::_Column_default_instance_),
 };
 
@@ -178,20 +145,19 @@ void protobuf_AssignDescriptorsOnce() {
 void protobuf_RegisterTypes(const ::std::string&) GOOGLE_PROTOBUF_ATTRIBUTE_COLD;
 void protobuf_RegisterTypes(const ::std::string&) {
   protobuf_AssignDescriptorsOnce();
-  ::google::protobuf::internal::RegisterAllTypes(file_level_metadata, 4);
+  ::google::protobuf::internal::RegisterAllTypes(file_level_metadata, 3);
 }
 
 void AddDescriptorsImpl() {
   InitDefaults();
   static const char descriptor[] GOOGLE_PROTOBUF_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
       "\n\rcolumns.proto\022\004data\" \n\005Table\022\027\n\004rows\030\001"
-      " \003(\0132\t.data.Row\"0\n\003Row\022\013\n\003key\030\001 \002(\005\022\034\n\005v"
-      "alue\030\002 \002(\0132\r.data.Columns\"(\n\007Columns\022\035\n\007"
-      "columns\030\001 \003(\0132\014.data.Column\"\'\n\006Column\022\014\n"
-      "\004name\030\001 \002(\t\022\017\n\007content\030\002 \002(\t"
+      " \003(\0132\t.data.Row\"$\n\003Row\022\035\n\007columns\030\001 \003(\0132"
+      "\014.data.Column\"%\n\006Column\022\014\n\004name\030\001 \002(\t\022\r\n"
+      "\005value\030\002 \002(\t"
   };
   ::google::protobuf::DescriptorPool::InternalAddGeneratedFile(
-      descriptor, 188);
+      descriptor, 132);
   ::google::protobuf::MessageFactory::InternalRegisterGeneratedFile(
     "columns.proto", &protobuf_RegisterTypes);
 }
@@ -445,12 +411,9 @@ void Table::InternalSwap(Table* other) {
 // ===================================================================
 
 void Row::InitAsDefaultInstance() {
-  ::data::_Row_default_instance_._instance.get_mutable()->value_ = const_cast< ::data::Columns*>(
-      ::data::Columns::internal_default_instance());
 }
 #if !defined(_MSC_VER) || _MSC_VER >= 1900
-const int Row::kKeyFieldNumber;
-const int Row::kValueFieldNumber;
+const int Row::kColumnsFieldNumber;
 #endif  // !defined(_MSC_VER) || _MSC_VER >= 1900
 
 Row::Row()
@@ -463,21 +426,13 @@ Row::Row()
 Row::Row(const Row& from)
   : ::google::protobuf::Message(),
       _internal_metadata_(NULL),
-      _has_bits_(from._has_bits_) {
+      _has_bits_(from._has_bits_),
+      columns_(from.columns_) {
   _internal_metadata_.MergeFrom(from._internal_metadata_);
-  if (from.has_value()) {
-    value_ = new ::data::Columns(*from.value_);
-  } else {
-    value_ = NULL;
-  }
-  key_ = from.key_;
   // @@protoc_insertion_point(copy_constructor:data.Row)
 }
 
 void Row::SharedCtor() {
-  ::memset(&value_, 0, static_cast<size_t>(
-      reinterpret_cast<char*>(&key_) -
-      reinterpret_cast<char*>(&value_)) + sizeof(key_));
 }
 
 Row::~Row() {
@@ -486,7 +441,6 @@ Row::~Row() {
 }
 
 void Row::SharedDtor() {
-  if (this != internal_default_instance()) delete value_;
 }
 
 void Row::SetCachedSize(int size) const {
@@ -509,12 +463,7 @@ void Row::Clear() {
   // Prevent compiler warnings about cached_has_bits being unused
   (void) cached_has_bits;
 
-  cached_has_bits = _has_bits_[0];
-  if (cached_has_bits & 0x00000001u) {
-    GOOGLE_DCHECK(value_ != NULL);
-    value_->Clear();
-  }
-  key_ = 0;
+  columns_.Clear();
   _has_bits_.Clear();
   _internal_metadata_.Clear();
 }
@@ -529,26 +478,12 @@ bool Row::MergePartialFromCodedStream(
     tag = p.first;
     if (!p.second) goto handle_unusual;
     switch (::google::protobuf::internal::WireFormatLite::GetTagFieldNumber(tag)) {
-      // required int32 key = 1;
+      // repeated .data.Column columns = 1;
       case 1: {
         if (static_cast< ::google::protobuf::uint8>(tag) ==
-            static_cast< ::google::protobuf::uint8>(8u /* 8 & 0xFF */)) {
-          set_has_key();
-          DO_((::google::protobuf::internal::WireFormatLite::ReadPrimitive<
-                   ::google::protobuf::int32, ::google::protobuf::internal::WireFormatLite::TYPE_INT32>(
-                 input, &key_)));
-        } else {
-          goto handle_unusual;
-        }
-        break;
-      }
-
-      // required .data.Columns value = 2;
-      case 2: {
-        if (static_cast< ::google::protobuf::uint8>(tag) ==
-            static_cast< ::google::protobuf::uint8>(18u /* 18 & 0xFF */)) {
+            static_cast< ::google::protobuf::uint8>(10u /* 10 & 0xFF */)) {
           DO_(::google::protobuf::internal::WireFormatLite::ReadMessage(
-               input, mutable_value()));
+                input, add_columns()));
         } else {
           goto handle_unusual;
         }
@@ -581,16 +516,13 @@ void Row::SerializeWithCachedSizes(
   ::google::protobuf::uint32 cached_has_bits = 0;
   (void) cached_has_bits;
 
-  cached_has_bits = _has_bits_[0];
-  // required int32 key = 1;
-  if (cached_has_bits & 0x00000002u) {
-    ::google::protobuf::internal::WireFormatLite::WriteInt32(1, this->key(), output);
-  }
-
-  // required .data.Columns value = 2;
-  if (cached_has_bits & 0x00000001u) {
+  // repeated .data.Column columns = 1;
+  for (unsigned int i = 0,
+      n = static_cast<unsigned int>(this->columns_size()); i < n; i++) {
     ::google::protobuf::internal::WireFormatLite::WriteMessageMaybeToArray(
-      2, this->_internal_value(), output);
+      1,
+      this->columns(static_cast<int>(i)),
+      output);
   }
 
   if (_internal_metadata_.have_unknown_fields()) {
@@ -607,17 +539,12 @@ void Row::SerializeWithCachedSizes(
   ::google::protobuf::uint32 cached_has_bits = 0;
   (void) cached_has_bits;
 
-  cached_has_bits = _has_bits_[0];
-  // required int32 key = 1;
-  if (cached_has_bits & 0x00000002u) {
-    target = ::google::protobuf::internal::WireFormatLite::WriteInt32ToArray(1, this->key(), target);
-  }
-
-  // required .data.Columns value = 2;
-  if (cached_has_bits & 0x00000001u) {
+  // repeated .data.Column columns = 1;
+  for (unsigned int i = 0,
+      n = static_cast<unsigned int>(this->columns_size()); i < n; i++) {
     target = ::google::protobuf::internal::WireFormatLite::
       InternalWriteMessageToArray(
-        2, this->_internal_value(), deterministic, target);
+        1, this->columns(static_cast<int>(i)), deterministic, target);
   }
 
   if (_internal_metadata_.have_unknown_fields()) {
@@ -628,26 +555,6 @@ void Row::SerializeWithCachedSizes(
   return target;
 }
 
-size_t Row::RequiredFieldsByteSizeFallback() const {
-// @@protoc_insertion_point(required_fields_byte_size_fallback_start:data.Row)
-  size_t total_size = 0;
-
-  if (has_value()) {
-    // required .data.Columns value = 2;
-    total_size += 1 +
-      ::google::protobuf::internal::WireFormatLite::MessageSize(
-        *value_);
-  }
-
-  if (has_key()) {
-    // required int32 key = 1;
-    total_size += 1 +
-      ::google::protobuf::internal::WireFormatLite::Int32Size(
-        this->key());
-  }
-
-  return total_size;
-}
 size_t Row::ByteSizeLong() const {
 // @@protoc_insertion_point(message_byte_size_start:data.Row)
   size_t total_size = 0;
@@ -657,20 +564,17 @@ size_t Row::ByteSizeLong() const {
       ::google::protobuf::internal::WireFormat::ComputeUnknownFieldsSize(
         _internal_metadata_.unknown_fields());
   }
-  if (((_has_bits_[0] & 0x00000003) ^ 0x00000003) == 0) {  // All required fields are present.
-    // required .data.Columns value = 2;
-    total_size += 1 +
-      ::google::protobuf::internal::WireFormatLite::MessageSize(
-        *value_);
-
-    // required int32 key = 1;
-    total_size += 1 +
-      ::google::protobuf::internal::WireFormatLite::Int32Size(
-        this->key());
-
-  } else {
-    total_size += RequiredFieldsByteSizeFallback();
+  // repeated .data.Column columns = 1;
+  {
+    unsigned int count = static_cast<unsigned int>(this->columns_size());
+    total_size += 1UL * count;
+    for (unsigned int i = 0; i < count; i++) {
+      total_size +=
+        ::google::protobuf::internal::WireFormatLite::MessageSize(
+          this->columns(static_cast<int>(i)));
+    }
   }
+
   int cached_size = ::google::protobuf::internal::ToCachedSize(total_size);
   SetCachedSize(cached_size);
   return total_size;
@@ -698,16 +602,7 @@ void Row::MergeFrom(const Row& from) {
   ::google::protobuf::uint32 cached_has_bits = 0;
   (void) cached_has_bits;
 
-  cached_has_bits = from._has_bits_[0];
-  if (cached_has_bits & 3u) {
-    if (cached_has_bits & 0x00000001u) {
-      mutable_value()->::data::Columns::MergeFrom(from.value());
-    }
-    if (cached_has_bits & 0x00000002u) {
-      key_ = from.key_;
-    }
-    _has_bits_[0] |= cached_has_bits;
-  }
+  columns_.MergeFrom(from.columns_);
 }
 
 void Row::CopyFrom(const ::google::protobuf::Message& from) {
@@ -725,10 +620,7 @@ void Row::CopyFrom(const Row& from) {
 }
 
 bool Row::IsInitialized() const {
-  if ((_has_bits_[0] & 0x00000003) != 0x00000003) return false;
-  if (has_value()) {
-    if (!this->value_->IsInitialized()) return false;
-  }
+  if (!::google::protobuf::internal::AllAreInitialized(this->columns())) return false;
   return true;
 }
 
@@ -738,8 +630,7 @@ void Row::Swap(Row* other) {
 }
 void Row::InternalSwap(Row* other) {
   using std::swap;
-  swap(value_, other->value_);
-  swap(key_, other->key_);
+  CastToBase(&columns_)->InternalSwap(CastToBase(&other->columns_));
   swap(_has_bits_[0], other->_has_bits_[0]);
   _internal_metadata_.Swap(&other->_internal_metadata_);
 }
@@ -752,244 +643,11 @@ void Row::InternalSwap(Row* other) {
 
 // ===================================================================
 
-void Columns::InitAsDefaultInstance() {
-}
-#if !defined(_MSC_VER) || _MSC_VER >= 1900
-const int Columns::kColumnsFieldNumber;
-#endif  // !defined(_MSC_VER) || _MSC_VER >= 1900
-
-Columns::Columns()
-  : ::google::protobuf::Message(), _internal_metadata_(NULL) {
-  ::google::protobuf::internal::InitSCC(
-      &protobuf_columns_2eproto::scc_info_Columns.base);
-  SharedCtor();
-  // @@protoc_insertion_point(constructor:data.Columns)
-}
-Columns::Columns(const Columns& from)
-  : ::google::protobuf::Message(),
-      _internal_metadata_(NULL),
-      _has_bits_(from._has_bits_),
-      columns_(from.columns_) {
-  _internal_metadata_.MergeFrom(from._internal_metadata_);
-  // @@protoc_insertion_point(copy_constructor:data.Columns)
-}
-
-void Columns::SharedCtor() {
-}
-
-Columns::~Columns() {
-  // @@protoc_insertion_point(destructor:data.Columns)
-  SharedDtor();
-}
-
-void Columns::SharedDtor() {
-}
-
-void Columns::SetCachedSize(int size) const {
-  _cached_size_.Set(size);
-}
-const ::google::protobuf::Descriptor* Columns::descriptor() {
-  ::protobuf_columns_2eproto::protobuf_AssignDescriptorsOnce();
-  return ::protobuf_columns_2eproto::file_level_metadata[kIndexInFileMessages].descriptor;
-}
-
-const Columns& Columns::default_instance() {
-  ::google::protobuf::internal::InitSCC(&protobuf_columns_2eproto::scc_info_Columns.base);
-  return *internal_default_instance();
-}
-
-
-void Columns::Clear() {
-// @@protoc_insertion_point(message_clear_start:data.Columns)
-  ::google::protobuf::uint32 cached_has_bits = 0;
-  // Prevent compiler warnings about cached_has_bits being unused
-  (void) cached_has_bits;
-
-  columns_.Clear();
-  _has_bits_.Clear();
-  _internal_metadata_.Clear();
-}
-
-bool Columns::MergePartialFromCodedStream(
-    ::google::protobuf::io::CodedInputStream* input) {
-#define DO_(EXPRESSION) if (!GOOGLE_PREDICT_TRUE(EXPRESSION)) goto failure
-  ::google::protobuf::uint32 tag;
-  // @@protoc_insertion_point(parse_start:data.Columns)
-  for (;;) {
-    ::std::pair<::google::protobuf::uint32, bool> p = input->ReadTagWithCutoffNoLastTag(127u);
-    tag = p.first;
-    if (!p.second) goto handle_unusual;
-    switch (::google::protobuf::internal::WireFormatLite::GetTagFieldNumber(tag)) {
-      // repeated .data.Column columns = 1;
-      case 1: {
-        if (static_cast< ::google::protobuf::uint8>(tag) ==
-            static_cast< ::google::protobuf::uint8>(10u /* 10 & 0xFF */)) {
-          DO_(::google::protobuf::internal::WireFormatLite::ReadMessage(
-                input, add_columns()));
-        } else {
-          goto handle_unusual;
-        }
-        break;
-      }
-
-      default: {
-      handle_unusual:
-        if (tag == 0) {
-          goto success;
-        }
-        DO_(::google::protobuf::internal::WireFormat::SkipField(
-              input, tag, _internal_metadata_.mutable_unknown_fields()));
-        break;
-      }
-    }
-  }
-success:
-  // @@protoc_insertion_point(parse_success:data.Columns)
-  return true;
-failure:
-  // @@protoc_insertion_point(parse_failure:data.Columns)
-  return false;
-#undef DO_
-}
-
-void Columns::SerializeWithCachedSizes(
-    ::google::protobuf::io::CodedOutputStream* output) const {
-  // @@protoc_insertion_point(serialize_start:data.Columns)
-  ::google::protobuf::uint32 cached_has_bits = 0;
-  (void) cached_has_bits;
-
-  // repeated .data.Column columns = 1;
-  for (unsigned int i = 0,
-      n = static_cast<unsigned int>(this->columns_size()); i < n; i++) {
-    ::google::protobuf::internal::WireFormatLite::WriteMessageMaybeToArray(
-      1,
-      this->columns(static_cast<int>(i)),
-      output);
-  }
-
-  if (_internal_metadata_.have_unknown_fields()) {
-    ::google::protobuf::internal::WireFormat::SerializeUnknownFields(
-        _internal_metadata_.unknown_fields(), output);
-  }
-  // @@protoc_insertion_point(serialize_end:data.Columns)
-}
-
-::google::protobuf::uint8* Columns::InternalSerializeWithCachedSizesToArray(
-    bool deterministic, ::google::protobuf::uint8* target) const {
-  (void)deterministic; // Unused
-  // @@protoc_insertion_point(serialize_to_array_start:data.Columns)
-  ::google::protobuf::uint32 cached_has_bits = 0;
-  (void) cached_has_bits;
-
-  // repeated .data.Column columns = 1;
-  for (unsigned int i = 0,
-      n = static_cast<unsigned int>(this->columns_size()); i < n; i++) {
-    target = ::google::protobuf::internal::WireFormatLite::
-      InternalWriteMessageToArray(
-        1, this->columns(static_cast<int>(i)), deterministic, target);
-  }
-
-  if (_internal_metadata_.have_unknown_fields()) {
-    target = ::google::protobuf::internal::WireFormat::SerializeUnknownFieldsToArray(
-        _internal_metadata_.unknown_fields(), target);
-  }
-  // @@protoc_insertion_point(serialize_to_array_end:data.Columns)
-  return target;
-}
-
-size_t Columns::ByteSizeLong() const {
-// @@protoc_insertion_point(message_byte_size_start:data.Columns)
-  size_t total_size = 0;
-
-  if (_internal_metadata_.have_unknown_fields()) {
-    total_size +=
-      ::google::protobuf::internal::WireFormat::ComputeUnknownFieldsSize(
-        _internal_metadata_.unknown_fields());
-  }
-  // repeated .data.Column columns = 1;
-  {
-    unsigned int count = static_cast<unsigned int>(this->columns_size());
-    total_size += 1UL * count;
-    for (unsigned int i = 0; i < count; i++) {
-      total_size +=
-        ::google::protobuf::internal::WireFormatLite::MessageSize(
-          this->columns(static_cast<int>(i)));
-    }
-  }
-
-  int cached_size = ::google::protobuf::internal::ToCachedSize(total_size);
-  SetCachedSize(cached_size);
-  return total_size;
-}
-
-void Columns::MergeFrom(const ::google::protobuf::Message& from) {
-// @@protoc_insertion_point(generalized_merge_from_start:data.Columns)
-  GOOGLE_DCHECK_NE(&from, this);
-  const Columns* source =
-      ::google::protobuf::internal::DynamicCastToGenerated<const Columns>(
-          &from);
-  if (source == NULL) {
-  // @@protoc_insertion_point(generalized_merge_from_cast_fail:data.Columns)
-    ::google::protobuf::internal::ReflectionOps::Merge(from, this);
-  } else {
-  // @@protoc_insertion_point(generalized_merge_from_cast_success:data.Columns)
-    MergeFrom(*source);
-  }
-}
-
-void Columns::MergeFrom(const Columns& from) {
-// @@protoc_insertion_point(class_specific_merge_from_start:data.Columns)
-  GOOGLE_DCHECK_NE(&from, this);
-  _internal_metadata_.MergeFrom(from._internal_metadata_);
-  ::google::protobuf::uint32 cached_has_bits = 0;
-  (void) cached_has_bits;
-
-  columns_.MergeFrom(from.columns_);
-}
-
-void Columns::CopyFrom(const ::google::protobuf::Message& from) {
-// @@protoc_insertion_point(generalized_copy_from_start:data.Columns)
-  if (&from == this) return;
-  Clear();
-  MergeFrom(from);
-}
-
-void Columns::CopyFrom(const Columns& from) {
-// @@protoc_insertion_point(class_specific_copy_from_start:data.Columns)
-  if (&from == this) return;
-  Clear();
-  MergeFrom(from);
-}
-
-bool Columns::IsInitialized() const {
-  if (!::google::protobuf::internal::AllAreInitialized(this->columns())) return false;
-  return true;
-}
-
-void Columns::Swap(Columns* other) {
-  if (other == this) return;
-  InternalSwap(other);
-}
-void Columns::InternalSwap(Columns* other) {
-  using std::swap;
-  CastToBase(&columns_)->InternalSwap(CastToBase(&other->columns_));
-  swap(_has_bits_[0], other->_has_bits_[0]);
-  _internal_metadata_.Swap(&other->_internal_metadata_);
-}
-
-::google::protobuf::Metadata Columns::GetMetadata() const {
-  protobuf_columns_2eproto::protobuf_AssignDescriptorsOnce();
-  return ::protobuf_columns_2eproto::file_level_metadata[kIndexInFileMessages];
-}
-
-
-// ===================================================================
-
 void Column::InitAsDefaultInstance() {
 }
 #if !defined(_MSC_VER) || _MSC_VER >= 1900
 const int Column::kNameFieldNumber;
-const int Column::kContentFieldNumber;
+const int Column::kValueFieldNumber;
 #endif  // !defined(_MSC_VER) || _MSC_VER >= 1900
 
 Column::Column()
@@ -1008,16 +666,16 @@ Column::Column(const Column& from)
   if (from.has_name()) {
     name_.AssignWithDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), from.name_);
   }
-  content_.UnsafeSetDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-  if (from.has_content()) {
-    content_.AssignWithDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), from.content_);
+  value_.UnsafeSetDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  if (from.has_value()) {
+    value_.AssignWithDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), from.value_);
   }
   // @@protoc_insertion_point(copy_constructor:data.Column)
 }
 
 void Column::SharedCtor() {
   name_.UnsafeSetDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-  content_.UnsafeSetDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  value_.UnsafeSetDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
 
 Column::~Column() {
@@ -1027,7 +685,7 @@ Column::~Column() {
 
 void Column::SharedDtor() {
   name_.DestroyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-  content_.DestroyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  value_.DestroyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
 
 void Column::SetCachedSize(int size) const {
@@ -1056,7 +714,7 @@ void Column::Clear() {
       name_.ClearNonDefaultToEmptyNoArena();
     }
     if (cached_has_bits & 0x00000002u) {
-      content_.ClearNonDefaultToEmptyNoArena();
+      value_.ClearNonDefaultToEmptyNoArena();
     }
   }
   _has_bits_.Clear();
@@ -1089,16 +747,16 @@ bool Column::MergePartialFromCodedStream(
         break;
       }
 
-      // required string content = 2;
+      // required string value = 2;
       case 2: {
         if (static_cast< ::google::protobuf::uint8>(tag) ==
             static_cast< ::google::protobuf::uint8>(18u /* 18 & 0xFF */)) {
           DO_(::google::protobuf::internal::WireFormatLite::ReadString(
-                input, this->mutable_content()));
+                input, this->mutable_value()));
           ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
-            this->content().data(), static_cast<int>(this->content().length()),
+            this->value().data(), static_cast<int>(this->value().length()),
             ::google::protobuf::internal::WireFormat::PARSE,
-            "data.Column.content");
+            "data.Column.value");
         } else {
           goto handle_unusual;
         }
@@ -1142,14 +800,14 @@ void Column::SerializeWithCachedSizes(
       1, this->name(), output);
   }
 
-  // required string content = 2;
+  // required string value = 2;
   if (cached_has_bits & 0x00000002u) {
     ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
-      this->content().data(), static_cast<int>(this->content().length()),
+      this->value().data(), static_cast<int>(this->value().length()),
       ::google::protobuf::internal::WireFormat::SERIALIZE,
-      "data.Column.content");
+      "data.Column.value");
     ::google::protobuf::internal::WireFormatLite::WriteStringMaybeAliased(
-      2, this->content(), output);
+      2, this->value(), output);
   }
 
   if (_internal_metadata_.have_unknown_fields()) {
@@ -1178,15 +836,15 @@ void Column::SerializeWithCachedSizes(
         1, this->name(), target);
   }
 
-  // required string content = 2;
+  // required string value = 2;
   if (cached_has_bits & 0x00000002u) {
     ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
-      this->content().data(), static_cast<int>(this->content().length()),
+      this->value().data(), static_cast<int>(this->value().length()),
       ::google::protobuf::internal::WireFormat::SERIALIZE,
-      "data.Column.content");
+      "data.Column.value");
     target =
       ::google::protobuf::internal::WireFormatLite::WriteStringToArray(
-        2, this->content(), target);
+        2, this->value(), target);
   }
 
   if (_internal_metadata_.have_unknown_fields()) {
@@ -1208,11 +866,11 @@ size_t Column::RequiredFieldsByteSizeFallback() const {
         this->name());
   }
 
-  if (has_content()) {
-    // required string content = 2;
+  if (has_value()) {
+    // required string value = 2;
     total_size += 1 +
       ::google::protobuf::internal::WireFormatLite::StringSize(
-        this->content());
+        this->value());
   }
 
   return total_size;
@@ -1232,10 +890,10 @@ size_t Column::ByteSizeLong() const {
       ::google::protobuf::internal::WireFormatLite::StringSize(
         this->name());
 
-    // required string content = 2;
+    // required string value = 2;
     total_size += 1 +
       ::google::protobuf::internal::WireFormatLite::StringSize(
-        this->content());
+        this->value());
 
   } else {
     total_size += RequiredFieldsByteSizeFallback();
@@ -1274,8 +932,8 @@ void Column::MergeFrom(const Column& from) {
       name_.AssignWithDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), from.name_);
     }
     if (cached_has_bits & 0x00000002u) {
-      set_has_content();
-      content_.AssignWithDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), from.content_);
+      set_has_value();
+      value_.AssignWithDefault(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), from.value_);
     }
   }
 }
@@ -1307,7 +965,7 @@ void Column::InternalSwap(Column* other) {
   using std::swap;
   name_.Swap(&other->name_, &::google::protobuf::internal::GetEmptyStringAlreadyInited(),
     GetArenaNoVirtual());
-  content_.Swap(&other->content_, &::google::protobuf::internal::GetEmptyStringAlreadyInited(),
+  value_.Swap(&other->value_, &::google::protobuf::internal::GetEmptyStringAlreadyInited(),
     GetArenaNoVirtual());
   swap(_has_bits_[0], other->_has_bits_[0]);
   _internal_metadata_.Swap(&other->_internal_metadata_);
@@ -1328,9 +986,6 @@ template<> GOOGLE_PROTOBUF_ATTRIBUTE_NOINLINE ::data::Table* Arena::CreateMaybeM
 }
 template<> GOOGLE_PROTOBUF_ATTRIBUTE_NOINLINE ::data::Row* Arena::CreateMaybeMessage< ::data::Row >(Arena* arena) {
   return Arena::CreateInternal< ::data::Row >(arena);
-}
-template<> GOOGLE_PROTOBUF_ATTRIBUTE_NOINLINE ::data::Columns* Arena::CreateMaybeMessage< ::data::Columns >(Arena* arena) {
-  return Arena::CreateInternal< ::data::Columns >(arena);
 }
 template<> GOOGLE_PROTOBUF_ATTRIBUTE_NOINLINE ::data::Column* Arena::CreateMaybeMessage< ::data::Column >(Arena* arena) {
   return Arena::CreateInternal< ::data::Column >(arena);

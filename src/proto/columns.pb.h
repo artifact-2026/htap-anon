@@ -38,7 +38,7 @@ namespace protobuf_columns_2eproto {
 struct TableStruct {
   static const ::google::protobuf::internal::ParseTableField entries[];
   static const ::google::protobuf::internal::AuxillaryParseTableField aux[];
-  static const ::google::protobuf::internal::ParseTable schema[4];
+  static const ::google::protobuf::internal::ParseTable schema[3];
   static const ::google::protobuf::internal::FieldMetadata field_metadata[];
   static const ::google::protobuf::internal::SerializationTable serialization_table[];
   static const ::google::protobuf::uint32 offsets[];
@@ -49,9 +49,6 @@ namespace data {
 class Column;
 class ColumnDefaultTypeInternal;
 extern ColumnDefaultTypeInternal _Column_default_instance_;
-class Columns;
-class ColumnsDefaultTypeInternal;
-extern ColumnsDefaultTypeInternal _Columns_default_instance_;
 class Row;
 class RowDefaultTypeInternal;
 extern RowDefaultTypeInternal _Row_default_instance_;
@@ -62,7 +59,6 @@ extern TableDefaultTypeInternal _Table_default_instance_;
 namespace google {
 namespace protobuf {
 template<> ::data::Column* Arena::CreateMaybeMessage<::data::Column>(Arena*);
-template<> ::data::Columns* Arena::CreateMaybeMessage<::data::Columns>(Arena*);
 template<> ::data::Row* Arena::CreateMaybeMessage<::data::Row>(Arena*);
 template<> ::data::Table* Arena::CreateMaybeMessage<::data::Table>(Arena*);
 }  // namespace protobuf
@@ -282,138 +278,6 @@ class Row : public ::google::protobuf::Message /* @@protoc_insertion_point(class
 
   // accessors -------------------------------------------------------
 
-  // required .data.Columns value = 2;
-  bool has_value() const;
-  void clear_value();
-  static const int kValueFieldNumber = 2;
-  private:
-  const ::data::Columns& _internal_value() const;
-  public:
-  const ::data::Columns& value() const;
-  ::data::Columns* release_value();
-  ::data::Columns* mutable_value();
-  void set_allocated_value(::data::Columns* value);
-
-  // required int32 key = 1;
-  bool has_key() const;
-  void clear_key();
-  static const int kKeyFieldNumber = 1;
-  ::google::protobuf::int32 key() const;
-  void set_key(::google::protobuf::int32 value);
-
-  // @@protoc_insertion_point(class_scope:data.Row)
- private:
-  void set_has_key();
-  void clear_has_key();
-  void set_has_value();
-  void clear_has_value();
-
-  // helper for ByteSizeLong()
-  size_t RequiredFieldsByteSizeFallback() const;
-
-  ::google::protobuf::internal::InternalMetadataWithArena _internal_metadata_;
-  ::google::protobuf::internal::HasBits<1> _has_bits_;
-  mutable ::google::protobuf::internal::CachedSize _cached_size_;
-  ::data::Columns* value_;
-  ::google::protobuf::int32 key_;
-  friend struct ::protobuf_columns_2eproto::TableStruct;
-};
-// -------------------------------------------------------------------
-
-class Columns : public ::google::protobuf::Message /* @@protoc_insertion_point(class_definition:data.Columns) */ {
- public:
-  Columns();
-  virtual ~Columns();
-
-  Columns(const Columns& from);
-
-  inline Columns& operator=(const Columns& from) {
-    CopyFrom(from);
-    return *this;
-  }
-  #if LANG_CXX11
-  Columns(Columns&& from) noexcept
-    : Columns() {
-    *this = ::std::move(from);
-  }
-
-  inline Columns& operator=(Columns&& from) noexcept {
-    if (GetArenaNoVirtual() == from.GetArenaNoVirtual()) {
-      if (this != &from) InternalSwap(&from);
-    } else {
-      CopyFrom(from);
-    }
-    return *this;
-  }
-  #endif
-  inline const ::google::protobuf::UnknownFieldSet& unknown_fields() const {
-    return _internal_metadata_.unknown_fields();
-  }
-  inline ::google::protobuf::UnknownFieldSet* mutable_unknown_fields() {
-    return _internal_metadata_.mutable_unknown_fields();
-  }
-
-  static const ::google::protobuf::Descriptor* descriptor();
-  static const Columns& default_instance();
-
-  static void InitAsDefaultInstance();  // FOR INTERNAL USE ONLY
-  static inline const Columns* internal_default_instance() {
-    return reinterpret_cast<const Columns*>(
-               &_Columns_default_instance_);
-  }
-  static constexpr int kIndexInFileMessages =
-    2;
-
-  void Swap(Columns* other);
-  friend void swap(Columns& a, Columns& b) {
-    a.Swap(&b);
-  }
-
-  // implements Message ----------------------------------------------
-
-  inline Columns* New() const final {
-    return CreateMaybeMessage<Columns>(NULL);
-  }
-
-  Columns* New(::google::protobuf::Arena* arena) const final {
-    return CreateMaybeMessage<Columns>(arena);
-  }
-  void CopyFrom(const ::google::protobuf::Message& from) final;
-  void MergeFrom(const ::google::protobuf::Message& from) final;
-  void CopyFrom(const Columns& from);
-  void MergeFrom(const Columns& from);
-  void Clear() final;
-  bool IsInitialized() const final;
-
-  size_t ByteSizeLong() const final;
-  bool MergePartialFromCodedStream(
-      ::google::protobuf::io::CodedInputStream* input) final;
-  void SerializeWithCachedSizes(
-      ::google::protobuf::io::CodedOutputStream* output) const final;
-  ::google::protobuf::uint8* InternalSerializeWithCachedSizesToArray(
-      bool deterministic, ::google::protobuf::uint8* target) const final;
-  int GetCachedSize() const final { return _cached_size_.Get(); }
-
-  private:
-  void SharedCtor();
-  void SharedDtor();
-  void SetCachedSize(int size) const final;
-  void InternalSwap(Columns* other);
-  private:
-  inline ::google::protobuf::Arena* GetArenaNoVirtual() const {
-    return NULL;
-  }
-  inline void* MaybeArenaPtr() const {
-    return NULL;
-  }
-  public:
-
-  ::google::protobuf::Metadata GetMetadata() const final;
-
-  // nested types ----------------------------------------------------
-
-  // accessors -------------------------------------------------------
-
   // repeated .data.Column columns = 1;
   int columns_size() const;
   void clear_columns();
@@ -426,7 +290,7 @@ class Columns : public ::google::protobuf::Message /* @@protoc_insertion_point(c
   const ::google::protobuf::RepeatedPtrField< ::data::Column >&
       columns() const;
 
-  // @@protoc_insertion_point(class_scope:data.Columns)
+  // @@protoc_insertion_point(class_scope:data.Row)
  private:
 
   ::google::protobuf::internal::InternalMetadataWithArena _internal_metadata_;
@@ -479,7 +343,7 @@ class Column : public ::google::protobuf::Message /* @@protoc_insertion_point(cl
                &_Column_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    3;
+    2;
 
   void Swap(Column* other);
   friend void swap(Column& a, Column& b) {
@@ -546,27 +410,27 @@ class Column : public ::google::protobuf::Message /* @@protoc_insertion_point(cl
   ::std::string* release_name();
   void set_allocated_name(::std::string* name);
 
-  // required string content = 2;
-  bool has_content() const;
-  void clear_content();
-  static const int kContentFieldNumber = 2;
-  const ::std::string& content() const;
-  void set_content(const ::std::string& value);
+  // required string value = 2;
+  bool has_value() const;
+  void clear_value();
+  static const int kValueFieldNumber = 2;
+  const ::std::string& value() const;
+  void set_value(const ::std::string& value);
   #if LANG_CXX11
-  void set_content(::std::string&& value);
+  void set_value(::std::string&& value);
   #endif
-  void set_content(const char* value);
-  void set_content(const char* value, size_t size);
-  ::std::string* mutable_content();
-  ::std::string* release_content();
-  void set_allocated_content(::std::string* content);
+  void set_value(const char* value);
+  void set_value(const char* value, size_t size);
+  ::std::string* mutable_value();
+  ::std::string* release_value();
+  void set_allocated_value(::std::string* value);
 
   // @@protoc_insertion_point(class_scope:data.Column)
  private:
   void set_has_name();
   void clear_has_name();
-  void set_has_content();
-  void clear_has_content();
+  void set_has_value();
+  void clear_has_value();
 
   // helper for ByteSizeLong()
   size_t RequiredFieldsByteSizeFallback() const;
@@ -575,7 +439,7 @@ class Column : public ::google::protobuf::Message /* @@protoc_insertion_point(cl
   ::google::protobuf::internal::HasBits<1> _has_bits_;
   mutable ::google::protobuf::internal::CachedSize _cached_size_;
   ::google::protobuf::internal::ArenaStringPtr name_;
-  ::google::protobuf::internal::ArenaStringPtr content_;
+  ::google::protobuf::internal::ArenaStringPtr value_;
   friend struct ::protobuf_columns_2eproto::TableStruct;
 };
 // ===================================================================
@@ -623,119 +487,33 @@ Table::rows() const {
 
 // Row
 
-// required int32 key = 1;
-inline bool Row::has_key() const {
-  return (_has_bits_[0] & 0x00000002u) != 0;
-}
-inline void Row::set_has_key() {
-  _has_bits_[0] |= 0x00000002u;
-}
-inline void Row::clear_has_key() {
-  _has_bits_[0] &= ~0x00000002u;
-}
-inline void Row::clear_key() {
-  key_ = 0;
-  clear_has_key();
-}
-inline ::google::protobuf::int32 Row::key() const {
-  // @@protoc_insertion_point(field_get:data.Row.key)
-  return key_;
-}
-inline void Row::set_key(::google::protobuf::int32 value) {
-  set_has_key();
-  key_ = value;
-  // @@protoc_insertion_point(field_set:data.Row.key)
-}
-
-// required .data.Columns value = 2;
-inline bool Row::has_value() const {
-  return (_has_bits_[0] & 0x00000001u) != 0;
-}
-inline void Row::set_has_value() {
-  _has_bits_[0] |= 0x00000001u;
-}
-inline void Row::clear_has_value() {
-  _has_bits_[0] &= ~0x00000001u;
-}
-inline void Row::clear_value() {
-  if (value_ != NULL) value_->Clear();
-  clear_has_value();
-}
-inline const ::data::Columns& Row::_internal_value() const {
-  return *value_;
-}
-inline const ::data::Columns& Row::value() const {
-  const ::data::Columns* p = value_;
-  // @@protoc_insertion_point(field_get:data.Row.value)
-  return p != NULL ? *p : *reinterpret_cast<const ::data::Columns*>(
-      &::data::_Columns_default_instance_);
-}
-inline ::data::Columns* Row::release_value() {
-  // @@protoc_insertion_point(field_release:data.Row.value)
-  clear_has_value();
-  ::data::Columns* temp = value_;
-  value_ = NULL;
-  return temp;
-}
-inline ::data::Columns* Row::mutable_value() {
-  set_has_value();
-  if (value_ == NULL) {
-    auto* p = CreateMaybeMessage<::data::Columns>(GetArenaNoVirtual());
-    value_ = p;
-  }
-  // @@protoc_insertion_point(field_mutable:data.Row.value)
-  return value_;
-}
-inline void Row::set_allocated_value(::data::Columns* value) {
-  ::google::protobuf::Arena* message_arena = GetArenaNoVirtual();
-  if (message_arena == NULL) {
-    delete value_;
-  }
-  if (value) {
-    ::google::protobuf::Arena* submessage_arena = NULL;
-    if (message_arena != submessage_arena) {
-      value = ::google::protobuf::internal::GetOwnedMessage(
-          message_arena, value, submessage_arena);
-    }
-    set_has_value();
-  } else {
-    clear_has_value();
-  }
-  value_ = value;
-  // @@protoc_insertion_point(field_set_allocated:data.Row.value)
-}
-
-// -------------------------------------------------------------------
-
-// Columns
-
 // repeated .data.Column columns = 1;
-inline int Columns::columns_size() const {
+inline int Row::columns_size() const {
   return columns_.size();
 }
-inline void Columns::clear_columns() {
+inline void Row::clear_columns() {
   columns_.Clear();
 }
-inline ::data::Column* Columns::mutable_columns(int index) {
-  // @@protoc_insertion_point(field_mutable:data.Columns.columns)
+inline ::data::Column* Row::mutable_columns(int index) {
+  // @@protoc_insertion_point(field_mutable:data.Row.columns)
   return columns_.Mutable(index);
 }
 inline ::google::protobuf::RepeatedPtrField< ::data::Column >*
-Columns::mutable_columns() {
-  // @@protoc_insertion_point(field_mutable_list:data.Columns.columns)
+Row::mutable_columns() {
+  // @@protoc_insertion_point(field_mutable_list:data.Row.columns)
   return &columns_;
 }
-inline const ::data::Column& Columns::columns(int index) const {
-  // @@protoc_insertion_point(field_get:data.Columns.columns)
+inline const ::data::Column& Row::columns(int index) const {
+  // @@protoc_insertion_point(field_get:data.Row.columns)
   return columns_.Get(index);
 }
-inline ::data::Column* Columns::add_columns() {
-  // @@protoc_insertion_point(field_add:data.Columns.columns)
+inline ::data::Column* Row::add_columns() {
+  // @@protoc_insertion_point(field_add:data.Row.columns)
   return columns_.Add();
 }
 inline const ::google::protobuf::RepeatedPtrField< ::data::Column >&
-Columns::columns() const {
-  // @@protoc_insertion_point(field_list:data.Columns.columns)
+Row::columns() const {
+  // @@protoc_insertion_point(field_list:data.Row.columns)
   return columns_;
 }
 
@@ -809,77 +587,75 @@ inline void Column::set_allocated_name(::std::string* name) {
   // @@protoc_insertion_point(field_set_allocated:data.Column.name)
 }
 
-// required string content = 2;
-inline bool Column::has_content() const {
+// required string value = 2;
+inline bool Column::has_value() const {
   return (_has_bits_[0] & 0x00000002u) != 0;
 }
-inline void Column::set_has_content() {
+inline void Column::set_has_value() {
   _has_bits_[0] |= 0x00000002u;
 }
-inline void Column::clear_has_content() {
+inline void Column::clear_has_value() {
   _has_bits_[0] &= ~0x00000002u;
 }
-inline void Column::clear_content() {
-  content_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
-  clear_has_content();
+inline void Column::clear_value() {
+  value_.ClearToEmptyNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  clear_has_value();
 }
-inline const ::std::string& Column::content() const {
-  // @@protoc_insertion_point(field_get:data.Column.content)
-  return content_.GetNoArena();
+inline const ::std::string& Column::value() const {
+  // @@protoc_insertion_point(field_get:data.Column.value)
+  return value_.GetNoArena();
 }
-inline void Column::set_content(const ::std::string& value) {
-  set_has_content();
-  content_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
-  // @@protoc_insertion_point(field_set:data.Column.content)
+inline void Column::set_value(const ::std::string& value) {
+  set_has_value();
+  value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
+  // @@protoc_insertion_point(field_set:data.Column.value)
 }
 #if LANG_CXX11
-inline void Column::set_content(::std::string&& value) {
-  set_has_content();
-  content_.SetNoArena(
+inline void Column::set_value(::std::string&& value) {
+  set_has_value();
+  value_.SetNoArena(
     &::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::move(value));
-  // @@protoc_insertion_point(field_set_rvalue:data.Column.content)
+  // @@protoc_insertion_point(field_set_rvalue:data.Column.value)
 }
 #endif
-inline void Column::set_content(const char* value) {
+inline void Column::set_value(const char* value) {
   GOOGLE_DCHECK(value != NULL);
-  set_has_content();
-  content_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
-  // @@protoc_insertion_point(field_set_char:data.Column.content)
+  set_has_value();
+  value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
+  // @@protoc_insertion_point(field_set_char:data.Column.value)
 }
-inline void Column::set_content(const char* value, size_t size) {
-  set_has_content();
-  content_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
+inline void Column::set_value(const char* value, size_t size) {
+  set_has_value();
+  value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
       ::std::string(reinterpret_cast<const char*>(value), size));
-  // @@protoc_insertion_point(field_set_pointer:data.Column.content)
+  // @@protoc_insertion_point(field_set_pointer:data.Column.value)
 }
-inline ::std::string* Column::mutable_content() {
-  set_has_content();
-  // @@protoc_insertion_point(field_mutable:data.Column.content)
-  return content_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+inline ::std::string* Column::mutable_value() {
+  set_has_value();
+  // @@protoc_insertion_point(field_mutable:data.Column.value)
+  return value_.MutableNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-inline ::std::string* Column::release_content() {
-  // @@protoc_insertion_point(field_release:data.Column.content)
-  if (!has_content()) {
+inline ::std::string* Column::release_value() {
+  // @@protoc_insertion_point(field_release:data.Column.value)
+  if (!has_value()) {
     return NULL;
   }
-  clear_has_content();
-  return content_.ReleaseNonDefaultNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
+  clear_has_value();
+  return value_.ReleaseNonDefaultNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited());
 }
-inline void Column::set_allocated_content(::std::string* content) {
-  if (content != NULL) {
-    set_has_content();
+inline void Column::set_allocated_value(::std::string* value) {
+  if (value != NULL) {
+    set_has_value();
   } else {
-    clear_has_content();
+    clear_has_value();
   }
-  content_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), content);
-  // @@protoc_insertion_point(field_set_allocated:data.Column.content)
+  value_.SetAllocatedNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), value);
+  // @@protoc_insertion_point(field_set_allocated:data.Column.value)
 }
 
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
-// -------------------------------------------------------------------
-
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------

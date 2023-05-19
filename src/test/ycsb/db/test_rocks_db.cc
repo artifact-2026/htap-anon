@@ -14,7 +14,7 @@ namespace ycsbc {
     }
 
     int TestRocksDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
-                      data::Columns &result) 
+                      data::Row &result) 
     {
         std::string value;
         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &value);
@@ -26,14 +26,14 @@ namespace ycsbc {
 
     int TestRocksDB::Scan(const std::string &table, const std::string &begin_key,
                           int32_t len, const std::vector<std::string> *fields,
-                          std::vector<data::Columns> &result) 
+                          std::vector<data::Row> &result) 
     {
         result.clear();
         auto it = rocksdb_->NewIterator(rocksdb::ReadOptions());
         it->Seek(begin_key);
         for (int i = 0; i < len && it->Valid(); i++) {
             std::string value = it->value().ToString();
-            data::Columns row;
+            data::Row row;
             row.ParseFromString(value);
             result.push_back(row);
             it->Next();
