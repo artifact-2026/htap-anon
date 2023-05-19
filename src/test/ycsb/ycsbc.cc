@@ -103,6 +103,8 @@ int main( const int argc, const char *argv[]) {
     ycsbc::CoreWorkload wl;
     wl.Init(props);
 
+    std::cout << "Holly debug 1.1" << std::endl;
+
     uint64_t load_start = get_now_micros();
     total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
     for (int i = 0; i < num_threads; ++i) {

@@ -14,6 +14,7 @@
 #include "db.h"
 #include "core_workload.h"
 #include "utils.h"
+#include "proto/columns.pb.h"
 
 using namespace std;
 
@@ -28,6 +29,7 @@ class Client {
   
   virtual bool DoInsert();
   virtual bool DoTransaction();
+  virtual bool DoRead();
   
   virtual ~Client() { }
   
@@ -45,16 +47,30 @@ class Client {
 
 inline bool Client::DoInsert() {
   std::string key = workload_.NextSequenceKey();
-  std::vector<DB::KVPair> pairs;
-  workload_.BuildValues(pairs);
-  return (db_.Insert(workload_.NextTable(), key, pairs) == DB::kOK);
+
+  data::Columns value;
+  workload_.BuildRecord(value);
+  std::string serializedValue;
+  value.SerializeToString(&serializedValue);
+  return (db_.Insert(workload_.NextTable(), key, serializedValue) == DB::kOK);
 }
 
+inline bool Client::DoRead() {
+  return (TransactionRead() == DB::kOK);
+}
+
+// major benchmark. Will implement the 5 queries in it. 
+// Query 1: Insert into T values (C1, C2, C3, ...., Cn)
 inline bool Client::DoTransaction() {
   int status = -1;
   uint64_t start_time = get_now_micros();
 
   switch (workload_.NextOperation()) {
+    case INSERT:
+      status = TransactionInsert();
+      ops_time[INSERT].fetch_add((get_now_micros() - start_time ), std::memory_order_relaxed);
+      ops_cnt[INSERT].fetch_add(1, std::memory_order_relaxed);
+      break;
     case READ:
       status = TransactionRead();
       ops_time[READ].fetch_add((get_now_micros() - start_time ), std::memory_order_relaxed);
@@ -64,11 +80,6 @@ inline bool Client::DoTransaction() {
       status = TransactionUpdate();
       ops_time[UPDATE].fetch_add((get_now_micros() - start_time ), std::memory_order_relaxed);
       ops_cnt[UPDATE].fetch_add(1, std::memory_order_relaxed);
-      break;
-    case INSERT:
-      status = TransactionInsert();
-      ops_time[INSERT].fetch_add((get_now_micros() - start_time ), std::memory_order_relaxed);
-      ops_cnt[INSERT].fetch_add(1, std::memory_order_relaxed);
       break;
     case SCAN:
       status = TransactionScan();
@@ -90,7 +101,8 @@ inline bool Client::DoTransaction() {
 inline int Client::TransactionRead() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
-  std::vector<DB::KVPair> result;
+  //std::vector<DB::KVPair> result;
+  data::Columns result;
   if (!workload_.read_all_fields()) {
     std::vector<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
@@ -104,7 +116,8 @@ inline int Client::TransactionRead() {
 inline int Client::TransactionReadModifyWrite() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
-  std::vector<DB::KVPair> result;
+  //std::vector<DB::KVPair> result;
+  data::Columns result;
 
   if (!workload_.read_all_fields()) {
     std::vector<std::string> fields;
@@ -115,13 +128,16 @@ inline int Client::TransactionReadModifyWrite() {
     db_.Read(table, key, NULL, result);
   }
 
-  std::vector<DB::KVPair> values;
+  data::Columns columns;
   if (workload_.write_all_fields()) {
-    workload_.BuildValues(values);
+    workload_.BuildRecord(columns);
   } else {
-    workload_.BuildUpdate(values);
+    workload_.BuildColumn(columns);
   }
-  return db_.Update(table, key, values);
+  std::string serializedColumns;
+  columns.SerializeToString(&serializedColumns);
+
+  return db_.Update(table, key, serializedColumns);
 }
 
 inline int Client::TransactionScan() {
@@ -132,7 +148,7 @@ inline int Client::TransactionScan() {
   std::string max_key;
   workload_.NextTransactionScanKey(key, max_key);
   int len = workload_.NextScanLength();
-  std::vector<std::vector<DB::KVPair>> result;
+  std::vector<data::Columns> result;
   if (!workload_.read_all_fields()) {
     std::vector<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
@@ -146,21 +162,38 @@ inline int Client::TransactionScan() {
 inline int Client::TransactionUpdate() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
-  std::vector<DB::KVPair> values;
+
+  data::Columns columns;
   if (workload_.write_all_fields()) {
-    workload_.BuildValues(values);
+    workload_.BuildRecord(columns);
   } else {
-    workload_.BuildUpdate(values);
+    workload_.BuildColumn(columns);
   }
-  return db_.Update(table, key, values);
+  std::string serializedColumns;
+  columns.SerializeToString(&serializedColumns);
+  return db_.Update(table, key, serializedColumns);
 }
 
 inline int Client::TransactionInsert() {
+  data::Column column;
+  std::string serializedString;
+  column.set_name("field1");
+  column.set_content("value1");
+  column.SerializeToString(&serializedString);
+
+  data::Column column2;
+  column2.ParseFromString(serializedString);
+
+  std::cout << column2.name() << std::endl;
+
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextSequenceKey();
-  std::vector<DB::KVPair> values;
-  workload_.BuildValues(values);
-  return db_.Insert(table, key, values);
+
+  data::Columns columns;
+  workload_.BuildRecord(columns);
+  std::string serializedColumns;
+  columns.SerializeToString(&serializedColumns);
+  return db_.Insert(table, key, serializedColumns);
 } 
 
 } // ycsbc

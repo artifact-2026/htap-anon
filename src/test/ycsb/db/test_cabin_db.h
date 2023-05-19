@@ -20,26 +20,26 @@
 
 namespace ycsbc {
 
-class CabinDB : public DB{
+class TestCabinDB : public DB{
     public :
-        CabinDB(const char *dbfilename, utils::Properties &props);
+        TestCabinDB(const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::vector<std::string> *fields,
-                 std::vector<KVPair> &result);
+                 data::Columns &result);
 
         int Scan(const std::string &table, const std::string &key,
                  int len, const std::vector<std::string> *fields,
-                 std::vector<std::vector<KVPair> > &result);
+                 std::vector<data::Columns> &result);
 
         int Insert(const std::string &table, const std::string &key,
-                   std::vector<KVPair> &values);
+                   std::string &values);
 
         int Update(const std::string &table, const std::string &key,
-                   std::vector<KVPair> &values);
+                   std::string &values);
 
         int Delete(const std::string &table, const std::string &key);
-
-        ~CabinDB() {};
+	
+        ~TestCabinDB() {};
     
     private:
         cabindb::CabinDB* cabindb_;

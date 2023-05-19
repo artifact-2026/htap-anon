@@ -3,6 +3,7 @@
 #include <string>
 #include <iostream>
 #include "db/test_cabin_db.h"
+#include "db/test_rocks_db.h"
 
 using namespace std;
 
@@ -13,7 +14,10 @@ namespace ycsbc {
 DB* DBFactory::CreateDB(utils::Properties &props) {
   if (props["dbname"] == "cabindb") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-cabindb");
-    return new CabinDB(dbpath.c_str(), props);
+    return new TestCabinDB(dbpath.c_str(), props);
+  } else if (props["dbname"] == "rocksdb") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-rocksdb");
+    return new TestRocksDB(dbpath.c_str(), props);
   } else return nullptr;
 }
 

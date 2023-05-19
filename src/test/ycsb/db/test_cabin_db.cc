@@ -6,7 +6,7 @@ using namespace std;
 
 namespace ycsbc {
 
-    CabinDB::CabinDB(const char *dbfilename, utils::Properties &props) {
+    TestCabinDB::TestCabinDB(const char *dbfilename, utils::Properties &props) {
         rocksdb::Options options;
         SetOptions(&options, props);
 
@@ -18,7 +18,7 @@ namespace ycsbc {
         cabindb_ = new cabindb::CabinDB(dbfilename, options, cfshards_);
     }
 
-    void CabinDB::SetOptions(rocksdb::Options *options, utils::Properties &props) {
+    void TestCabinDB::SetOptions(rocksdb::Options *options, utils::Properties &props) {
 
         options->create_if_missing = true;
         options->compression = rocksdb::kNoCompression;
@@ -53,13 +53,13 @@ namespace ycsbc {
         }
     }
 
-    int CabinDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
-                      std::vector<KVPair> &result) 
+    int TestCabinDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
+                      data::Columns &result) 
     {
         std::string value;
         cabindb::Status s = cabindb_->Read(table, key, value);
         if (s == cabindb::Status::kOK) {
-            DeSerializeValue(value, result);
+            //DeSerializeValue(value, result);
             return 0;
         }
 
@@ -79,7 +79,7 @@ namespace ycsbc {
                 }
                 std::cerr<<"read error"<<std::endl;
             }
-            StitchColumns(values, result);
+            //StitchColumns(values, result);
             return 0;
         }
 
@@ -88,15 +88,15 @@ namespace ycsbc {
         return 1;
     }
 
-    int CabinDB::Scan(const std::string &table, const std::string &key, int len,
+    int TestCabinDB::Scan(const std::string &table, const std::string &key, int len,
                       const std::vector<std::string> *fields,
-                      std::vector<std::vector<KVPair>> &result) 
+                      std::vector<data::Columns> &result) 
     {
         std::vector<std::string> values;
         cabindb::Status s = cabindb_->Scan(table, key, len, values);
         result.clear();
         if (s == cabindb::Status::kOK) {
-            DeSerializeValues(values, result);
+            //DeSerializeValues(values, result);
             noResultsInDefaultColumnFamily += (len - values.size());
             return 0;
         }
@@ -109,10 +109,10 @@ namespace ycsbc {
         return 1;
     }
 
-    int CabinDB::Insert(const std::string &table, const std::string &key, std::vector<KVPair> &values)
+    int TestCabinDB::Insert(const std::string &table, const std::string &key, std::string &values)
     {
         std::string value;
-        SerializeValue(values, value);
+        //SerializeValue(values, value);
 
         cabindb::Status s = cabindb_->Insert(table, key, value);
         if (s == cabindb::Status::kOK) {
@@ -122,12 +122,12 @@ namespace ycsbc {
         return 1;
     }
 
-    int CabinDB::Update(const std::string &table, const std::string &key, std::vector<KVPair> &values)
+    int TestCabinDB::Update(const std::string &table, const std::string &key, std::string &values)
     {
         return Insert(table, key, values);
     }
 
-    int CabinDB::Delete(const std::string &table, const std::string &key)
+    int TestCabinDB::Delete(const std::string &table, const std::string &key)
     {
         cabindb::Status s = cabindb_->Delete(table, key);
         if (s == cabindb::Status::kOK) {
@@ -136,7 +136,7 @@ namespace ycsbc {
         return 1;
     }
 
-    void CabinDB::SerializeValue(std::vector<KVPair> &kvs, std::string &value) {
+    void TestCabinDB::SerializeValue(std::vector<KVPair> &kvs, std::string &value) {
         value.clear();
         PutFixed64(&value, kvs.size());
         for(unsigned int i=0; i < kvs.size(); i++){
@@ -147,7 +147,7 @@ namespace ycsbc {
         }
     }
 
-    void CabinDB::DeSerializeValue(std::string &value, std::vector<KVPair> &kvs){
+    void TestCabinDB::DeSerializeValue(std::string &value, std::vector<KVPair> &kvs){
         uint64_t offset = 0;
         uint64_t kv_num = 0;
         uint64_t key_size = 0;
@@ -172,7 +172,7 @@ namespace ycsbc {
         }
     }
 
-    void CabinDB::DeSerializeValues(std::vector<std::string> &values, std::vector<std::vector<KVPair>> &kvs_vec)
+    void TestCabinDB::DeSerializeValues(std::vector<std::string> &values, std::vector<std::vector<KVPair>> &kvs_vec)
     {
         kvs_vec.clear();
         for (unsigned int i = 0; i < values.size(); i++) {
@@ -182,7 +182,7 @@ namespace ycsbc {
         }
     }
 
-    void CabinDB::StitchColumns(std::vector<std::string> &values, std::vector<KVPair> &kvs)
+    void TestCabinDB::StitchColumns(std::vector<std::string> &values, std::vector<KVPair> &kvs)
     {
         kvs.clear();
         uint64_t offset = 0;

@@ -193,19 +193,22 @@ ycsbc::Generator<uint64_t> *CoreWorkload::GetFieldLenGenerator(
   }
 }
 
-void CoreWorkload::BuildValues(std::vector<ycsbc::DB::KVPair> &values) {
+void CoreWorkload::BuildRecord(data::Columns &value) {
   for (int i = 0; i < field_count_; ++i) {
-    ycsbc::DB::KVPair pair;
-    pair.first.append("field").append(std::to_string(i));
-    pair.second.append(field_len_generator_->Next(), utils::RandomPrintChar());
-    values.push_back(pair);
+    data::Column* column = value.add_columns();
+    column->set_name("field"+std::to_string(i));
+    std::string val;
+    column->set_content(val.append(field_len_generator_->Next(), utils::RandomPrintChar()));
   }
 }
 
-void CoreWorkload::BuildUpdate(std::vector<ycsbc::DB::KVPair> &update) {
-  ycsbc::DB::KVPair pair;
-  pair.first.append(NextFieldName());
-  pair.second.append(field_len_generator_->Next(), utils::RandomPrintChar());
-  update.push_back(pair);
+void CoreWorkload::BuildColumn(data::Columns &value) {
+  data::Column* column = value.add_columns();
+  column->set_name(NextFieldName());
+  std::string val;
+  column->set_content(val.append(field_len_generator_->Next(), utils::RandomPrintChar()));
 }
 
+size_t CoreWorkload::GetRecordLength() {
+  return record_count_;
+}
