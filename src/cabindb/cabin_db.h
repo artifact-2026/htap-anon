@@ -42,7 +42,7 @@ typedef std::pair<std::string, std::string> KVPair;
 
 class CabinDB {
   public:
-    CabinDB(const char *dbfilename, rocksdb::Options& options, std::vector<std::string> &cfshards);
+    CabinDB(const char *dbfilename, rocksdb::Options& options, int field_count);
 
     Status Read(const std::string &table, const std::string &key, std::string &value);
 
@@ -58,8 +58,8 @@ class CabinDB {
     rocksdb::DB *db_;
     std::string dbpath_;
     rocksdb::Options options_;
+    std::vector<std::vector<std::string> > leveled_cf_names_;
     std::vector<rocksdb::ColumnFamilyHandle*> cfhandles_;
-
 };
 
 }

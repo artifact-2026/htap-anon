@@ -11,11 +11,8 @@ namespace ycsbc {
         SetOptions(&options, props);
 
         int num_cfshards = stoi(props.GetProperty("fieldcount", "0"));
-        for (int i = 0; i < num_cfshards; i++) {
-            cfshards_.push_back("field"+std::to_string(i));
-        }
 
-        cabindb_ = new cabindb::CabinDB(dbfilename, options, cfshards_);
+        cabindb_ = new cabindb::CabinDB(dbfilename, options, num_cfshards);
     }
 
     void TestCabinDB::SetOptions(rocksdb::Options *options, utils::Properties &props) {
@@ -30,6 +27,7 @@ namespace ycsbc {
         options->max_write_buffer_number = 2;
         options->target_file_size_base = 4ul * 1024 * 1024;
 
+	options->num_levels = stoi(props.GetProperty("levels", "4"));
         options->level0_file_num_compaction_trigger = 4;
         options->level0_slowdown_writes_trigger = 8;     
         options->level0_stop_writes_trigger = 12;

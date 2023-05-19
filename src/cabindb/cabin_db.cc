@@ -26,7 +26,7 @@ namespace CABINDB_NAMESPACE {
 
     };
 
-   CabinDB::CabinDB(const char *dbfilename, rocksdb::Options& options, std::vector<std::string> &cfshards) {
+   CabinDB::CabinDB(const char *dbfilename, rocksdb::Options& options, int field_count) {
 
         std::string db_name = "cabindb";
         std::string config_path = "/etc/ceph/ceph.conf";
@@ -44,22 +44,17 @@ namespace CABINDB_NAMESPACE {
 
         options.info_log.reset(new CabinDBLogger());
 
+	/*
+         * create column family names on every level
+         */
+        CreateAllColumnFamilyNames(field_count, options.num_levels, leveled_cf_names_);
+
         rocksdb::Status s = rocksdb::DB::Open(options,dbfilename,&db_);
         if(!s.ok()){
             std::cerr<<"Can't open rocksdb "<<dbfilename<<" "<<s.ToString()<<std::endl;
             exit(0);
         }
 
-        for (unsigned i = 0; i < cfshards.size(); i++) {
-            rocksdb::ColumnFamilyHandle* cf;
-            s = db_->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), cfshards[i], &cf);
-            if (!s.ok()) {
-                std::cerr<<"Can't create column family handle "<<cfshards[i]<<" "
-                         <<s.ToString()<<std::endl;
-                exit(0);
-            }
-            cfhandles_.push_back(cf);
-        }
     }
 
     Status CabinDB::Read(const std::string &table, const std::string &key, std::string &value)
