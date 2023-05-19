@@ -6,7 +6,7 @@
 #include "cabindb_namespace.h"
 #include "compactor.h"
 #include <rocksdb/options.h>
-#include "column_families.h"
+#include "column_family_util.h"
 
 namespace rocksdb{
   class DB;
