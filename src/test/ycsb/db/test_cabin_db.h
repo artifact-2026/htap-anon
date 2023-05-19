@@ -50,12 +50,6 @@ class TestCabinDB : public DB{
         std::shared_ptr<rocksdb::Statistics> dbstats_;
 
         void SetOptions(rocksdb::Options *options, utils::Properties &props);
-        void SerializeValue(std::vector<KVPair> &kvs, std::string &value);
-        // de-serialize one row result for read
-        void DeSerializeValue(std::string &value, std::vector<KVPair> &kvs);
-        // de-serialize multiple rows result for scan
-        void DeSerializeValues(std::vector<std::string> &values, std::vector<std::vector<KVPair>> &kvs_vec);
-        // de-serialize multiple results for one key searched in columnar storage
         void StitchColumns(std::vector<std::string> &values, std::vector<KVPair> &kvs);
 
 };

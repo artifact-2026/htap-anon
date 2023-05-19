@@ -136,52 +136,6 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestCabinDB::SerializeValue(std::vector<KVPair> &kvs, std::string &value) {
-        value.clear();
-        PutFixed64(&value, kvs.size());
-        for(unsigned int i=0; i < kvs.size(); i++){
-            PutFixed64(&value, kvs[i].first.size());
-            value.append(kvs[i].first);
-            PutFixed64(&value, kvs[i].second.size());
-            value.append(kvs[i].second);
-        }
-    }
-
-    void TestCabinDB::DeSerializeValue(std::string &value, std::vector<KVPair> &kvs){
-        uint64_t offset = 0;
-        uint64_t kv_num = 0;
-        uint64_t key_size = 0;
-        uint64_t value_size = 0;
-
-        kv_num = DecodeFixed64(value.c_str());
-        offset += 8;
-        for( unsigned int i = 0; i < kv_num; i++){
-            ycsbc::DB::KVPair pair;
-            key_size = DecodeFixed64(value.c_str() + offset);
-            offset += 8;
-
-            pair.first.assign(value.c_str() + offset, key_size);
-            offset += key_size;
-
-            value_size = DecodeFixed64(value.c_str() + offset);
-            offset += 8;
-
-            pair.second.assign(value.c_str() + offset, value_size);
-            offset += value_size;
-            kvs.push_back(pair);
-        }
-    }
-
-    void TestCabinDB::DeSerializeValues(std::vector<std::string> &values, std::vector<std::vector<KVPair>> &kvs_vec)
-    {
-        kvs_vec.clear();
-        for (unsigned int i = 0; i < values.size(); i++) {
-            std::vector<KVPair> kvs;
-            DeSerializeValue(values[i], kvs);
-            kvs_vec.push_back(kvs);
-        }
-    }
-
     void TestCabinDB::StitchColumns(std::vector<std::string> &values, std::vector<KVPair> &kvs)
     {
         kvs.clear();
