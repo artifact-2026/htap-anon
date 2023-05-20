@@ -12,44 +12,31 @@ namespace rocksdb {
 
 namespace CABINDB_NAMESPACE {
 
-  void CreateAllColumnFamilyNames(int field_count, int num_levels,
-                    std::vector<std::vector<std::string> > &cfnames);
-  void CreateAllColumnFamilyDescriptors(std::vector<std::vector<std::string> > &cfnames,
+  void CreateAllColumnFamilyDescriptors(int field_count, int num_levels,
                     std::vector<rocksdb::ColumnFamilyDescriptor> &descriptors);
   void PopulateColumnGroups(std::vector<std::set<std::string> > &column_groups,
                     int num_levels, int fieldcount);
 
-  inline void CreateAllColumnFamilyNames(int field_count, int num_levels,
-                    std::vector<std::vector<std::string> > &cfnames)
-  {
-    for (int i = 0; i < num_levels; i++) {
-      std::vector<std::string> cfns;
+  inline void CreateAllColumnFamilyDescriptors(int field_count, int num_levels,
+                        std::vector<rocksdb::ColumnFamilyDescriptor> &descriptors) {
+    descriptors.push_back(rocksdb::ColumnFamilyDescriptor(rocksdb::kDefaultColumnFamilyName,
+			    rocksdb::ColumnFamilyOptions()));
+
+    for (int i = 1; i < num_levels; i++) {
       if (i == num_levels - 1) {
         for (int j = 0; j < field_count; j++) {
-          std::string cfn = "cf_" + std::to_string(i) + "_" + std::to_string(j);
-          cfns.push_back(cfn);
+          descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
+			    "cf_" + std::to_string(i) + "_" + std::to_string(j), 
+			    rocksdb::ColumnFamilyOptions()));
         }
-        cfnames.push_back(cfns);
-        continue;
-      }
-
-      for (int j = 0; j < pow(2, i); j++) {
-        std::string cfn = "cf_" + std::to_string(i) + "_" + std::to_string(j);
-        cfns.push_back(cfn);
-      }
-      cfnames.push_back(cfns);
-    }
-  }
-  
-  inline void CreateAllColumnFamilyDescriptors(
-                        std::vector<std::vector<std::string> > &cfnames,
-                        std::vector<rocksdb::ColumnFamilyDescriptor> &descriptors) {
-    for (auto cfns : cfnames) {
-      for (auto cfn : cfns) {
-        descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
-                              cfn, rocksdb::ColumnFamilyOptions()));
-      }
-    }
+      } else {
+	for (int j = 0; j < pow(2, i); j++) {
+	  descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
+			    "cf_" + std::to_string(i) + "_" + std::to_string(j),
+			    rocksdb::ColumnFamilyOptions()));
+	}
+      } 
+    }	    
   }
 
   inline void PopulateColumnGroups(std::vector<std::set<std::string> > &column_groups,

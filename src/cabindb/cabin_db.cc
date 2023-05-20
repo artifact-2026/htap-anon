@@ -45,9 +45,9 @@ namespace CABINDB_NAMESPACE {
         options.info_log.reset(new CabinDBLogger());
 
 	/*
-         * create column family names on every level
+         * creating column family descriptors
          */
-        CreateAllColumnFamilyNames(field_count, options.num_levels, leveled_cf_names_);
+        CreateAllColumnFamilyDescriptors(field_count, options.num_levels, cf_descriptors_);
 
         rocksdb::Status s = rocksdb::DB::Open(options,dbfilename,&db_);
         if(!s.ok()){
@@ -55,6 +55,11 @@ namespace CABINDB_NAMESPACE {
             exit(0);
         }
 
+	for (uint64_t i = 0; i < cf_descriptors_.size(); i++) {
+	  rocksdb::ColumnFamilyHandle* cf;
+	  s = db_->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), cf_descriptors_[i].name, &cf);
+          cfhandles_.push_back(cf);
+	}
     }
 
     Status CabinDB::Read(const std::string &table, const std::string &key, std::string &value)
