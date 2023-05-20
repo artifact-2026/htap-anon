@@ -3,23 +3,19 @@
 #   Application example: photo tagging; add a tag is an update, but most operations are to read tags
 #                        
 #   Read/update ratio: 95/5
-#   Default data size: 1 KB records (10 fields, 100 bytes each, plus key)
+#   Default data size: 1 KB records (16 fields, 64 bytes each, plus key)
 #   Request distribution: zipfian
-keylength=16
-fieldcount=10
-fieldlength=100
-poolname=cephlsm
-table=cephlsm2
+keylength=32
+fieldcount=16
+fieldlength=64
 
 recordcount=100000
 operationcount=100000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
-readallfields=false
+readallfields=true
 
 readproportion=0.95
 updateproportion=0.05
 scanproportion=0
 insertproportion=0
-
-

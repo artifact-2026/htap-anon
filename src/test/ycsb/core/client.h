@@ -184,8 +184,6 @@ inline int Client::TransactionInsert() {
   data::Column column2;
   column2.ParseFromString(serializedString);
 
-  std::cout << column2.name() << std::endl;
-
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextSequenceKey();
 

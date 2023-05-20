@@ -3,7 +3,7 @@
 #   Application example: user status updates; people want to read the latest
 #                        
 #   Read/update/insert ratio: 95/0/5
-#   Default data size: 1 KB records (10 fields, 100 bytes each, plus key)
+#   Default data size: 1 KB records (16 fields, 64 bytes each, plus key)
 #   Request distribution: latest
 
 # The insert order for this is hashed, not ordered. The "latest" items may be 
@@ -20,11 +20,12 @@ recordcount=100000
 operationcount=100000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
-readallfields=false
+readallfields=true
 
 readproportion=0.95
 updateproportion=0
 scanproportion=0
 insertproportion=0.05
 
+requestdistribution=latest
 

@@ -1,22 +1,19 @@
 # Yahoo! Cloud System Benchmark
-# Workload A: Update heavy workload
-#   Application example: Session store recording recent actions
+# Workload A: Write only workload
+#   Application example: Traffic monitoring sensor recording data
 #                        
-#   Read/update ratio: 50/50
-#   Default data size: 1 KB records (10 fields, 100 bytes each, plus key)
+#   Insert ratio: 100
+#   Default data size: ~1 KB records (16 fields, 64 bytes each, plus key)
 #   Request distribution: zipfian
-keylength=16
-fieldcount=3
-fieldlength=100
 
-recordcount=10
-operationcount=10
-
+keylength=32
+fieldcount=16
+fieldlength=64
+recordcount=100000
+operationcount=100000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
-readallfields=false
-
-readproportion=0.5
-updateproportion=0.5
+readproportion=0
+updateproportion=0
 scanproportion=0
-insertproportion=0
+insertproportion=1.0

@@ -1,15 +1,13 @@
 # Yahoo! Cloud System Benchmark
-# Workload F: Read-modify-write workload
-#   Application example: user database, where user records are read and modified by the user or to record user activity.
+# Workload F: mixed workload
+#   Application example: analytical workload, or business intelligence workload
 #                        
-#   Read/read-modify-write ratio: 50/50
-#   Default data size: 1 KB records (10 fields, 100 bytes each, plus key)
+#   Scan/write ratio: 100/0
+#   Default data size: 1 KB records (16 fields, 64 bytes each, plus key)
 #   Request distribution: zipfian
-keylength=16
-fieldcount=10
-fieldlength=100
-poolname=cephlsm
-table=cephlsm6
+keylength=32
+fieldcount=16
+fieldlength=64
 
 recordcount=100000
 operationcount=100000
@@ -17,10 +15,12 @@ workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readallfields=false
 
-readproportion=0.5
+readproportion=0.2
 updateproportion=0
-scanproportion=0
-insertproportion=0
-readmodifywriteproportion=0.5
+scanproportion=0.3
+insertproportion=0.5
+readmodifywriteproportion=0
 
-
+requestdistribution=latest
+maxscanlength=100
+scanlengthdistribution=uniform
