@@ -7,6 +7,7 @@
 #include <mutex>
 
 #include "util/random.h"
+#include "proto/columns.pb.h"
 
 namespace ROCKSDB_NAMESPACE {
 /* GLOBAL DIFINE */
@@ -97,12 +98,27 @@ void split(const std::string &fn, std::string *dir, std::string *file) {
   LOG_DEBUG("[OUT]%s | %s\n", dir->c_str(), file->c_str());
 }
 
+/*
+ * @brief: tokenize the input string
+ */
+void tokenize(const std::string &fn, const char* delim,
+              std::vector<std::string> &strs) {
+  char *token = std::strtok(const_cast<char*>(fn.c_str()), delim);
+  while (token != nullptr)
+  {
+      strs.push_back(std::string(token));
+      token = std::strtok(nullptr, delim);
+  }
+}
+
 // A file abstraction for reading sequentially through a file
 class LibradosSequentialFile : public SequentialFile {
   librados::IoCtx *_io_ctx;
   std::string _fid;
   std::string _hint;
   int _offset;
+  std::vector<std::string> _column_groups;
+  std::vector<int> _offsets;
 
 public:
   LibradosSequentialFile(librados::IoCtx *io_ctx, std::string fid,
@@ -130,9 +146,17 @@ public:
    */
   Status Read(size_t n, Slice *result, char *scratch) {
     LOG_DEBUG("[IN]%i\n", (int)n);
-    librados::bufferlist buffer;
+    librados::bufferlist buffer, in;
     Status s;
-    int r = _io_ctx->read(_fid, buffer, n, _offset);
+
+    int r;
+    if (_column_groups.size() == 0) {
+       r = _io_ctx->read(_fid, buffer, n, _offset);
+    } else {
+      //encode n and _offset  
+      //r = _io_ctx->exec(_fid, "lsm", "stitch_up_and_read", in, buffer);
+    }
+
     if (r >= 0) {
       buffer.begin().copy(r, scratch);
       *result = Slice(scratch, r);
@@ -278,6 +302,8 @@ class LibradosWritableFile : public WritableFile {
   librados::bufferlist _buffer; // write buffer
   uint64_t _buffer_size;        // write buffer size
   uint64_t _file_size;          // this file size doesn't include buffer size
+  int _level;         // level of the LSM tree this file is on [0 - level-0; -1 - leaf level]
+  std::vector<std::string> _fids; // physical fids
 
   /**
    * @brief assuming caller holds lock
@@ -287,6 +313,17 @@ class LibradosWritableFile : public WritableFile {
   int _SyncLocked() {
     // 1. sync append data to RADOS
     int r = _io_ctx->append(_fid, _buffer, _buffer_size);
+
+    /*int r = -1;
+    if (_level == 0) {
+      r = _io_ctx->append(_fid, _buffer, _buffer_size);
+    } else if (_level == -1) {
+      // split _buffer into columnar groups and write
+      r = _LeafLevelWrite();
+    } else {
+      // split _buffer into two column groups and write
+      r = _InnerLevelWrite();
+    }*/
     assert(r >= 0);
 
     // 2. update local variables
@@ -294,6 +331,89 @@ class LibradosWritableFile : public WritableFile {
       _buffer.clear();
       _file_size += _buffer_size;
       _buffer_size = 0;
+    }
+
+    return r;
+  }
+
+  /**
+   * @brief split buffer into pure columnar groups and write the leaf level
+   */
+  int _LeafLevelWrite() {
+    data::Table row_wise_tab;
+    row_wise_tab.ParseFromString(_buffer.c_str());
+    if (row_wise_tab.rows_size() == 0) {
+      LOG_DEBUG("[IN] buffer parsing into rows failed, %s\n", _buffer.c_str());
+      return -1;
+    }
+    uint32_t len = row_wise_tab.rows(0).columns_size();
+    if (len != _fids.size()) {
+      LOG_DEBUG("[IN] column families = %i | columns = %i\n", (int)_fids.size(), len);
+      return -1;
+    }
+
+    int r = -1;
+    for (uint32_t i = 0; i < len; i++) { // loop through every column
+      data::Table columnar_tab;
+      for (int j = 0; j < row_wise_tab.rows_size(); j++) {
+        data::Row* row = columnar_tab.add_rows();
+        data::Column* col = row->add_columns();
+        col->set_name(row_wise_tab.rows(j).columns(i).name());
+        col->set_value(row_wise_tab.rows(j).columns(i).value());
+      }
+      librados::bufferlist buf;
+      std::string data_str;
+      columnar_tab.SerializeToString(&data_str);
+      buf.append(data_str);
+      r = _io_ctx->append(_fids[i], buf, data_str.size());
+      assert(r >= 0);
+    }
+    return r;
+  }
+
+  /**
+   * @brief split buffer into column groups and write to an inner level
+   */
+  int _InnerLevelWrite() {
+    if (_fids.size() != 2) {
+      LOG_DEBUG("[IN] inner level _fids size %i not equal to 2\n", _fids.size());
+      return -1;
+    }
+    data::Table table;
+    table.ParseFromString(_buffer.c_str());
+    if (table.rows_size() == 0) {
+      LOG_DEBUG("[IN] buffer parsing into table failed, %s\n", _buffer.c_str());
+      return -1;
+    }
+    int num_cols = table.rows(0).columns_size()/2;
+    int r = -1;
+    std::vector<data::Table> tables;
+    for (int i = 0; i < 2; i++) {
+      data::Table tab;
+      tables.push_back(tab);
+    }
+
+    for (int i = 0; i < table.rows_size(); i++) {
+        data::Row* row1 = tables[0].add_rows();
+        data::Row* row2 = tables[1].add_rows();
+        for (int j = 0; j < num_cols; j++) {
+          data::Column* col1 = row1->add_columns();
+          col1->set_name(table.rows(i).columns(j).name());
+          col1->set_value(table.rows(i).columns(j).value());
+
+          data::Column* col2 = row2->add_columns();
+          col2->set_name(table.rows(i).columns(num_cols+j).name());
+          col2->set_value(table.rows(i).columns(num_cols+j).value());
+        }
+    }
+
+    for (int i = 0; i < 2; i++) {
+      std::string data_str;
+      tables[i].SerializeToString(&data_str);
+      librados::bufferlist buf;
+      buf.append(data_str);
+      r = _io_ctx->append(_fids[i], buf, data_str.size());
+      assert(r >= 0);
     }
 
     return r;
@@ -311,6 +431,22 @@ public:
     if (ret < 0) {
       _file_size = 0;
     }
+  }
+
+  LibradosWritableFile(librados::IoCtx *io_ctx, std::string fid,
+                       std::string hint, const EnvLibrados *const env,
+                       const EnvOptions &options, int level,
+                       std::vector<std::string> &fids) 
+  	: WritableFile(options), _io_ctx(io_ctx), _fid(fid), _hint(hint),
+        _env(env), _buffer(), _buffer_size(0), _file_size(0),
+        _level(level), _fids(fids) {
+    int ret = _io_ctx->stat(_fid, &_file_size, nullptr);
+
+    // if file not exist
+    if (ret < 0) {
+      _file_size = 0;
+    }
+
   }
 
   ~LibradosWritableFile() {
@@ -929,10 +1065,23 @@ Status EnvLibrados::NewWritableFile(const std::string &fname,
                                     std::unique_ptr<WritableFile> *result,
                                     const EnvOptions &options) {
   LOG_DEBUG("[IN]%s\n", fname.c_str());
+  std::vector<std::string> strs;
+  tokenize(fname, " ", strs);
+
   std::string dir, file, fid;
-  split(fname, &dir, &file);
+  split(strs[0], &dir, &file);
+  //split(fname, &dir, &file);
   Status s;
   std::string fpath = dir + "/" + file;
+
+  int level = 0;
+  std::vector<std::string> fids;
+  if (strs.size() > 2) { // 1st is dir+file; 2nd is level; 3rd and beyond are fids
+    level = std::stoi(strs[1]);
+    fids.insert(fids.end(), std::make_move_iterator(strs.begin() + 2),
+                    std::make_move_iterator(strs.end()));
+    strs.erase(strs.begin() + 2, strs.end());
+  }
 
   do {
     // 1. check if dir exist
@@ -956,7 +1105,7 @@ Status EnvLibrados::NewWritableFile(const std::string &fname,
     }
 
     result->reset(
-        new LibradosWritableFile(_GetIoctx(fpath), fid, fpath, this, options));
+        new LibradosWritableFile(_GetIoctx(fpath), fid, fpath, this, options, level, fids));
     s = Status::OK();
   } while (0);
 
