@@ -13,14 +13,21 @@ namespace ycsbc {
                                               &rocksdb_);
     }
 
+    /*
+    * Read is for point query over all columns
+    */
     int TestRocksDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
                       data::Row &result) 
     {
         std::string value;
         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &value);
+        
         if (s.ok()) {
+            result.ParseFromString(value);
             return 0;
         }
+
+        noResults++;
         return 1;
     }
 
@@ -35,7 +42,14 @@ namespace ycsbc {
             std::string value = it->value().ToString();
             data::Row row;
             row.ParseFromString(value);
-            result.push_back(row);
+
+	    if (fields != NULL) {
+              data::Row selectedColumns;
+              KeepOnlyRequestedFields(row, fields, selectedColumns);
+              result.push_back(selectedColumns);
+	    } else {
+	      result.push_back(row);
+            }	      
             it->Next();
         }
         
@@ -65,26 +79,26 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestRocksDB::SetOptions(utils::Properties &props) {
-
+    void TestRocksDB::SetOptions(utils::Properties &props)
+    {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
 
-        options_.max_background_jobs = 16;
-        options_.max_write_buffer_number = 32;
-        options_.target_file_size_base = 64ul * 1024 * 1024;
-        options_.write_buffer_size = 2 << 30;
-        options_.db_write_buffer_size = 2 << 30;
+        //options_.max_background_jobs = 16;
+        //options_.max_write_buffer_number = 32;
+        //options_.target_file_size_base = 64ul * 1024 * 1024;
+        //options_.write_buffer_size = 2 << 30;
+        //options_.db_write_buffer_size = 2 << 30;
 
-        options_.level0_file_num_compaction_trigger = 8;
-        options_.level0_slowdown_writes_trigger = 16;     
-        options_.level0_stop_writes_trigger = 16;
+        //options_.level0_file_num_compaction_trigger = 8;
+        //options_.level0_slowdown_writes_trigger = 16;     
+        //options_.level0_stop_writes_trigger = 16;
 
-        options_.use_direct_reads = true;
-        options_.use_direct_io_for_flush_and_compaction = true;
+        //options_.use_direct_reads = true;
+        //options_.use_direct_io_for_flush_and_compaction = true;
 
-        options_.max_open_files = 20480;
-        options_.max_file_opening_threads = 32;
+        //options_.max_open_files = 20480;
+        //options_.max_file_opening_threads = 32;
 
         uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
         uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));
@@ -102,14 +116,19 @@ namespace ycsbc {
         }
     }
 
-    void TestRocksDB::SerializeValue(std::vector<KVPair> &kvs, std::string &value) {
-
-    }
-
-    void TestRocksDB::DeSerializeValue(std::string &value,
-                          const std::vector<std::string> *fields,
-                          std::vector<KVPair> &kvs) 
+    void TestRocksDB::KeepOnlyRequestedFields(data::Row &row,
+                    const std::vector<std::string> *fields, data::Row &selectedColumns)
     {
-
+        for (auto field : *fields) {
+            for (int i = 0; i < row.columns_size(); i++) {
+                if (row.columns(i).name().compare(field) == 0) {
+                    data::Column* selectedColumn = selectedColumns.add_columns();
+                    selectedColumn->set_name(row.columns(i).name());
+                    selectedColumn->set_value(row.columns(i).value());
+                    break;
+                }
+            }
+        }
     }
+
 }

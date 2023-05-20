@@ -54,6 +54,8 @@ class TestRocksDB : public DB{
         void DeSerializeValue(std::string &value,
                               const std::vector<std::string> *fields,
                               std::vector<KVPair> &kvs);
+	void KeepOnlyRequestedFields(data::Row &row,
+                    const std::vector<std::string> *fields, data::Row &selectedColumns);
 };  
 
 }
