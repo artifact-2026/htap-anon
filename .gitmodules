@@ -1,6 +1,3 @@
-[submodule "rocksdb-rados-env"]
-	path = src/cabindb/rocksdb-rados-env
-	url = https://github.com/riversand963/rocksdb-rados-env.git
 [submodule "lib/rocksdb"]
 	path = lib/rocksdb
 	url = https://github.com/facebook/rocksdb.git
