@@ -40,14 +40,12 @@ namespace CABINDB_NAMESPACE {
         options.compaction_style = rocksdb::kCompactionStyleNone;
         options.level0_slowdown_writes_trigger = 3000;
         options.level0_stop_writes_trigger = 5000;
-        options.listeners.emplace_back(new CabinCompactor(options));;
-
         options.info_log.reset(new CabinDBLogger());
 
 	/*
          * creating column family descriptors
          */
-        CreateAllColumnFamilyDescriptors(field_count, options.num_levels, cf_descriptors_);
+        CreateAllColumnFamilyDescriptors(field_count, options.num_levels, cf_descriptors_, leveled_cf_names_);
 
         rocksdb::Status s = rocksdb::DB::Open(options,dbfilename,&db_);
         if(!s.ok()){
@@ -60,6 +58,17 @@ namespace CABINDB_NAMESPACE {
 	  s = db_->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), cf_descriptors_[i].name, &cf);
           cfhandles_.push_back(cf);
 	}
+
+	std::map<std::string, rocksdb::ColumnFamilyHandle*> cf_handles;
+        int i = 0;
+        for (auto cf_names : leveled_cf_names_) {
+            for (auto cf_name : cf_names) {
+                cf_handles[cf_name] = cfhandles_[i];
+            }
+        }
+
+        options_.listeners.emplace_back(new CabinCompactor(options, options_.num_levels,
+                                       leveled_cf_names_, cf_handles));
     }
 
     Status CabinDB::Read(const std::string &table, const std::string &key, std::string &value)
