@@ -1024,8 +1024,18 @@ EnvLibrados::NewRandomAccessFile(const std::string &fname,
                                  std::unique_ptr<RandomAccessFile> *result,
                                  const EnvOptions & /*options*/) {
   LOG_DEBUG("[IN]%s\n", fname.c_str());
+  std::vector<std::string> fname_strs;
+  tokenize(fname, " ", fname_strs);
+
   std::string dir, file, fid;
-  split(fname, &dir, &file);
+  if (fname_strs.size() > 1) {
+    split(fname_strs[0], &dir, &file);
+    assert(fname_strs[1] == "compaction");
+  } else {
+    split(fname, &dir, &file);
+  }
+
+  //split(fname, &dir, &file);
   Status s;
   std::string fpath = dir + "/" + file;
   do {
@@ -1130,9 +1140,29 @@ Status EnvLibrados::ReuseWritableFile(const std::string &new_fname,
                                       std::unique_ptr<WritableFile> *result,
                                       const EnvOptions &options) {
   LOG_DEBUG("[IN]%s => %s\n", old_fname.c_str(), new_fname.c_str());
+  std::vector<std::string> new_strs;
+  std::vector<std::string> old_strs;
+  tokenize(new_fname, " ", new_strs);
+  tokenize(old_fname, " ", old_strs);
+  
   std::string src_fid, tmp_fid, src_dir, src_file, dst_dir, dst_file;
-  split(old_fname, &src_dir, &src_file);
-  split(new_fname, &dst_dir, &dst_file);
+  split(old_strs[0], &src_dir, &src_file);
+  split(new_strs[0], &dst_dir, &dst_file);
+
+  int level = std::stoi(new_strs[1]);
+
+  std::vector<std::string> dest_fids;
+  dest_fids.insert(dest_fids.end(), std::make_move_iterator(new_strs.begin() + 2), 
+                    std::make_move_iterator(new_strs.end()));
+  new_strs.erase(new_strs.begin() + 7, new_strs.end());
+
+  std::vector<std::string> src_fids;
+  src_fids.insert(src_fids.end(), std::make_move_iterator(old_strs.begin() + 2), 
+                    std::make_move_iterator(old_strs.end()));
+  new_strs.erase(old_strs.begin() + 7, old_strs.end());
+
+  //split(old_fname, &src_dir, &src_file);
+  //split(new_fname, &dst_dir, &dst_file);
 
   std::string src_fpath = src_dir + "/" + src_file;
   std::string dst_fpath = dst_dir + "/" + dst_file;
@@ -1144,7 +1174,8 @@ Status EnvLibrados::ReuseWritableFile(const std::string &new_fname,
     }
 
     result->reset(new LibradosWritableFile(_GetIoctx(dst_fpath), src_fid,
-                                           dst_fpath, this, options));
+                                           dst_fpath, this, options,
+					   level, src_fids));
   } while (0);
 
   LOG_DEBUG("[OUT]%s\n", r.ToString().c_str());

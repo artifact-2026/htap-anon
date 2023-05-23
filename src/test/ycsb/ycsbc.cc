@@ -61,6 +61,26 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
   return oks;
 }
 
+int DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int throughputType) {
+  db->Init();
+  ycsbc::Client client(*db, *wl);
+  int oks = 0;
+  std::chrono::time_point start = std::chrono::steady_clock::now();
+
+  while (true) {
+    if (std::chrono::steady_clock::now() - start > std::chrono::seconds(60))
+      break;
+
+    if (throughputType == 1) {
+      oks += client.DoRead();
+    } else if (throughputType == 2) {
+      oks += client.DoInsert();
+    }
+  }
+  db->Close();
+  return oks;
+}
+
 int main( const int argc, const char *argv[]) {
   utils::Properties props;
   std::string databasepath = "";
@@ -85,9 +105,11 @@ int main( const int argc, const char *argv[]) {
 
   const bool load = utils::StrToBool(props.GetProperty("load","false"));
   const bool run = utils::StrToBool(props.GetProperty("run","false"));
+  const bool throughput = utils::StrToBool(props.GetProperty("throughput","false"));
   const int num_threads = stoi(props.GetProperty("threadcount", "1"));
   const bool print_stats = utils::StrToBool(props["dbstatistics"]);
   const bool wait_for_balance = utils::StrToBool(props["dbwaitforbalance"]);
+  const int throughput_type = stoi(props.GetProperty("throughputtype", "1"));
 
   string morerun = props["morerun"];
 
@@ -128,7 +150,40 @@ int main( const int argc, const char *argv[]) {
       printf("-------------------------------------------\n");
     }
 
-  } 
+  }
+
+  if( throughput ) {
+    // Measures throughput
+    ycsbc::CoreWorkload wl;
+    wl.Init(props);
+
+    uint64_t work_start = get_now_micros();
+    total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
+    for (int i = 0; i < num_threads; ++i) {
+      actual_ops.emplace_back(async(launch::async,
+          DelegateForThroughput, db, &wl, throughput_type));
+    }
+    assert((int)actual_ops.size() == num_threads);
+
+    sum = 0;
+    for (auto &n : actual_ops) {
+      assert(n.valid());
+      sum += n.get();
+    }
+    uint64_t work_end = get_now_micros();
+    uint64_t use_time = work_end - work_start;
+    printf("********** throughput result **********\n");
+    printf("throughput records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
+    printf("*********************************\n");
+
+    if ( print_stats ) {
+      printf("-------------- db statistics --------------\n");
+      db->PrintStats();
+      printf("-------------------------------------------\n");
+    }
+
+  }
+
   if( run ) {
     // Peforms transactions
     ycsbc::CoreWorkload wl;
@@ -164,7 +219,7 @@ int main( const int argc, const char *argv[]) {
     }
 
     printf("********** run result **********\n");
-    printf("all opeartion records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
+    printf("all operation records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
     if ( temp_cnt[ycsbc::INSERT] )          printf("insert ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT]*1e-6, 1.0 * temp_cnt[ycsbc::INSERT] * 1e6 / temp_time[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT] / temp_cnt[ycsbc::INSERT]);
     if ( temp_cnt[ycsbc::READ] )            printf("read ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::READ], 1.0 * temp_time[ycsbc::READ]*1e-6, 1.0 * temp_cnt[ycsbc::READ] * 1e6 / temp_time[ycsbc::READ], 1.0 * temp_time[ycsbc::READ] / temp_cnt[ycsbc::READ]);
     if ( temp_cnt[ycsbc::UPDATE] )          printf("update ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::UPDATE], 1.0 * temp_time[ycsbc::UPDATE]*1e-6, 1.0 * temp_cnt[ycsbc::UPDATE] * 1e6 / temp_time[ycsbc::UPDATE], 1.0 * temp_time[ycsbc::UPDATE] / temp_cnt[ycsbc::UPDATE]);
@@ -237,7 +292,7 @@ int main( const int argc, const char *argv[]) {
       }
 
       printf("********** more run result **********\n");
-      printf("all opeartion records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
+      printf("all operation records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
       if ( temp_cnt[ycsbc::INSERT] )          printf("insert ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT]*1e-6, 1.0 * temp_cnt[ycsbc::INSERT] * 1e6 / temp_time[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT] / temp_cnt[ycsbc::INSERT]);
       if ( temp_cnt[ycsbc::READ] )            printf("read ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::READ], 1.0 * temp_time[ycsbc::READ]*1e-6, 1.0 * temp_cnt[ycsbc::READ] * 1e6 / temp_time[ycsbc::READ], 1.0 * temp_time[ycsbc::READ] / temp_cnt[ycsbc::READ]);
       if ( temp_cnt[ycsbc::UPDATE] )          printf("update ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::UPDATE], 1.0 * temp_time[ycsbc::UPDATE]*1e-6, 1.0 * temp_cnt[ycsbc::UPDATE] * 1e6 / temp_time[ycsbc::UPDATE], 1.0 * temp_time[ycsbc::UPDATE] / temp_cnt[ycsbc::UPDATE]);
@@ -288,6 +343,38 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("threadcount", argv[argindex]);
       argindex++;
+    } else if(strcmp(argv[argindex],"-throughput")==0){
+      argindex++;
+      if(argindex >= argc){
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("throughput",argv[argindex]);
+      argindex++;
+    } else if (strcmp(argv[argindex], "-fieldcount") == 0) {
+      argindex++;
+      if (argindex >= argc) {
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("fieldcount", argv[argindex]);
+      argindex++;
+    } else if (strcmp(argv[argindex], "-levels") == 0) {
+      argindex++;
+      if (argindex >= argc) {
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("levels", argv[argindex]);
+      argindex++;
+    } else if (strcmp(argv[argindex], "-throughputtype") == 0) {
+      argindex++;
+      if (argindex >= argc) {
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("throughputtype", argv[argindex]);
+      argindex++;  
     } else if (strcmp(argv[argindex], "-db") == 0) {
       argindex++;
       if (argindex >= argc) {
@@ -428,13 +515,15 @@ inline bool StrStartWith(const char *str, const char *pre) {
 }
 
 void Init(utils::Properties &props, std::string dbname, std::string dbpath){
-  //props.SetProperty("dbname","leveldb");
-  //props.SetProperty("dbpath","/tmp/test-leveldb");
   props.SetProperty("dbname", dbname);
   props.SetProperty("dbpath", dbpath);
   props.SetProperty("load","false");
   props.SetProperty("run","false");
   props.SetProperty("threadcount","1");
+  props.SetProperty("throughput","false");
+  props.SetProperty("throughputtype", "1");
+  props.SetProperty("fieldcount","0");
+  props.SetProperty("levels", "2");
   props.SetProperty("dboption","0");
   props.SetProperty("dbstatistics","false");
   props.SetProperty("dbwaitforbalance","false");

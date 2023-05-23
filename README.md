@@ -59,13 +59,11 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % cd htap
 % git submodule update --init --recursive
 
-#### To build:
-% sudo apt-get install cmake libgflags-dev
-% sudo apt-get install librados-dev libradospp-dev
+% sudo apt-get install librados-dev libradospp-dev protobuf-compiler
 % mkdir build
 % cd build
-% cmake -S .. -B .
-% make
+% cmake -S .. -B . -G Ninja / cmake -S .. -B .
+% ninja/make
 
 #### To run: 
 % ./src/test/ycsb/ycsb_test -db cabindb -dbpath /tmp/test-cabindb -P "../src/test/ycsb/workloads/test_workloada.spec" -threads 1 -fieldcount 0 -load true -run false -throughput false
@@ -74,3 +72,11 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % ceph config set mon mon_allow_pool_delete true (once)
 % ceph config set global osd_max_object_size 2G
 % ceph osd pool delete cabindb_pool cabindb_pool --yes-i-really-really-mean-it
+
+#### Useful commands:
+% sudo systemctl stop ceph\*.service ceph\*.target (stops all daemons)
+stash: 
+[submodule "rocksdb-rados-env"]
+        path = src/cabindb/rocksdb-rados-env
+        url = https://github.com/riversand963/rocksdb-rados-env.git
+
