@@ -12,6 +12,7 @@ add_subdirectory(lib/rocksdb)
 add_subdirectory(src/cabindb)
 add_subdirectory(src/test/ycsb)
 add_subdirectory(src/proto)
+add_subdirectory(src/example)
 
 include_directories(${CMAKE_SOURCE_DIR}/lib/rocksdb/include)
 include_directories(/usr/include)
