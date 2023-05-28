@@ -42,7 +42,7 @@ typedef std::pair<std::string, std::string> KVPair;
 
 class CabinDB {
   public:
-    CabinDB(const char *dbfilename, rocksdb::Options& options, int field_count);
+    CabinDB(const char *dbfilename, rocksdb::Options& options, int field_count, bool bootstrap);
 
     Status Read(const std::string &table, const std::string &key, std::string &value);
 
@@ -52,7 +52,7 @@ class CabinDB {
 
     Status Delete(const std::string &table, const std::string &key);
 
-    ~CabinDB() {}
+    ~CabinDB();
 
   private:
     rocksdb::DB *db_;

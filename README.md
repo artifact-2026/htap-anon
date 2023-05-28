@@ -59,14 +59,14 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % cd htap
 % git submodule update --init --recursive
 
-% sudo apt-get install librados-dev libradospp-dev protobuf-compiler
+% sudo apt-get install cmake libgflags-dev librados-dev libradospp-dev protobuf-compiler ninja-build
 % mkdir build
 % cd build
 % cmake -S .. -B . -G Ninja / cmake -S .. -B .
 % ninja/make
 
 #### To run: 
-% ./src/test/ycsb/ycsb_test -db cabindb -dbpath /tmp/test-cabindb -P "../src/test/ycsb/workloads/test_workloada.spec" -threads 1 -fieldcount 0 -load true -run false -throughput false
+% ./src/test/ycsb/ycsb_test -db cabindb -dbpath /tmp/test-cabindb -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 1 -load true -run false -throughput false
 
 #### To rerun:
 % ceph config set mon mon_allow_pool_delete true (once)

@@ -12,17 +12,15 @@ namespace rocksdb {
 
 namespace CABINDB_NAMESPACE {
 
-  void CreateAllColumnFamilyDescriptors(int field_count, int num_levels,
-                    std::vector<rocksdb::ColumnFamilyDescriptor> &descriptors,
-		    std::vector<std::vector<std::string> > &leveled_cf_names);
+  void CreateLeveledColumnFamilyNames(int field_count, int num_levels,
+                    std::vector<std::vector<std::string> > &leveled_cf_names);
+  void CreateAllColumnFamilyDescriptors(std::vector<rocksdb::ColumnFamilyDescriptor> &descriptors,
+		                std::vector<std::vector<std::string> > &leveled_cf_names);
   void PopulateColumnGroups(std::vector<std::set<std::string> > &column_groups,
                     int num_levels, int fieldcount);
 
-  inline void CreateAllColumnFamilyDescriptors(int field_count, int num_levels,
-                        std::vector<rocksdb::ColumnFamilyDescriptor> &descriptors,
-			std::vector<std::vector<std::string> > &leveled_cf_names) {
-    descriptors.push_back(rocksdb::ColumnFamilyDescriptor(rocksdb::kDefaultColumnFamilyName,
-			    rocksdb::ColumnFamilyOptions()));
+  inline void CreateLeveledColumnFamilyNames(int field_count, int num_levels,
+                    std::vector<std::vector<std::string> > &leveled_cf_names) {
     std::vector<std::string> level_0_cf_names;
     level_0_cf_names.push_back(rocksdb::kDefaultColumnFamilyName);
     leveled_cf_names.push_back(level_0_cf_names);
@@ -30,20 +28,29 @@ namespace CABINDB_NAMESPACE {
     for (int i = 1; i < num_levels; i++) {
       int column_groups;
       if (i == num_levels - 1) {
- 	column_groups = field_count;
+ 	      column_groups = field_count;
       } else {
-	column_groups = pow(2, i);
+	      column_groups = pow(2, i);
       }
 
       std::vector<std::string> level_i_cf_names;
       for (int j = 0; j < column_groups; j++) {
-        descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
-			    "cf_" + std::to_string(i) + "_" + std::to_string(j), 
-			    rocksdb::ColumnFamilyOptions()));
         level_i_cf_names.push_back("cf_" + std::to_string(i) + "_" + std::to_string(j));
       }
       leveled_cf_names.push_back(level_i_cf_names);
-    }	    
+    }
+  }
+
+  inline void CreateAllColumnFamilyDescriptors(
+                        std::vector<rocksdb::ColumnFamilyDescriptor> &descriptors,
+			                  std::vector<std::vector<std::string> > &leveled_cf_names)
+  {
+    for (auto cf_names : leveled_cf_names) {
+      for (auto name : cf_names) {
+        descriptors.push_back(rocksdb::ColumnFamilyDescriptor(name,
+                                          rocksdb::ColumnFamilyOptions()));
+      }
+    }
   }
 
   inline void PopulateColumnGroups(std::vector<std::set<std::string> > &column_groups,

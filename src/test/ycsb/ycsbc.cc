@@ -2,8 +2,6 @@
 //  ycsbc.cc
 //  YCSB-C
 //
-//  Created by Jinglei Ren on 12/19/14.
-//  Copyright (c) 2022 Jinglei Ren <jinglei@ren.systems>.
 //
 
 #include <cstring>
@@ -343,6 +341,14 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("threadcount", argv[argindex]);
       argindex++;
+    } else if(strcmp(argv[argindex],"-bootstrap")==0){
+      argindex++;
+      if(argindex >= argc){
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("bootstrap",argv[argindex]);
+      argindex++;  
     } else if(strcmp(argv[argindex],"-throughput")==0){
       argindex++;
       if(argindex >= argc){
@@ -519,6 +525,7 @@ void Init(utils::Properties &props, std::string dbname, std::string dbpath){
   props.SetProperty("dbpath", dbpath);
   props.SetProperty("load","false");
   props.SetProperty("run","false");
+  props.SetProperty("bootstrap","true");
   props.SetProperty("threadcount","1");
   props.SetProperty("throughput","false");
   props.SetProperty("throughputtype", "1");
