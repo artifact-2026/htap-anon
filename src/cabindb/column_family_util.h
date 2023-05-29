@@ -3,11 +3,13 @@
 
 #include <vector>
 #include <set>
+#include <cmath>
 #include "cabindb_namespace.h"
 
 namespace rocksdb {
     class ColumnFamilyDescriptor;
     class ColumnFamilyHandle;
+    class ColumnFamilyOptions;
 }
 
 namespace CABINDB_NAMESPACE {
@@ -45,10 +47,12 @@ namespace CABINDB_NAMESPACE {
                         std::vector<rocksdb::ColumnFamilyDescriptor> &descriptors,
 			                  std::vector<std::vector<std::string> > &leveled_cf_names)
   {
-    for (auto cf_names : leveled_cf_names) {
-      for (auto name : cf_names) {
-        descriptors.push_back(rocksdb::ColumnFamilyDescriptor(name,
-                                          rocksdb::ColumnFamilyOptions()));
+    descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
+                rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions()));
+    for (uint64_t i = 1; i < leveled_cf_names.size(); i++) {
+      for (auto name : leveled_cf_names[i]) {
+        descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
+                name, rocksdb::ColumnFamilyOptions()));
       }
     }
   }

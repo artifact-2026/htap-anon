@@ -47,7 +47,7 @@ namespace CABINDB_NAMESPACE {
          */
         CreateLeveledColumnFamilyNames(field_count, options.num_levels, leveled_cf_names_);
         rocksdb::Status s;
-
+        
         if (bootstrap) {
             s = rocksdb::DB::Open(options,dbfilename,&db_);
             if(!s.ok()){
@@ -55,41 +55,43 @@ namespace CABINDB_NAMESPACE {
                 exit(0);
             }
 
+            cfhandles_map_[rocksdb::kDefaultColumnFamilyName] = db_->DefaultColumnFamily();
+
             for (uint64_t i = 1; i < leveled_cf_names_.size(); i++) {
                 for (auto cfname : leveled_cf_names_[i]) {
                     rocksdb::ColumnFamilyHandle* cf;
 	                s = db_->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), cfname, &cf);
-                    cfhandles_.push_back(cf);
+                    cfhandles_map_[cfname] = cf;
                 }  
 	        }
         } else {
-            CreateAllColumnFamilyDescriptors(cf_descriptors_, leveled_cf_names_);
-            s = rocksdb::DB::Open(options,dbfilename,cf_descriptors_,&cfhandles_,&db_);
-        }
+            std::vector<rocksdb::ColumnFamilyDescriptor> cf_descriptors;
+            std::vector<rocksdb::ColumnFamilyHandle*> cfhandles;
 
-        /**
-         * Make a column family handle map for the custom compactor
-        */
-	    std::map<std::string, rocksdb::ColumnFamilyHandle*> cf_handles;
-        int i = 0;
-        for (auto cf_names : leveled_cf_names_) {
-            for (auto cf_name : cf_names) {
-                cf_handles[cf_name] = cfhandles_[i];
+            CreateAllColumnFamilyDescriptors(cf_descriptors, leveled_cf_names_);
+            s = rocksdb::DB::Open(options,dbfilename,cf_descriptors,&cfhandles,&db_);
+
+            int i = 0;
+            for (auto cf_names : leveled_cf_names_) {
+                for (auto cf_name : cf_names) {
+                    cfhandles_map_[cf_name] = cfhandles[i];
+                    i += 1;
+                }
             }
         }
 
         options_.listeners.emplace_back(new CabinCompactor(options, options_.num_levels,
-                                       leveled_cf_names_, cf_handles));
+                                       leveled_cf_names_, cfhandles_map_));
     }
 
     Status CabinDB::Read(const std::string &table, const std::string &key, std::string &value)
     {
         value.clear();
-        rocksdb::Status s = db_->Get(rocksdb::ReadOptions(),key,&value);
+        rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), cfhandles_map_[table], key, &value);
+        
         if (s.ok()) {
             return Status::kOK;
-        }
-        if (s.IsNotFound()) {
+        } else if (s.IsNotFound()) {
             return Status::kNotFound;
         }
         return Status::kError;
@@ -138,8 +140,8 @@ namespace CABINDB_NAMESPACE {
     CabinDB::~CabinDB()
     {
         rocksdb::Status s;
-        for (auto handle : cfhandles_) {
-            s = db_->DestroyColumnFamilyHandle(handle);
+        for (auto handle : cfhandles_map_) {
+            s = db_->DestroyColumnFamilyHandle(handle.second);
         }
         delete db_;
     }

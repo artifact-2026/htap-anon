@@ -59,8 +59,7 @@ class CabinDB {
     std::string dbpath_;
     rocksdb::Options options_;
     std::vector<std::vector<std::string> > leveled_cf_names_;
-    std::vector<rocksdb::ColumnFamilyDescriptor> cf_descriptors_;
-    std::vector<rocksdb::ColumnFamilyHandle*> cfhandles_;
+    std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_map_;
 };
 
 }
