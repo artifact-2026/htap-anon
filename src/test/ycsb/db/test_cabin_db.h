@@ -43,14 +43,17 @@ class TestCabinDB : public DB{
     
     private:
         cabindb::CabinDB* cabindb_;
-        std::vector<std::string> cfshards_;
         unsigned noResultsInDefaultColumnFamily;
         unsigned noResults;
+        std::map<std::string, std::map<int, int> > field_to_cfpositions_map_;
         std::shared_ptr<rocksdb::Cache> cache_;
         std::shared_ptr<rocksdb::Statistics> dbstats_;
 
         void SetOptions(rocksdb::Options *options, utils::Properties &props);
         void StitchColumns(std::vector<std::string> &values, std::vector<KVPair> &kvs);
+        void PopulateFieldToColumnFamilyNameMap(utils::Properties &props);
+        void GetColumnFamiliesOnOneLevel(const std::vector<std::string> *fields,
+                                         int level, std::set<int> &cf_positions_on_the_level);
 
 };
 

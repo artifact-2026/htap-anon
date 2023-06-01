@@ -52,6 +52,8 @@ class CabinDB {
 
     Status Delete(const std::string &table, const std::string &key);
 
+    std::vector<std::vector<std::string> > GetColumnFamilyNames();
+
     ~CabinDB();
 
   private:

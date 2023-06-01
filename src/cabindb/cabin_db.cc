@@ -146,4 +146,9 @@ namespace CABINDB_NAMESPACE {
         delete db_;
     }
 
+    std::vector<std::vector<std::string> > CabinDB::GetColumnFamilyNames()
+    {
+        return leveled_cf_names_;
+    }
+
 } // namespace CABINDB_NAMESPACE

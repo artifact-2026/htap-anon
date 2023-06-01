@@ -53,38 +53,62 @@ namespace ycsbc {
     }
 
     int TestCabinDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
-                      data::Row &result) 
+                      data::Row &result)
     {
-        std::string value;
-        cabindb::Status s = cabindb_->Read(table, key, value);
-        if (s == cabindb::Status::kOK) {
-            //DeSerializeValue(value, result);
-            return 0;
-        }
+        cabindb::Status s;
+        std::string value = "";
+        std::vector<std::vector<std::string> > columnfamilies = cabindb_->GetColumnFamilyNames();
 
-        if (s == cabindb::Status::kNotFound) {
-            noResultsInDefaultColumnFamily++;
-            std::vector<std::string> values;
-            for (auto field : *fields) {
-                value.clear();
-                cabindb::Status ss = cabindb_->Read(field, key, value);
-                if (ss == cabindb::Status::kOK) {
-                    values.push_back(value);
-                    continue;
+        if (fields == NULL) { // read all columns
+            for (uint64_t i = 0; i < columnfamilies.size(); i++) {
+                std::string foundValue;
+                for (auto cfname : columnfamilies[i]) {
+                    foundValue.clear();
+                    s = cabindb_->Read(cfname, key, foundValue);
+                    if (s == cabindb::Status::kOK) {
+                        value += foundValue;
+                    } else if (s == cabindb::Status::kNotFound) {
+                        break;
+                    } else {
+                        return -1;
+                    }
                 }
-                if (ss == cabindb::Status::kNotFound) {
-                    noResults++;
+                if (s == cabindb::Status::kOK && value != "") {
                     return 0;
                 }
-                std::cerr<<"read error"<<std::endl;
             }
-            //StitchColumns(values, result);
-            return 0;
+        } else { // read subset columns
+            for (uint64_t i = 0; i < columnfamilies.size(); i++) {
+                std::set<int> cf_positions_on_the_level;
+                if (i == 0) {
+                    cf_positions_on_the_level.insert(0);
+                } else {
+                    GetColumnFamiliesOnOneLevel(fields, i, cf_positions_on_the_level);
+                }
+
+                for (uint64_t j = 0; j < columnfamilies[i].size(); j++) {
+                    if (cf_positions_on_the_level.find(j) != cf_positions_on_the_level.end()) {
+                        continue;
+                    }
+
+                    std::string foundValue;
+                    s = cabindb_->Read(columnfamilies[i][j], key, foundValue);
+                    if (s == cabindb::Status::kOK) {
+                        value += foundValue;
+                    } else if (s == cabindb::Status::kNotFound) {
+                        break;
+                    } else {
+                        return -1;
+                    }
+                }
+                if (s == cabindb::Status::kOK && value != "") {
+                    return 0;
+                }
+            }
         }
 
         noResults++;
-        std::cerr<<"read error"<<std::endl;
-        return 1;
+        return 0;
     }
 
     int TestCabinDB::Scan(const std::string &table, const std::string &key, int len,
@@ -92,20 +116,66 @@ namespace ycsbc {
                       std::vector<data::Row> &result) 
     {
         std::vector<std::string> values;
-        cabindb::Status s = cabindb_->Scan(table, key, len, values);
-        result.clear();
-        if (s == cabindb::Status::kOK) {
-            //DeSerializeValues(values, result);
-            noResultsInDefaultColumnFamily += (len - values.size());
-            return 0;
+        for (int i=0; i < len; i++) {
+            values.push_back("");
+        }
+        cabindb::Status s;
+        std::vector<std::vector<std::string> > columnfamilies = cabindb_->GetColumnFamilyNames();
+
+        if (fields == NULL) { // scan all columns
+            for (uint64_t i = 0; i < columnfamilies.size(); i++) {
+                std::vector<std::string> foundValues;
+                for (auto cfname : columnfamilies[i]) {
+                    foundValues.clear();
+                    s = cabindb_->Scan(cfname, key, len, foundValues);
+                    if (s == cabindb::Status::kOK) {
+                        for (int j=0; j<len; j++) {
+                            values[j] += foundValues[j];
+                        }
+                    } else if (s == cabindb::Status::kNotFound) {
+                        break;
+                    } else {
+                        return -1;
+                    }
+                }
+                if (s == cabindb::Status::kOK && values.size() != 0) {
+                    return 0;
+                }
+            }
+        } else { // scan subset of columns
+            for (uint64_t i = 0; i < columnfamilies.size(); i++) {
+                std::set<int> cf_positions_on_the_level;
+                if (i == 0) {
+                    cf_positions_on_the_level.insert(0);
+                } else {
+                    GetColumnFamiliesOnOneLevel(fields, i, cf_positions_on_the_level);
+                }
+
+                for (uint64_t j = 0; j < columnfamilies[i].size(); j++) {
+                    if (cf_positions_on_the_level.find(j) != cf_positions_on_the_level.end()) {
+                        continue;
+                    }
+
+                    std::string foundValues;
+                    s = cabindb_->Scan(columnfamilies[i][j], key, len, foundValues);
+                    if (s == cabindb::Status::kOK) {
+                        for (int k=0; k<len; k++) {
+                            values[k] += foundValues[k];
+                        }
+                    } else if (s == cabindb::Status::kNotFound) {
+                        break;
+                    } else {
+                        return -1;
+                    }
+                }
+                if (s == cabindb::Status::kOK && values.size() != 0) {
+                    return 0;
+                }
+            }
         }
 
-        if (s == cabindb::Status::kNotFound) {
-            noResultsInDefaultColumnFamily += len;
-            return 0;
-        }
-        
-        return 1;
+        noResults++;
+        return 0;
     }
 
     int TestCabinDB::Insert(const std::string &table, const std::string &key, std::string &values)
@@ -160,7 +230,28 @@ namespace ycsbc {
                 kvs.push_back(pair);
             }
         }
+    }
 
+    void TestCabinDB::PopulateFieldToColumnFamilyNameMap(utils::Properties &props)
+    {
+        int field_count = stoi(props.GetProperty("fieldcount", "0"));
+        int num_levels = stoi(props.GetProperty("levels", "0"));
+        for (int i = 0; i < field_count; i++) {
+            std::map<int, int> columnFamilyPositionsOnLevel;
+            for (int j = 0; j < num_levels; j++) {
+                columnFamilyPositionsOnLevel[j] = i / (field_count/pow(2, j));
+            }
+            field_to_cfpositions_map_["field"+std::to_string(i)] = columnFamilyPositionsOnLevel;
+        }
+    }
+
+    void TestCabinDB::GetColumnFamiliesOnOneLevel(const std::vector<std::string> *fields,
+                                         int level, std::set<int> &cf_positions_on_the_level)
+    {
+        cf_positions_on_the_level.clear();
+        for (auto field : *fields) {
+            cf_positions_on_the_level.insert(field_to_cfpositions_map_[field][level]);
+        }
     }
 
 }
