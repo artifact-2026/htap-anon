@@ -38,8 +38,8 @@ namespace CABINDB_NAMESPACE {
         options.create_if_missing = true;
 
         options.compaction_style = rocksdb::kCompactionStyleNone;
-        options.level0_slowdown_writes_trigger = 3000;
-        options.level0_stop_writes_trigger = 5000;
+        options.level0_slowdown_writes_trigger = 3;
+        options.level0_stop_writes_trigger = 5;
         options.info_log.reset(new CabinDBLogger());
 
 	    /*

@@ -22,19 +22,19 @@ namespace ycsbc {
         options->compression = rocksdb::kNoCompression;
         //options->enable_pipelined_write = true;
 
-        options->max_background_jobs = 2;
-        options->max_bytes_for_level_base = 32ul * 1024 * 1024;
-        options->write_buffer_size = 32ul * 1024 * 1024;
-        options->max_write_buffer_number = 2;
-        options->target_file_size_base = 4ul * 1024 * 1024;
+        //options->max_background_jobs = 2;
+        //options->max_bytes_for_level_base = 32ul * 1024 * 1024;
+        //options->write_buffer_size = 32ul * 1024 * 1024;
+        //options->max_write_buffer_number = 2;
+        //options->target_file_size_base = 4ul * 1024 * 1024;
 
 	    options->num_levels = stoi(props.GetProperty("levels", "4"));
-        options->level0_file_num_compaction_trigger = 4;
-        options->level0_slowdown_writes_trigger = 8;     
-        options->level0_stop_writes_trigger = 12;
+        //options->level0_file_num_compaction_trigger = 4;
+        //options->level0_slowdown_writes_trigger = 8;     
+        //options->level0_stop_writes_trigger = 12;
 
-        options->use_direct_reads = true;
-        options->use_direct_io_for_flush_and_compaction = true;
+        //options->use_direct_reads = true;
+        //options->use_direct_io_for_flush_and_compaction = true;
 
         uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
         uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));
@@ -156,7 +156,7 @@ namespace ycsbc {
                         continue;
                     }
 
-                    std::string foundValues;
+                    std::vector<std::string> foundValues;
                     s = cabindb_->Scan(columnfamilies[i][j], key, len, foundValues);
                     if (s == cabindb::Status::kOK) {
                         for (int k=0; k<len; k++) {
