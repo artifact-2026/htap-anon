@@ -28,10 +28,11 @@ namespace CABINDB_NAMESPACE {
 
    CabinDB::CabinDB(const char *dbfilename, rocksdb::Options& options, int field_count, bool bootstrap) {
 
-        std::string db_name = "cabindb";
         std::string config_path = "/etc/ceph/ceph.conf";
+        std::string rados_pool;
+        rados_pool.append(dbfilename).append("_pool");
 
-        options.env = new rocksdb::EnvLibrados(db_name, config_path, "cabindb_pool");
+        options.env = new rocksdb::EnvLibrados(dbfilename, config_path, rados_pool);
         options.IncreaseParallelism();
         options.OptimizeLevelStyleCompaction();
         // create the DB if it's not already present
