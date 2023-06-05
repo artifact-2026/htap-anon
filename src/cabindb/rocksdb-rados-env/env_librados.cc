@@ -1581,10 +1581,12 @@ Status EnvLibrados::UnlockFile(FileLock *lock) {
  * @return [description]
  */
 Status EnvLibrados::GetAbsolutePath(const std::string &db_path,
-                                    std::string * /*output_path*/) {
-  (void)db_path;
+                                    std::string *output_path) {
+  //(void)db_path;
   LOG_DEBUG("[IO]%s\n", db_path.c_str());
-  return Status::NotSupported();
+  output_path->append(db_path);
+  output_path->append("_pool");
+  return Status::OK();
 }
 
 /**

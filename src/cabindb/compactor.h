@@ -97,7 +97,7 @@ class CabinCompactor : public Compactor {
     CompactionTask* PickCompaction(DB* db, const std::string& cf_name,
                                    const std::string& output_cf_name,
                                    int compact_level) override {
-      ColumnFamilyMetaData cf_meta;
+      rocksdb::ColumnFamilyMetaData cf_meta;
       db->GetColumnFamilyMetaData(cf_handles_[cf_name], &cf_meta);
 
       std::vector<std::string> input_file_names;
@@ -105,11 +105,11 @@ class CabinCompactor : public Compactor {
          if (level.level != compact_level) {
             continue;
          }
-	 for (auto file : level.files) {
+	      for (auto file : level.files) {
             if (file.being_compacted) {
                return nullptr;
             }
-           input_file_names.push_back(file.name);
+            input_file_names.push_back(file.name);
          }
       }
 

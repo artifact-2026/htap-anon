@@ -60,6 +60,7 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % git submodule update --init --recursive
 
 % sudo apt-get install cmake libgflags-dev librados-dev libradospp-dev protobuf-compiler ninja-build
+% sudo apt-get install libsnappy-dev zlib1g-dev libbz2-dev
 % mkdir build
 % cd build
 % cmake -S .. -B . -G Ninja / cmake -S .. -B .
