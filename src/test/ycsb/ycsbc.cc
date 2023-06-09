@@ -11,6 +11,7 @@
 #include <future>
 #include <unistd.h>
 #include <atomic>
+#include <chrono>
 #include "core/utils.h"
 #include "core/timer.h"
 #include "core/client.h"
@@ -59,14 +60,14 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
   return oks;
 }
 
-int DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int throughputType) {
+int DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int throughputType, int runTime) {
   db->Init();
   ycsbc::Client client(*db, *wl);
   int oks = 0;
   std::chrono::time_point start = std::chrono::steady_clock::now();
 
   while (true) {
-    if (std::chrono::steady_clock::now() - start > std::chrono::seconds(60))
+    if (std::chrono::steady_clock::now() - start > std::chrono::seconds(runTime))
       break;
 
     if (throughputType == 1) {
@@ -108,6 +109,7 @@ int main( const int argc, const char *argv[]) {
   const bool print_stats = utils::StrToBool(props["dbstatistics"]);
   const bool wait_for_balance = utils::StrToBool(props["dbwaitforbalance"]);
   const int throughput_type = stoi(props.GetProperty("throughputtype", "1"));
+  const int run_time = stoi(props.GetProperty("runtime", "15"));
 
   string morerun = props["morerun"];
 
@@ -159,7 +161,7 @@ int main( const int argc, const char *argv[]) {
     total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
     for (int i = 0; i < num_threads; ++i) {
       actual_ops.emplace_back(async(launch::async,
-          DelegateForThroughput, db, &wl, throughput_type));
+          DelegateForThroughput, db, &wl, throughput_type, run_time));
     }
     assert((int)actual_ops.size() == num_threads);
 
@@ -341,6 +343,14 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("threadcount", argv[argindex]);
       argindex++;
+    } else if(strcmp(argv[argindex],"-runtime")==0){
+      argindex++;
+      if(argindex >= argc){
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("runtime",argv[argindex]);
+      argindex++;
     } else if(strcmp(argv[argindex],"-bootstrap")==0){
       argindex++;
       if(argindex >= argc){
@@ -348,7 +358,7 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
         exit(0);
       }
       props.SetProperty("bootstrap",argv[argindex]);
-      argindex++;  
+      argindex++;
     } else if(strcmp(argv[argindex],"-throughput")==0){
       argindex++;
       if(argindex >= argc){
@@ -526,6 +536,7 @@ void Init(utils::Properties &props, std::string dbname, std::string dbpath){
   props.SetProperty("load","false");
   props.SetProperty("run","false");
   props.SetProperty("bootstrap","true");
+  props.SetProperty("runtime", "15");
   props.SetProperty("threadcount","1");
   props.SetProperty("throughput","false");
   props.SetProperty("throughputtype", "1");
