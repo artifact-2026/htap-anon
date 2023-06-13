@@ -25,6 +25,11 @@ atomic<uint64_t> ops_cnt[ycsbc::Operation::READMODIFYWRITE + 1];
 atomic<uint64_t> ops_time[ycsbc::Operation::READMODIFYWRITE + 1]; 
 ////
 
+struct throughput_data
+{
+  int arr[35];
+};
+
 void UsageMessage(const char *command);
 bool StrStartWith(const char *str, const char *pre);
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props);
@@ -60,15 +65,27 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
   return oks;
 }
 
-int DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int throughputType, int runTime) {
+struct throughput_data DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int throughputType, int runTime) {
   db->Init();
   ycsbc::Client client(*db, *wl);
+  struct throughput_data td_oks;
+
   int oks = 0;
+  int i = 0;
   std::chrono::time_point start = std::chrono::steady_clock::now();
+  std::chrono::time_point step = start;
 
   while (true) {
-    if (std::chrono::steady_clock::now() - start > std::chrono::seconds(runTime))
+    if (std::chrono::steady_clock::now() - start > std::chrono::seconds(runTime)) {
+      td_oks.arr[i] = oks;
       break;
+    }
+
+    if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(60)) {
+      td_oks.arr[i] = oks;
+      i += 1;
+      step = std::chrono::steady_clock::now();
+    }
 
     if (throughputType == 1) {
       oks += client.DoRead();
@@ -77,7 +94,7 @@ int DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int throughput
     }
   }
   db->Close();
-  return oks;
+  return td_oks;
 }
 
 int main( const int argc, const char *argv[]) {
@@ -114,6 +131,7 @@ int main( const int argc, const char *argv[]) {
   string morerun = props["morerun"];
 
   vector<future<int>> actual_ops;
+  vector<future<struct throughput_data>> throughput_ops;
   int total_ops = 0;
   int sum = 0;
   utils::Timer<double> timer;
@@ -157,23 +175,30 @@ int main( const int argc, const char *argv[]) {
     ycsbc::CoreWorkload wl;
     wl.Init(props);
 
-    uint64_t work_start = get_now_micros();
+    //uint64_t work_start = get_now_micros();
     total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
     for (int i = 0; i < num_threads; ++i) {
-      actual_ops.emplace_back(async(launch::async,
+      throughput_ops.emplace_back(async(launch::async,
           DelegateForThroughput, db, &wl, throughput_type, run_time));
     }
-    assert((int)actual_ops.size() == num_threads);
+    assert((int)throughput_ops.size() == num_threads);
 
-    sum = 0;
-    for (auto &n : actual_ops) {
+    int sum[35] = {};
+    for (auto &n : throughput_ops) {
       assert(n.valid());
-      sum += n.get();
+      struct throughput_data th_work = n.get();
+      for (int k=0; k < 35; k++) {
+        sum[k] += th_work.arr[k];
+      }
     }
-    uint64_t work_end = get_now_micros();
-    uint64_t use_time = work_end - work_start;
+    //uint64_t work_end = get_now_micros();
+    //uint64_t use_time = work_end - work_start;
     printf("********** throughput result **********\n");
-    printf("throughput records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
+    int run_time_in_minutes = run_time/60+1;
+    for (int k=0; k < run_time_in_minutes; k++) {
+      printf("throughput record:%d time (minute):%d\n", sum[k], k+1);
+    }
+    //printf("throughput records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
     printf("*********************************\n");
 
     if ( print_stats ) {
