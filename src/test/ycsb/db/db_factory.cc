@@ -4,6 +4,7 @@
 #include <iostream>
 #include "db/test_cabin_db.h"
 #include "db/test_rocks_db.h"
+#include "db/mycelium.h"
 
 using namespace std;
 
@@ -18,6 +19,9 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
   } else if (props["dbname"] == "rocksdb") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-rocksdb");
     return new TestRocksDB(dbpath.c_str(), props);
+  } else if (props["dbname"] == "mycelium") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-mycelium");
+    return new Mycelium(dbpath.c_str(), props);
   } else return nullptr;
 }
 
