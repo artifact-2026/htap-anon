@@ -67,7 +67,9 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % ninja/make
 
 #### To run: 
-% ./src/test/ycsb/ycsb_test -db cabindb -dbpath /tmp/test-cabindb -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 1 -load true -run false -throughput false
+% ./src/test/ycsb/ycsb_test -db mycelium -dbpath /tmp/test-mycelium -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 1 -load true -run false -throughput false
+
+./src/test/ycsb/ycsb_test -db mycelium -dbpath /mydata/test_result/test-mycelium -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 1 -load false -run false -throughput true -throughputtype 2 -runtime 1800
 
 #### To rerun:
 % ceph config set mon mon_allow_pool_delete true (once)
@@ -81,3 +83,10 @@ stash:
         path = src/cabindb/rocksdb-rados-env
         url = https://github.com/riversand963/rocksdb-rados-env.git
 
+#### Mount device
+% sudo su
+% fdisk -l   (find the disk to be mounted)
+% mkfs <device_name>
+% mkdir /holly
+% mount <device_name> /holly
+% chown -R uid:gid /holly

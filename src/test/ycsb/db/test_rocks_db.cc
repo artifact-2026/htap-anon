@@ -84,6 +84,16 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
 
+        // options for turning compaction off
+        //options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
+        //options_.level0_slowdown_writes_trigger = 9999999;
+        //options_.level0_stop_writes_trigger = 9999999;
+        //options_.level0_file_num_compaction_trigger = -1;
+        //options_.soft_pending_compaction_bytes_limit = 8192 * 1073741824ull;
+        //options_.hard_pending_compaction_bytes_limit = 8192 * 1073741824ull;
+        //options_.max_open_files = 8192000;
+        //options_.max_file_opening_threads = 49200;
+
         //options_.max_background_jobs = 16;
         //options_.max_write_buffer_number = 32;
         //options_.target_file_size_base = 64ul * 1024 * 1024;
