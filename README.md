@@ -25,7 +25,10 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % sudo apt install -y cephadm
 
 #### bootstrap 1st node:
-% sudo cephadm bootstrap --mon-ip *<mon-ip>* --allow-fqdn-hostname
+% sudo hostname <host-1-short-name>     // use the short name like "node0"
+% sudo hostname <host-2-short-name>
+% sudo hostname <host-3-short-name>
+% sudo cephadm bootstrap --mon-ip *<mon-ip>*    // use the ip that starts with "10"
 
 #### enable ceph cli: 
 % sudo cephadm add-repo --release quincy
@@ -40,7 +43,7 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % ceph status
 
 #### add hosts to the ceph cluster
-% ceph orch host add *<hostname-2>* --labels _admin
+% ceph orch host add *<hostname-2>* --labels _admin  // user the "short" host name
 
 #### create osd
 % sudo ceph orch apply osd --all-available-devices
@@ -48,7 +51,7 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 
  By then the osds are likely already created. Could use the following but possibly will get an "Already created?" message
  
-% sudo ceph orch daemon add osd *<host1>*:/dev/<device>   (use the host name, not ip)
+% sudo ceph orch daemon add osd *<host1>*:/dev/<device>   (use the "SHORT" host name, not ip)
 
 ## check with Ceph bench test
 % sudo ceph osd pool create testbench 100 100
@@ -66,10 +69,13 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % cmake -S .. -B . -G Ninja / cmake -S .. -B .
 % ninja/make
 
+#### Prepare Client
+% scp /etc/ceph/ceph.conf (and client ring) root@<client_host>:/etc/ceph
+
 #### To run: 
 % ./src/test/ycsb/ycsb_test -db mycelium -dbpath /tmp/test-mycelium -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 1 -load true -run false -throughput false
 
-./src/test/ycsb/ycsb_test -db mycelium -dbpath /mydata/test_result/test-mycelium -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 1 -load false -run false -throughput true -throughputtype 2 -runtime 1800
+./src/test/ycsb/ycsb_test -db rocksdb -dbpath /mydata/test_result/test-rocksdb -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 10 -load false -run false -throughput true -throughputtype 2 -runtime 1800
 
 #### To rerun:
 % ceph config set mon mon_allow_pool_delete true (once)
@@ -90,3 +96,8 @@ stash:
 % mkdir /holly
 % mount <device_name> /holly
 % chown -R uid:gid /holly
+
+#### Issues:
+### _SyncLocked(): Assertion `r >= 0' failed
+Reason: failed when object size gets bigger. Assertion code is -27.
+Solution: increase Ceph object size

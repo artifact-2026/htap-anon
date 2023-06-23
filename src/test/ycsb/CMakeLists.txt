@@ -4,6 +4,8 @@ set(ycsb_srcs
     db/test_cabin_db.cc
     db/test_rocks_db.cc
     db/mycelium.cc
+    db/mycelium_row_strawman.cc
+    db/mycelium_column_strawman.cc
     core/core_workload.cc)
 add_executable(ycsb_test ${ycsb_srcs})
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src/test/ycsb)

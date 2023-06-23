@@ -33,7 +33,7 @@ struct throughput_data
 void UsageMessage(const char *command);
 bool StrStartWith(const char *str, const char *pre);
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props);
-void Init(utils::Properties &props, std::string dbname, std::string dbpath);
+void Init(utils::Properties &props);
 void PrintInfo(utils::Properties &props);
 
 int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
@@ -99,17 +99,7 @@ struct throughput_data DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload 
 
 int main( const int argc, const char *argv[]) {
   utils::Properties props;
-  std::string databasepath = "";
-  if (argv[2] == std::string("leveldb")) {
-    databasepath = "/tmp/test-leveldb";
-  } else if (argv[2] == std::string("rocksdb")) {
-    databasepath = "/tmp/test-rocksdb";
-  } else if (argv[2] == std::string("cabindb")) {
-    databasepath = "/tmp/test-cabindb";
-  }
-
-  Init(props, argv[2], databasepath);
-  std::string my_try = props.GetProperty("dbpath","/tmp/test-rocksdb");
+  Init(props);
   string file_name = ParseCommandLine(argc, argv, props);
 
   ycsbc::DB *db = ycsbc::DBFactory::CreateDB(props);
@@ -555,9 +545,7 @@ inline bool StrStartWith(const char *str, const char *pre) {
   return strncmp(str, pre, strlen(pre)) == 0;
 }
 
-void Init(utils::Properties &props, std::string dbname, std::string dbpath){
-  props.SetProperty("dbname", dbname);
-  props.SetProperty("dbpath", dbpath);
+void Init(utils::Properties &props){
   props.SetProperty("load","false");
   props.SetProperty("run","false");
   props.SetProperty("bootstrap","true");

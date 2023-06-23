@@ -1,0 +1,62 @@
+#ifndef YCSB_CPLUSPLUS_MYCELIUM_COLUMN_STRAWMAN_H
+#define YCSB_CPLUSPLUS_MYCELIUM_COLUMN_STRAWMAN_H
+
+#include "core/db.h"
+
+#include <iostream>
+#include <errno.h>
+#include <string>
+
+#include <rocksdb/options.h>
+#include <rocksdb/db.h>
+#include <rocksdb/cache.h>
+#include <rocksdb/table.h>
+#include <rocksdb/filter_policy.h>
+
+#include "core/properties.h"
+#include "core/core_workload.h"
+#include "proto/columns.pb.h"
+
+namespace ycsbc {
+
+class MyceliumColumnStrawman : public DB{
+    public :
+        MyceliumColumnStrawman(const char *dbfilename, utils::Properties &props);
+        int Read(const std::string &table, const std::string &key,
+                 const std::vector<std::string> *fields,
+                 data::Row &result);
+
+        int Scan(const std::string &table, const std::string &begin_key,
+                 int32_t len, const std::vector<std::string> *fields,
+                 std::vector<data::Row> &result);
+
+        int Insert(const std::string &table, const std::string &key,
+                   std::string &values);
+
+        int Update(const std::string &table, const std::string &key,
+                   std::string &values);
+
+        int Delete(const std::string &table, const std::string &key);
+
+        ~MyceliumColumnStrawman() {};
+    
+    private:
+        rocksdb::DB *rocksdb_;
+        rocksdb::Options options_;
+        int noResults;
+        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_map_;
+
+        void SetOptions(utils::Properties &props, const char *dbfilename);
+        // serialize for inserts
+        void SerializeValue(std::vector<KVPair> &kvs, std::string &value);
+        // de-serialize one record
+        void DeSerializeValue(std::string &value,
+                    const std::vector<std::string> *fields,
+                    std::vector<KVPair> &kvs);
+	    void KeepOnlyRequestedFields(data::Row &row,
+                    const std::vector<std::string> *fields, data::Row &selectedColumns);
+};  
+
+}
+
+#endif
