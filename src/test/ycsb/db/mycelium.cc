@@ -12,6 +12,14 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","true"));
         int num_cfs = stoi(props.GetProperty("fieldcount", "0")) + 6;
 
+        rocksdb::Status s = rocksdb::DB::Open(options_, 
+                                              dbfilename,
+                                              &rocksdb_);
+        if (!s.ok()){
+             std::cerr<<"Can't open mycelium "<<dbfilename<<" "<<s.ToString()<<std::endl;
+            exit(0);
+        }
+
         if (bootstrap) {
             rocksdb::Status s = rocksdb::DB::Open(options_, 
                                               dbfilename,
@@ -65,7 +73,7 @@ namespace ycsbc {
     {
         std::string value;
         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                          cfhandles_map_[rocksdb::kDefaultColumnFamilyName],
+                                          //cfhandles_map_[rocksdb::kDefaultColumnFamilyName],
                                           key,
                                           &value);
         
@@ -83,8 +91,8 @@ namespace ycsbc {
                           std::vector<data::Row> &result) 
     {
         result.clear();
-        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(),
-                                        cfhandles_map_[rocksdb::kDefaultColumnFamilyName]);
+        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions());
+                                        //cfhandles_map_[rocksdb::kDefaultColumnFamilyName]);
         it->Seek(begin_key);
         for (int i = 0; i < len && it->Valid(); i++) {
             std::string value = it->value().ToString();
@@ -107,7 +115,7 @@ namespace ycsbc {
     int Mycelium::Insert(const std::string &table, const std::string &key, std::string &values)
     {
         rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
-                                          cfhandles_map_[rocksdb::kDefaultColumnFamilyName],
+                                          //cfhandles_map_[rocksdb::kDefaultColumnFamilyName],
                                           key,
                                           values);
         if (s.ok()) {

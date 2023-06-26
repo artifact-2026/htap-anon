@@ -175,15 +175,6 @@ inline int Client::TransactionUpdate() {
 }
 
 inline int Client::TransactionInsert() {
-  data::Column column;
-  std::string serializedString;
-  column.set_name("field1");
-  column.set_value("value1");
-  column.SerializeToString(&serializedString);
-
-  data::Column column2;
-  column2.ParseFromString(serializedString);
-
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextSequenceKey();
 

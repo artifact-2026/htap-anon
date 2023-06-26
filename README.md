@@ -101,3 +101,6 @@ stash:
 ### _SyncLocked(): Assertion `r >= 0' failed
 Reason: failed when object size gets bigger. Assertion code is -27.
 Solution: increase Ceph object size
+
+### Couldn't connecto to cluster
+Reason: could be that test was run under non-root user
