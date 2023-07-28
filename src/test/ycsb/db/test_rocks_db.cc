@@ -118,12 +118,6 @@ namespace ycsbc {
             cache_size = 8 << 20;
         }
         cache_ = rocksdb::NewLRUCache(cache_size);
-
-        bool statistics = utils::StrToBool(props["dbstatistics"]);
-        if(statistics){
-            dbstats_ = rocksdb::CreateDBStatistics();
-            options_.statistics = dbstats_;
-        }
     }
 
     void TestRocksDB::KeepOnlyRequestedFields(data::Row &row,

@@ -1,9 +1,5 @@
 # htap
-A hybrid transactional (RocksDB), analytical (Ceph) processing key/value store that is available, consistent, and scalable. The store is logically an LSM tree mapped in the system consisted of RocksDB instances and a Ceph storage cluster. 
-
-## Level-0 MemTable
-
-## Ceph Storage Cluster
+A hybrid transactional and analytical workload processing platform that is available, consistent, and scalable. The platform is logically an LSM tree mapped in the system consisted of RocksDB instances and a Ceph storage cluster. 
 
 ### Deploying a Ceph storage cluster
 #### prerequirement
@@ -75,7 +71,7 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 #### To run: 
 % ./src/test/ycsb/ycsb_test -db mycelium -dbpath /tmp/test-mycelium -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 1 -load true -run false -throughput false
 
-./src/test/ycsb/ycsb_test -db rocksdb -dbpath /mydata/test_result/test-rocksdb -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 10 -load false -run false -throughput true -throughputtype 2 -runtime 1800
+./src/test/ycsb/ycsb_test -db mycelium -dbpath /holly/test_result/test-mycelium -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 1 -load false -run false -throughput true -throughputtype 2 -runtime 900 > /holly/test_result/result/newceph_1_thread.log
 
 #### To rerun:
 % ceph config set mon mon_allow_pool_delete true (once)
@@ -104,3 +100,17 @@ Solution: increase Ceph object size
 
 ### Couldn't connecto to cluster
 Reason: could be that test was run under non-root user
+
+#### Working with the fork
+### Pushing
+1. Make changes in lib/rocksdb, then push:
+% git push origin HEAD:refs/heads/main
+2. Back to htap directory, do
+% git add lib/rocksdb
+% git commit 
+% git push
+3. When at a different m/c, need to:
+% git reset --hard <older commit>
+% git pull
+% git submodule update
+

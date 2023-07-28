@@ -12,14 +12,6 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","true"));
         int num_cfs = stoi(props.GetProperty("fieldcount", "0")) + 6;
 
-        rocksdb::Status s = rocksdb::DB::Open(options_, 
-                                              dbfilename,
-                                              &rocksdb_);
-        if (!s.ok()){
-             std::cerr<<"Can't open mycelium "<<dbfilename<<" "<<s.ToString()<<std::endl;
-            exit(0);
-        }
-
         if (bootstrap) {
             rocksdb::Status s = rocksdb::DB::Open(options_, 
                                               dbfilename,

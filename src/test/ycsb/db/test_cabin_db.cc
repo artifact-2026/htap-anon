@@ -44,12 +44,6 @@ namespace ycsbc {
             cache_size = 8 << 20;
         }
         cache_ = rocksdb::NewLRUCache(cache_size);
-
-        bool statistics = utils::StrToBool(props["dbstatistics"]);
-        if(statistics){
-            dbstats_ = rocksdb::CreateDBStatistics();
-            options->statistics = dbstats_;
-        }
     }
 
     int TestCabinDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
