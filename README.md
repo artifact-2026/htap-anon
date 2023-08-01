@@ -53,11 +53,21 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % sudo ceph osd pool create testbench 100 100
 % sudo rados bench -p testbench 10 write
 
+#### Client:
+### Mount device
+% sudo su
+% fdisk -l   (find the disk to be mounted)
+% mkfs <device_name>
+% mkdir /holly
+% mount <device_name> /holly
+% chown -R uid:gid /holly
+
 #### Getting CabinDB
 % git clone https://github.com/hcasalet/htap.git
 % cd htap
 % git submodule update --init --recursive
 
+% sudo apt-get update
 % sudo apt-get install cmake libgflags-dev librados-dev libradospp-dev protobuf-compiler ninja-build
 % sudo apt-get install libsnappy-dev zlib1g-dev libbz2-dev
 % mkdir build
@@ -66,6 +76,8 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % ninja/make
 
 #### Prepare Client
+% on client host, create /etc/ceph
+## on ceph leader node, do:
 % scp /etc/ceph/ceph.conf (and client ring) root@<client_host>:/etc/ceph
 
 #### To run: 
@@ -85,13 +97,7 @@ stash:
         path = src/cabindb/rocksdb-rados-env
         url = https://github.com/riversand963/rocksdb-rados-env.git
 
-#### Mount device
-% sudo su
-% fdisk -l   (find the disk to be mounted)
-% mkfs <device_name>
-% mkdir /holly
-% mount <device_name> /holly
-% chown -R uid:gid /holly
+
 
 #### Issues:
 ### _SyncLocked(): Assertion `r >= 0' failed

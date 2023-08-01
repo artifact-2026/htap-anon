@@ -9,6 +9,11 @@ namespace ycsbc {
     Mycelium::Mycelium(const char *dbfilename, utils::Properties &props) {
         noResults = 0;
         SetOptions(props, dbfilename);
+        rocksdb::Status s = rocksdb::DB::Open(options_, 
+                                              dbfilename,
+                                              &rocksdb_);
+    
+        /*
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","true"));
         int num_cfs = stoi(props.GetProperty("fieldcount", "0")) + 6;
 
@@ -55,6 +60,7 @@ namespace ycsbc {
                 cfhandles_map_[cfname] = handles[i+1];
             }
         }
+        */
     }
 
     /*
@@ -142,15 +148,15 @@ namespace ycsbc {
         rados_pool.append(dbfilename).append("_pool");
         options_.env = new rocksdb::EnvLibrados(dbfilename, config_path, rados_pool);
 
-        //options_.max_background_jobs = 16;
-        //options_.max_write_buffer_number = 32;
+        options_.max_background_jobs = 16;
+        options_.max_write_buffer_number = 32;
         //options_.target_file_size_base = 64ul * 1024 * 1024;
         //options_.write_buffer_size = 2 << 30;
         //options_.db_write_buffer_size = 2 << 30;
 
         //options_.level0_file_num_compaction_trigger = 8;
-        //options_.level0_slowdown_writes_trigger = 16;     
-        //options_.level0_stop_writes_trigger = 16;
+        //options_.level0_slowdown_writes_trigger = -1;     
+        //options_.level0_stop_writes_trigger = -1;
 
         //options_.use_direct_reads = true;
         //options_.use_direct_io_for_flush_and_compaction = true;
