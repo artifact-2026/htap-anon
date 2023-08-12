@@ -1,4 +1,5 @@
 set(cabindb_srcs
+    compactor.cc
     cabin_db.cc
 )
 

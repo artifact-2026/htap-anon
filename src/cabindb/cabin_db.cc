@@ -81,8 +81,8 @@ namespace CABINDB_NAMESPACE {
             }
         }
 
-        options_.listeners.emplace_back(new CabinCompactor(options, options_.num_levels,
-                                       leveled_cf_names_, cfhandles_map_));
+        //options_.listeners.emplace_back(new CabinCompactor(options, options_.num_levels,
+        //                               leveled_cf_names_, cfhandles_map_));
     }
 
     Status CabinDB::Read(const std::string &table, const std::string &key, std::string &value)
