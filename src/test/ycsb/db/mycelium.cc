@@ -148,10 +148,7 @@ namespace ycsbc {
         std::string rados_pool;
         rados_pool.append(dbfilename).append("_pool");
         options_.env = new rocksdb::EnvLibrados(dbfilename, config_path, rados_pool);
-
-        options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
-        options_.IncreaseParallelism(5);
-        options_.listeners.emplace_back(new rocksdb::CabinCompactor(options_));
+        options_.num_levels = 3;
 
         options_.max_background_jobs = 16;
         options_.max_write_buffer_number = 32;
@@ -168,6 +165,9 @@ namespace ycsbc {
 
         //options_.max_open_files = 20480;
         //options_.max_file_opening_threads = 32;
+        options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
+        options_.IncreaseParallelism(5);
+        options_.listeners.emplace_back(new rocksdb::CabinCompactor(options_));
     }
 
     void Mycelium::KeepOnlyRequestedFields(data::Row &row,
