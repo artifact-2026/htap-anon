@@ -43,8 +43,8 @@ class Mycelium : public DB{
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
-        int noResults;
-        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_map_;
+        std::vector<rocksdb::ColumnFamilyHandle*> cfhandles_;
+        int noResults; 
 
         void SetOptions(utils::Properties &props, const char *dbfilename);
         // serialize for inserts

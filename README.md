@@ -72,8 +72,15 @@ Ceph requires nodes to have the following, among which on a typical Linux machin
 % sudo apt-get install libsnappy-dev zlib1g-dev libbz2-dev
 % mkdir build
 % cd build
-% cmake -S .. -B . -G Ninja / cmake -S .. -B .
+% cmake -S .. -B . -G Ninja / cmake -S .. -B . 
 % ninja/make
+
+// for debugging, do
+% cmake -DCMAKE_BUILD_TYPE=Debug -S .. -B . -G Ninja
+// then start gdb
+% gdb src/test/ycsb/ycsb_test
+// set breakpoint
+(gdb) b <functionname>
 
 #### Prepare Client
 % on client host, create /etc/ceph
@@ -97,8 +104,6 @@ stash:
         path = src/cabindb/rocksdb-rados-env
         url = https://github.com/riversand963/rocksdb-rados-env.git
 
-
-
 #### Issues:
 ### _SyncLocked(): Assertion `r >= 0' failed
 Reason: failed when object size gets bigger. Assertion code is -27.
@@ -106,6 +111,9 @@ Solution: increase Ceph object size
 
 ### Couldn't connecto to cluster
 Reason: could be that test was run under non-root user
+
+### Segmentation fault
+Reason: the db directory not created yet?
 
 #### Working with the fork
 ### Pushing
@@ -119,4 +127,3 @@ Reason: could be that test was run under non-root user
 % git reset --hard <older commit>
 % git pull
 % git submodule update
-
