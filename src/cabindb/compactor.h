@@ -23,8 +23,7 @@ struct CompactionTask;
 class Compactor : public EventListener {
  public:
     virtual CompactionTask* PickCompaction(DB* db,
-                                           const std::string& cf_name,
-                                           const std::string& output_cf_name) = 0;
+                                           const std::string& cf_name) = 0;
     // Schedule and run the specified compaction task in background.
     virtual void ScheduleCompaction(CompactionTask* task) = 0;
 };
@@ -34,14 +33,12 @@ struct CompactionTask {
                  const std::string& _column_family_name,
                  const std::vector<std::string>& _input_file_names,
 		           const int _output_level,
-		           const std::string& _output_column_family_name,
                  const CompactionOptions& _compact_options, bool _retry_on_fail)
       : db(_db),
         compactor(_compactor),
         column_family_name(_column_family_name),
         input_file_names(_input_file_names),
 	     output_level(_output_level),
-	     output_column_family_name(_output_column_family_name),
         compact_options(_compact_options),
         retry_on_fail(_retry_on_fail) {}
   DB* db;
@@ -49,7 +46,6 @@ struct CompactionTask {
   const std::string& column_family_name;
   std::vector<std::string> input_file_names;
   int output_level;
-  const std::string& output_column_family_name;
   CompactionOptions compact_options;
   bool retry_on_fail;
 };
@@ -63,8 +59,7 @@ class CabinCompactor : public Compactor {
 
     void OnFlushCompleted(DB* db, const FlushJobInfo& info) override;
 
-    CompactionTask* PickCompaction(DB* db, const std::string& cf_name,
-                                   const std::string& output_cf_name) override;
+    CompactionTask* PickCompaction(DB* db, const std::string& cf_name) override;
 
     void ScheduleCompaction(CompactionTask* task) override;
     

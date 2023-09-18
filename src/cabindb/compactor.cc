@@ -20,7 +20,7 @@ CabinCompactor::CabinCompactor(const Options &options,
 }
 
 void CabinCompactor::OnFlushCompleted(DB* db, const FlushJobInfo& info) {
-    CompactionTask* task = PickCompaction(db, info.cf_name, info.cf_name);
+    CompactionTask* task = PickCompaction(db, info.cf_name);
     if (task != nullptr) {
         if (info.triggered_writes_stop) {
             task->retry_on_fail = true;
@@ -48,9 +48,7 @@ void CabinCompactor::OnFlushCompleted(DB* db, const FlushJobInfo& info) {
     }*/
 }
 
-CompactionTask* CabinCompactor::PickCompaction(DB* db,
-                                               const std::string& cf_name,
-                                               const std::string& output_cf_name) {
+CompactionTask* CabinCompactor::PickCompaction(DB* db, const std::string& cf_name) {
     rocksdb::ColumnFamilyMetaData cf_meta;
     db->GetColumnFamilyMetaData(db->DefaultColumnFamily(), &cf_meta);
 
@@ -74,7 +72,7 @@ CompactionTask* CabinCompactor::PickCompaction(DB* db,
 
     //rocksdb::ColumnFamilyHandle* output_cf_handle = cf_handles_[output_cf_name];
     return new CompactionTask(db, this, cf_name, input_file_names,
-                        options_.num_levels - 1, output_cf_name, compact_options_, false);
+                        options_.num_levels - 1, compact_options_, false);
 }
 
 void CabinCompactor::ScheduleCompaction(CompactionTask* task) {
@@ -94,7 +92,7 @@ void CabinCompactor::CompactFiles(void* arg) {
          // try to schedule another compaction in case the reason
          // is not an IO error.
          CompactionTask* new_task =
-		 task->compactor->PickCompaction(task->db, task->column_family_name, task->output_column_family_name);
+		 task->compactor->PickCompaction(task->db, task->column_family_name);
          task->compactor->ScheduleCompaction(new_task);
     }
 }

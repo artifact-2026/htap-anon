@@ -5,7 +5,8 @@
 
 #include <vector>
 #include <string>
-#include <proto/columns.pb.h>
+
+#include "columns.pb.h"
 
 namespace ycsbc {
 

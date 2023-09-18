@@ -15,7 +15,7 @@
 
 #include "core/properties.h"
 #include "core/core_workload.h"
-#include "proto/columns.pb.h"
+#include "columns.pb.h"
 
 namespace ycsbc {
 
