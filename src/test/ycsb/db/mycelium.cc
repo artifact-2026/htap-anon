@@ -21,25 +21,23 @@ namespace ycsbc {
                 std::cerr<<"Can't open mycelium "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
-            rocksdb::ColumnFamilyHandle* cf;
-            s = rocksdb_->CreateColumnFamilyAndItsCompactingCFs(rocksdb::ColumnFamilyOptions(options_), "mycelium", &cf);
-            cfhandles_.push_back(cf);
+            s = rocksdb_->CreateColumnFamilyAndItsCompactingCFs(rocksdb::ColumnFamilyOptions(options_), dbfilename, cfhandles_);
         } else {
             std::vector<rocksdb::ColumnFamilyDescriptor> column_families;
-            column_families.push_back(rocksdb::ColumnFamilyDescriptor(
-                        "mycelium", rocksdb::ColumnFamilyOptions(options_)));
+            GetColumnFamiliesForOpen(dbfilename, column_families);
+            std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
 
             rocksdb::Status s = rocksdb::DB::Open(options_,
                                               dbfilename,
                                               column_families,
-                                              &cfhandles_,
+                                              &cf_handles,
                                               &rocksdb_);
             if (!s.ok()){
                 std::cerr<<"Can't open mycelium "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
+            BuildColumnFamilyHandleMap(dbfilename, cf_handles);
         }
-        
     }
 
     /*
@@ -49,14 +47,17 @@ namespace ycsbc {
                       data::Row &result) 
     {
         std::string value;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
+        auto it = cfhandles_.find(table);
+        if (it != cfhandles_.end()) {
+            rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
                                           cfhandles_[0],
                                           key,
                                           &value);
         
-        if (s.ok()) {
-            result.ParseFromString(value);
-            return 0;
+            if (s.ok()) {
+                result.ParseFromString(value);
+                return 0;
+            }
         }
 
         noResults++;
@@ -68,21 +69,24 @@ namespace ycsbc {
                           std::vector<data::Row> &result) 
     {
         result.clear();
-        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[0]);
-        it->Seek(begin_key);
-        for (int i = 0; i < len && it->Valid(); i++) {
-            std::string value = it->value().ToString();
-            data::Row row;
-            row.ParseFromString(value);
+        auto ith = cfhandles_.find(table);
+        if (ith != cfhandles_.end()) {
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), ith->second);
+            it->Seek(begin_key);
+            for (int i = 0; i < len && it->Valid(); i++) {
+                std::string value = it->value().ToString();
+                data::Row row;
+                row.ParseFromString(value);
 
-	        if (fields != NULL) {
-                data::Row selectedColumns;
-                KeepOnlyRequestedFields(row, fields, selectedColumns);
-                result.push_back(selectedColumns);
-	        } else {
-	            result.push_back(row);
-            }	      
-            it->Next();
+	            if (fields != NULL) {
+                    data::Row selectedColumns;
+                    KeepOnlyRequestedFields(row, fields, selectedColumns);
+                    result.push_back(selectedColumns);
+	            } else {
+	                result.push_back(row);
+                }	      
+                it->Next();
+            }
         }
         
         return result.size();
@@ -90,12 +94,15 @@ namespace ycsbc {
 
     int Mycelium::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
-                                          cfhandles_[0],
+        auto it = cfhandles_.find(table);
+        if (it != cfhandles_.end()) {
+            rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
+                                          it->second,
                                           key,
                                           values);
-        if (s.ok()) {
-            return 0;
+            if (s.ok()) {
+                return 0;
+            }
         }
         return 1;
     }
@@ -107,11 +114,14 @@ namespace ycsbc {
 
     int Mycelium::Delete(const std::string &table, const std::string &key)
     {
-        rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(),
-                                             cfhandles_[0],
+        auto it = cfhandles_.find(table);
+        if (it != cfhandles_.end()) {
+            rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(),
+                                             it->second,
                                              key);
-        if (s.ok()) {
-            return 0;
+            if (s.ok()) {
+                return 0;
+            }
         }
         return 1;
     }
@@ -159,6 +169,55 @@ namespace ycsbc {
                     break;
                 }
             }
+        }
+    }
+    void Mycelium::GetColumnFamiliesForOpen(const char *dbfilename, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
+    {
+        std::string level0cf(dbfilename);
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+                        level0cf, rocksdb::ColumnFamilyOptions(options_)));
+        
+        int level = 1;
+        int splits = 1;
+        while (level < options_.num_levels) {
+            splits *= 2;
+            if (level == options_.num_levels - 1 || splits > options_.num_columns) {
+                splits = options_.num_columns;
+            }
+            for (int i= 0; i < splits; i++) {
+                std::string cf_name(dbfilename);
+                cf_name += "_sys_cf_" + std::to_string(level) + "_" + std::to_string(i);
+                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
+            }
+            
+            level += 1;
+        }
+    }
+
+    void Mycelium::BuildColumnFamilyHandleMap(const char *dbfilename, std::vector<rocksdb::ColumnFamilyHandle*> handles)
+    {
+        if (handles.size() > 0) {
+            cfhandles_.insert({dbfilename, handles[0]});
+        }
+
+        int level = 1;
+        int splits = 1;
+        std::vector<std::string> cfnames;
+        while (level < options_.num_levels) {
+            splits *= 2;
+            if (level == options_.num_levels - 1 || splits > options_.num_columns) {
+                splits = options_.num_columns;
+            }
+            for (int i= 0; i < splits; i++) {
+                std::string cf_name(dbfilename);
+                cf_name += "_sys_cf_" + std::to_string(level) + "_" + std::to_string(i);
+                cfnames.push_back(cf_name);
+            }
+            level += 1;
+        }
+
+        for (size_t i = 1; i < handles.size(); i++) {
+            cfhandles_.insert({cfnames[i], handles[i]});
         }
     }
 

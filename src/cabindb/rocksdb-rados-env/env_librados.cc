@@ -517,9 +517,9 @@ public:
       _buffer.clear();
       _buffer_size = 0;
     } else {
-      librados::bufferlist tmp;
-      tmp.claim(_buffer);
-      _buffer.substr_of(tmp, 0, size - _file_size);
+      librados::bufferlist* tmp;
+      tmp = &_buffer;
+      _buffer.substr_of(*tmp, 0, size - _file_size);
       _buffer_size = size - _file_size;
     }
 

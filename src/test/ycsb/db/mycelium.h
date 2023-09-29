@@ -43,18 +43,14 @@ class Mycelium : public DB{
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
-        std::vector<rocksdb::ColumnFamilyHandle*> cfhandles_;
+        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         int noResults; 
 
         void SetOptions(utils::Properties &props, const char *dbfilename);
-        // serialize for inserts
-        void SerializeValue(std::vector<KVPair> &kvs, std::string &value);
-        // de-serialize one record
-        void DeSerializeValue(std::string &value,
-                    const std::vector<std::string> *fields,
-                    std::vector<KVPair> &kvs);
 	    void KeepOnlyRequestedFields(data::Row &row,
                     const std::vector<std::string> *fields, data::Row &selectedColumns);
+        void GetColumnFamiliesForOpen(const char *dbfilename, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+        void BuildColumnFamilyHandleMap(const char *dbfilename, std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };  
 
 }
