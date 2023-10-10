@@ -49,8 +49,9 @@ class Mycelium : public DB{
         void SetOptions(utils::Properties &props, const char *dbfilename);
 	    void KeepOnlyRequestedFields(data::Row &row,
                     const std::vector<std::string> *fields, data::Row &selectedColumns);
-        void GetColumnFamiliesForOpen(const char *dbfilename, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
-        void BuildColumnFamilyHandleMap(const char *dbfilename, std::vector<rocksdb::ColumnFamilyHandle*> handles);
+        void GetColumnFamilyDescriptors(const char *dbfilename, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+        void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
+                                        std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };  
 
 }
