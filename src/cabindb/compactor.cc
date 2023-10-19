@@ -1,3 +1,4 @@
+#include <iostream>
 #include "compactor.h"
 
 namespace ROCKSDB_NAMESPACE {
@@ -8,55 +9,40 @@ CabinCompactor::CabinCompactor(const Options &options) : options_(options)
     compact_options_.output_file_size_limit = options_.target_file_size_base;
 };
 
-CabinCompactor::CabinCompactor(const Options &options,
-                        const std::vector<std::vector<std::string> > &leveled_cf_names,
-                        std::map<std::string, rocksdb::ColumnFamilyHandle*> &cf_handles)
-                        : options_(options), 
-			              leveled_cf_names_(leveled_cf_names), 
-                          cf_handles_(cf_handles)
+void CabinCompactor::SetColumnFamilyHandles(std::map<std::string, rocksdb::ColumnFamilyHandle*>& cfhandles)
 {
-    compact_options_.compression = options_.compression;
-    compact_options_.output_file_size_limit = options_.target_file_size_base;
+    cf_handles_.insert(cfhandles.begin(), cfhandles.end());
 }
 
 void CabinCompactor::OnFlushCompleted(DB* db, const FlushJobInfo& info) {
-    CompactionTask* task = PickCompaction(db, info.cf_name);
+    CompactionTask* task = PickCompaction(db, info.cf_name, 0);
     if (task != nullptr) {
         if (info.triggered_writes_stop) {
             task->retry_on_fail = true;
         }
-
         ScheduleCompaction(task);
     }
-    /*std::vector<CompactionTask*> tasks;
-    std::lock_guard<std::mutex> lock(_mutex);
-    int level = 0;
-    for (auto cfnames : leveled_cf_names_) {
-        for (auto cfname : cfnames) {
-            for (auto next_level_cf_name : next_level_dest_[cfname]) {
-               CompactionTask* task = PickCompaction(db, cfname, next_level_cf_name, level);
-               if (task != nullptr) {
-                  if (info.triggered_writes_stop) {
-                     task->retry_on_fail = true;
-                  }
-                  // Schedule compaction in a different thread.
-                  ScheduleCompaction(task);
-               }
-            }
+
+    int splits = 1;
+    for (int i = 1; i < options_.compacting_column_family_num_levels; i++) {
+        splits *= 2;
+        if (i == options_.compacting_column_family_num_levels-1 || i > options_.num_columns) {
+            splits = options_.num_columns;
         }
-	 level++;
-    }*/
+        for (int j = 0; j < splits; j++) {
+            std::string column_family_name = info.cf_name + "_sys_cf_" + std::to_string(i) + "_" + std::to_string(j);
+            task = PickCompaction(db, column_family_name, 1);
+            ScheduleCompaction(task);
+        }
+    }
 }
 
-CompactionTask* CabinCompactor::PickCompaction(DB* db, const std::string& cf_name) {
+CompactionTask* CabinCompactor::PickCompaction(DB* db, const std::string& cf_name, const int input_level) {
     rocksdb::ColumnFamilyMetaData cf_meta;
-    db->GetColumnFamilyMetaData(db->DefaultColumnFamily(), &cf_meta);
+    db->GetColumnFamilyMetaData(cf_handles_.at(cf_name), &cf_meta);
 
     std::vector<std::string> input_file_names;
     for (auto level : cf_meta.levels) {
-        /*if (level.level != compact_level) {
-            continue;
-        }*/
 	    for (auto file : level.files) {
             if (file.being_compacted) {
                return nullptr;
@@ -65,34 +51,34 @@ CompactionTask* CabinCompactor::PickCompaction(DB* db, const std::string& cf_nam
         }
     }
 
-    /*int output_level = compact_level + 1;
-    if (uint64_t(compact_level) == leveled_cf_names_.size() - 1) {
-        output_level = compact_level;
-    }*/
-
-    //rocksdb::ColumnFamilyHandle* output_cf_handle = cf_handles_[output_cf_name];
-    return new CompactionTask(db, this, cf_name, input_file_names,
-                        options_.num_levels - 1, compact_options_, false);
+    return new CompactionTask(db, this, cf_name, cf_handles_.at(cf_name), input_file_names, input_level, compact_options_, false);
 }
 
 void CabinCompactor::ScheduleCompaction(CompactionTask* task) {
-    options_.env->Schedule(&CabinCompactor::CompactFiles, task);
+    if (task->column_family_name.find("sys") == std::string::npos) {
+        printf("Scheduling compaction task for column family: %s\n", task->column_family_name.c_str());
+        options_.env->Schedule(&CabinCompactor::CompactFiles, task);
+    }
 }
     
 void CabinCompactor::CompactFiles(void* arg) {
     std::unique_ptr<CompactionTask> task(reinterpret_cast<CompactionTask*>(arg));
     assert(task);
     assert(task->db);
+    printf("compacting for column family: %s\n", task->column_family_name.c_str());
     Status s = task->db->CompactFiles(task->compact_options,
+                                      task->column_family_handle,
                                       task->input_file_names,
                                       task->output_level);
-    printf("CompactFiles() finished with status %s\n", s.ToString().c_str());
-    if (!s.ok() && !s.IsIOError() && task->retry_on_fail) {
+    if (s.ok()) {
+        printf("CompactFiles() finished with status %s\n", s.ToString().c_str());
+    } else if (!s.IsIOError() && task->retry_on_fail) {
          // If a compaction task with its retry_on_fail=true failed,
          // try to schedule another compaction in case the reason
          // is not an IO error.
          CompactionTask* new_task =
-		 task->compactor->PickCompaction(task->db, task->column_family_name);
+
+		 task->compactor->PickCompaction(task->db, task->column_family_name, 0);
          task->compactor->ScheduleCompaction(new_task);
     }
 }

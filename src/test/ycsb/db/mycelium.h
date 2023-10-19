@@ -21,7 +21,7 @@ namespace ycsbc {
 
 class Mycelium : public DB{
     public :
-        Mycelium(const char *dbfilename, utils::Properties &props);
+        Mycelium(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::vector<std::string> *fields,
                  data::Row &result);
@@ -49,7 +49,7 @@ class Mycelium : public DB{
         void SetOptions(utils::Properties &props, const char *dbfilename);
 	    void KeepOnlyRequestedFields(data::Row &row,
                     const std::vector<std::string> *fields, data::Row &selectedColumns);
-        void GetColumnFamilyDescriptors(const char *dbfilename, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+        void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                                         std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };  

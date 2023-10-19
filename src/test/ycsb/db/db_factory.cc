@@ -23,7 +23,7 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
     return new TestRocksDB(dbpath.c_str(), props);
   } else if (props["dbname"] == "mycelium") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-mycelium");
-    return new Mycelium(dbpath.c_str(), props);
+    return new Mycelium(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "mycelium_row_strawman") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-mycelium");
     return new MyceliumRowStrawman(dbpath.c_str(), props);

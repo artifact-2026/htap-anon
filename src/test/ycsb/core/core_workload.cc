@@ -22,7 +22,7 @@ const string CoreWorkload::POOLNAME_PROPERTY = "poolname";
 const string CoreWorkload::POOLNAME_DEFAULT = "cephlsm";
 
 const string CoreWorkload::TABLENAME_PROPERTY = "table";
-const string CoreWorkload::TABLENAME_DEFAULT = "usertable";
+const string CoreWorkload::TABLENAME_DEFAULT = "mycelium";
 
 const string CoreWorkload::KEY_LENGTH = "keylength";
 const string CoreWorkload::KEY_LENGTH_DEFAULT = "16";
