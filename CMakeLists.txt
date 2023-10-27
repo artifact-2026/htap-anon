@@ -11,7 +11,7 @@ FIND_PACKAGE(Protobuf REQUIRED)
 add_subdirectory(lib/rocksdb)
 add_subdirectory(src/cabindb)
 add_subdirectory(src/test/ycsb)
-add_subdirectory(proto)
+add_subdirectory(transformer)
 add_subdirectory(src/example)
 
 include_directories(${CMAKE_SOURCE_DIR}/lib/rocksdb/include)

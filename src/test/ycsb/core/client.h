@@ -14,7 +14,7 @@
 #include "db.h"
 #include "core_workload.h"
 #include "utils.h"
-#include "columns.pb.h"
+#include "proto/columns.pb.h"
 
 using namespace std;
 

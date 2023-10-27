@@ -7,7 +7,7 @@
 #include <mutex>
 
 #include "util/random.h"
-#include "columns.pb.h"
+#include "proto/columns.pb.h"
 
 namespace ROCKSDB_NAMESPACE {
 /* GLOBAL DIFINE */

@@ -14,4 +14,4 @@ target_include_directories(cabindb PUBLIC /usr/include)
 target_link_libraries(cabindb
                       rocksdb
                       rados
-		      proto)
+		      transformer)

@@ -12,7 +12,7 @@
 #include "discrete_generator.h"
 #include "counter_generator.h"
 #include "utils.h"
-#include "columns.pb.h"
+#include "proto/columns.pb.h"
 
 namespace ycsbc {
 

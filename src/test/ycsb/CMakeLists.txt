@@ -10,10 +10,10 @@ set(ycsb_srcs
 add_executable(ycsb_test ${ycsb_srcs})
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src/test/ycsb)
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/proto)
+target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/transformer)
 target_link_libraries(
     ycsb_test
     cabindb
-    proto
+    transformer
     ${Protobuf_LIBRARIES}
 )
