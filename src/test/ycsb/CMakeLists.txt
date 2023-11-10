@@ -1,7 +1,6 @@
 set(ycsb_srcs
     ycsbc.cc
     db/db_factory.cc
-    db/test_cabin_db.cc
     db/test_rocks_db.cc
     db/mycelium.cc
     db/mycelium_row_strawman.cc

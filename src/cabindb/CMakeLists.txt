@@ -1,3 +1,5 @@
+add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
+
 set(cabindb_srcs
     compactor.cc
     cabin_db.cc

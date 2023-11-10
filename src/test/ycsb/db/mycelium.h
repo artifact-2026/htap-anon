@@ -7,12 +7,7 @@
 #include <errno.h>
 #include <string>
 
-#include <rocksdb/options.h>
-#include <rocksdb/db.h>
-#include <rocksdb/cache.h>
-#include <rocksdb/table.h>
-#include <rocksdb/filter_policy.h>
-
+#include "cabindb/cabin_db.h"
 #include "core/properties.h"
 #include "core/core_workload.h"
 #include "proto/columns.pb.h"
@@ -41,17 +36,8 @@ class Mycelium : public DB{
         ~Mycelium() {};
     
     private:
-        rocksdb::DB *rocksdb_;
-        rocksdb::Options options_;
-        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
+        rocksdb::CabinDB *cabindb_;
         int noResults; 
-
-        void SetOptions(utils::Properties &props, const char *dbfilename);
-	    void KeepOnlyRequestedFields(data::Row &row,
-                    const std::vector<std::string> *fields, data::Row &selectedColumns);
-        void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
-        void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
-                                        std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };  
 
 }

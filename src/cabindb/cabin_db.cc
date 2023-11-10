@@ -6,8 +6,10 @@
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
 #include "rocksdb-rados-env/env_librados.h"
+#include "transformer/cracker.h"
+#include "compactor.h"
 
-namespace CABINDB_NAMESPACE {
+namespace ROCKSDB_NAMESPACE {
     class CabinDBLogger : public rocksdb::Logger {
       public:
         explicit CabinDBLogger() {};
@@ -26,130 +28,210 @@ namespace CABINDB_NAMESPACE {
 
     };
 
-   CabinDB::CabinDB(const char *dbfilename, rocksdb::Options& options, int field_count, bool bootstrap) {
+   CabinDB::CabinDB(const std::string& dbname, const char *dbfilename, bool bootstrap)
+   {
+    SetOptions(dbfilename);
+    rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_);
+    options_.listeners.emplace_back(compactor);
+    options_.transformer = std::make_shared<rocksdb::Cracker>();
 
-        std::string config_path = "/etc/ceph/ceph.conf";
-        std::string rados_pool;
-        rados_pool.append(dbfilename).append("_pool");
+    std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
+    GetColumnFamilyDescriptors(dbname, column_family_descriptors);
+    std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
 
-        options.env = new rocksdb::EnvLibrados(dbfilename, config_path, rados_pool);
-        options.IncreaseParallelism();
-        options.OptimizeLevelStyleCompaction();
-        // create the DB if it's not already present
-        options.create_if_missing = true;
-
-        options.compaction_style = rocksdb::kCompactionStyleNone;
-        options.level0_slowdown_writes_trigger = 3;
-        options.level0_stop_writes_trigger = 5;
-        options.info_log.reset(new CabinDBLogger());
-
-	    /*
-         * creating column family names
-         */
-        CreateLeveledColumnFamilyNames(field_count, options.num_levels, leveled_cf_names_);
-        rocksdb::Status s;
-        
-        if (bootstrap) {
-            s = rocksdb::DB::Open(options,dbfilename,&db_);
-            if(!s.ok()){
-                std::cerr<<"Can't open rocksdb "<<dbfilename<<" "<<s.ToString()<<std::endl;
-                exit(0);
-            }
-
-            cfhandles_map_[rocksdb::kDefaultColumnFamilyName] = db_->DefaultColumnFamily();
-
-            for (uint64_t i = 1; i < leveled_cf_names_.size(); i++) {
-                for (auto cfname : leveled_cf_names_[i]) {
-                    rocksdb::ColumnFamilyHandle* cf;
-	                s = db_->CreateColumnFamily(rocksdb::ColumnFamilyOptions(), cfname, &cf);
-                    cfhandles_map_[cfname] = cf;
-                }  
-	        }
-        } else {
-            std::vector<rocksdb::ColumnFamilyDescriptor> cf_descriptors;
-            std::vector<rocksdb::ColumnFamilyHandle*> cfhandles;
-
-            CreateAllColumnFamilyDescriptors(cf_descriptors, leveled_cf_names_);
-            s = rocksdb::DB::Open(options,dbfilename,cf_descriptors,&cfhandles,&db_);
-
-            int i = 0;
-            for (auto cf_names : leveled_cf_names_) {
-                for (auto cf_name : cf_names) {
-                    cfhandles_map_[cf_name] = cfhandles[i];
-                    i += 1;
-                }
-            }
+    if (bootstrap) {
+        rocksdb::Status s = rocksdb::DB::Open(options_, 
+                                      dbfilename,
+                                      &rocksdb_);
+        if (!s.ok()){
+            std::cerr<<"Can't open mycelium "<<dbfilename<<" "<<s.ToString()<<std::endl;
+            exit(0);
         }
 
-        //options_.listeners.emplace_back(new CabinCompactor(options, options_.num_levels,
-        //                               leveled_cf_names_, cfhandles_map_));
+        s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
+    } else {
+        rocksdb::Status s = rocksdb::DB::Open(options_,
+                                          dbfilename,
+                                          column_family_descriptors,
+                                          &cf_handles,
+                                          &rocksdb_);
+        if (!s.ok()){
+            std::cerr<<"Can't open mycelium "<<dbfilename<<" "<<s.ToString()<<std::endl;
+            exit(0);
+        }
     }
+    BuildColumnFamilyHandleMap(column_family_descriptors, cf_handles);
+    compactor->SetColumnFamilyHandles(cfhandles_);
+   }
 
-    Status CabinDB::Read(const std::string &table, const std::string &key, std::string &value)
-    {
-        value.clear();
-        rocksdb::Status s = db_->Get(rocksdb::ReadOptions(), cfhandles_map_[table], key, &value);
+   int CabinDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
+                      data::Row &result)
+   {
+    std::string value;
+    auto it = cfhandles_.find(table);
+    if (it != cfhandles_.end()) {
+        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                  cfhandles_[0],
+                                  key,
+                                  &value);
         
         if (s.ok()) {
-            return Status::kOK;
-        } else if (s.IsNotFound()) {
-            return Status::kNotFound;
+            result.ParseFromString(value);
+            return 0;
         }
-        return Status::kError;
     }
+    return 1;
+   }
 
-    Status CabinDB::Scan(const std::string &table, const std::string &key, int len, std::vector<std::string> &values)
+    int CabinDB::Scan(const std::string &table, const std::string &begin_key,
+                          int32_t len, const std::vector<std::string> *fields,
+                          std::vector<data::Row> &result)
     {
-        auto it = db_->NewIterator(rocksdb::ReadOptions());
-        values.clear();
-        it->Seek(key);
-        for (int i = 0; i < len && it->Valid(); i++) {
-            values.push_back(it->value().ToString());
-        }
+        result.clear();
+        auto ith = cfhandles_.find(table);
+        if (ith != cfhandles_.end()) {
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), ith->second);
+            it->Seek(begin_key);
+            for (int i = 0; i < len && it->Valid(); i++) {
+                std::string value = it->value().ToString();
+                data::Row row;
+                row.ParseFromString(value);
 
-        if (values.size() > 0) {
-            return Status::kOK;
+	            if (fields != NULL) {
+                    data::Row selectedColumns;
+                    KeepOnlyRequestedFields(row, fields, selectedColumns);
+                    result.push_back(selectedColumns);
+	            } else {
+	                result.push_back(row);
+                }	      
+                it->Next();
+            }
         }
         
-        return Status::kNotFound;
+        return result.size();
     }
 
-    Status CabinDB::Insert(const std::string &table, const std::string &key, std::string &value)
+    int CabinDB::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        rocksdb::WriteOptions write_options = rocksdb::WriteOptions();
-        rocksdb::Status s = db_->Put(write_options, key, value);
-
-        if (!s.ok()) {
-            std::cerr<<"insert error\n"<<std::endl;
-            return Status::kError;
+        auto it = cfhandles_.find(table);
+        if (it != cfhandles_.end()) {
+            rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
+                                          it->second,
+                                          key,
+                                          values);
+            if (s.ok()) {
+                return 0;
+            }
         }
-        return Status::kOK;
+        return 1;
     }
 
-    Status CabinDB::Delete(const std::string &table, const std::string &key)
+    int CabinDB::Update(const std::string &table, const std::string &key, std::string &values)
     {
-        rocksdb::WriteOptions write_options = rocksdb::WriteOptions();
-        rocksdb::Status s = db_->Delete(write_options,key);
+        return Insert(table, key, values);
+    }
 
-        if (!s.ok()) {
-            std::cerr<<"delete error\n"<<std::endl;
-            return Status::kError;
+    int CabinDB::Delete(const std::string &table, const std::string &key)
+    {
+        auto it = cfhandles_.find(table);
+        if (it != cfhandles_.end()) {
+            rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(),
+                                             it->second,
+                                             key);
+            if (s.ok()) {
+                return 0;
+            }
         }
-        return Status::kOK;
+        return 1;
     }
 
     CabinDB::~CabinDB()
     {
         rocksdb::Status s;
-        for (auto handle : cfhandles_map_) {
-            s = db_->DestroyColumnFamilyHandle(handle.second);
+        for (auto handle : cfhandles_) {
+            s = rocksdb_->DestroyColumnFamilyHandle(handle.second);
         }
-        delete db_;
+        delete rocksdb_;
     }
 
-    std::vector<std::vector<std::string> > CabinDB::GetColumnFamilyNames()
+    void CabinDB::SetOptions(const char *dbfilename)
     {
-        return leveled_cf_names_;
+        options_.create_if_missing = true;
+        //options_.enable_pipelined_write = true;
+
+        /*
+        std::string config_path = "/etc/ceph/ceph.conf";
+        std::string rados_pool;
+        rados_pool.append(dbfilename).append("_pool");
+        options_.env = new rocksdb::EnvLibrados(dbfilename, config_path, rados_pool);
+        */
+
+        //options_.max_background_jobs = 16;
+        //options_.max_write_buffer_number = 32;
+        options_.AllowTransformationWhileCompacting(2, 4, 16);
+
+        //options_.target_file_size_base = 64ul * 1024 * 1024;
+        //options_.write_buffer_size = 2 << 30;
+        //options_.db_write_buffer_size = 2 << 30;
+
+        options_.level0_file_num_compaction_trigger = 2;
+        options_.level0_slowdown_writes_trigger = 3;     
+        options_.level0_stop_writes_trigger = 5;
+
+        //options_.use_direct_reads = true;
+        //options_.use_direct_io_for_flush_and_compaction = true;
+
+        //options_.max_open_files = 20480;
+        //options_.max_file_opening_threads = 32;
+
+        options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
+        options_.IncreaseParallelism(5);
+    }
+
+    void CabinDB::KeepOnlyRequestedFields(data::Row &row,
+                    const std::vector<std::string> *fields, data::Row &selectedColumns)
+    {
+        for (auto field : *fields) {
+            for (int i = 0; i < row.columns_size(); i++) {
+                if (row.columns(i).name().compare(field) == 0) {
+                    data::Column* selectedColumn = selectedColumns.add_columns();
+                    selectedColumn->set_name(row.columns(i).name());
+                    selectedColumn->set_value(row.columns(i).value());
+                    break;
+                }
+            }
+        }
+    }
+
+    void CabinDB::GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
+    {
+        options_.SetCompactingLevelWithinColumnFamilyGroup(0);
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+                        dbname, rocksdb::ColumnFamilyOptions(options_)));
+        
+        int level = 1;
+        int splits = 1;
+        while (level < options_.compacting_column_family_num_levels) {
+            splits *= 2;
+            if (level == options_.compacting_column_family_num_levels - 1 || splits > options_.num_columns) {
+                splits = options_.num_columns;
+            }
+            for (int i= 0; i < splits; i++) {
+                std::string cf_name = dbname + "_sys_cf_" + std::to_string(level) + "_" + std::to_string(i);
+                options_.SetCompactingLevelWithinColumnFamilyGroup(level);
+                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
+            }
+            
+            level += 1;
+        }
+    }
+
+    void CabinDB::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
+                                              std::vector<rocksdb::ColumnFamilyHandle*> handles)
+    {
+        for (size_t i = 0; i < handles.size(); i++) {
+            cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
+        }
     }
 
 } // namespace CABINDB_NAMESPACE

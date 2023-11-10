@@ -7,6 +7,7 @@
 #include "compactor.h"
 #include <rocksdb/options.h>
 #include "column_family_util.h"
+#include "proto/columns.pb.h"
 
 namespace rocksdb{
   class DB;
@@ -21,47 +22,52 @@ namespace rocksdb{
   class ColumnFamilyDescriptor;
   class ColumnFamilyHandle;
   class Status;
+  class Cracker;
   struct Options;
   struct BlockBasedTableOptions;
   struct DBOptions;
   struct ColumnFamilyOptions;
 }
 
-namespace CABINDB_NAMESPACE {
+namespace ROCKSDB_NAMESPACE {
 
 const int kNumOfLevels = 4;
-
-enum Status {
-  kOK = 0,
-  kError,
-  kNotFound,
-  kNotImplemented
-};
 
 typedef std::pair<std::string, std::string> KVPair;
 
 class CabinDB {
   public:
-    CabinDB(const char *dbfilename, rocksdb::Options& options, int field_count, bool bootstrap);
+    CabinDB(const std::string& dbname, const char *dbfilename, bool bootstrap);
 
-    Status Read(const std::string &table, const std::string &key, std::string &value);
+    int Read(const std::string &table, const std::string &key,
+                 const std::vector<std::string> *fields,
+                 data::Row &result);
 
-    Status Scan(const std::string &table, const std::string &key, int len, std::vector<std::string> &values);
+    int Scan(const std::string &table, const std::string &begin_key,
+                 int32_t len, const std::vector<std::string> *fields,
+                 std::vector<data::Row> &result);
 
-    Status Insert(const std::string &table, const std::string &key, std::string &value);
+    int Insert(const std::string &table, const std::string &key,
+                 std::string &values);
 
-    Status Delete(const std::string &table, const std::string &key);
+    int Update(const std::string &table, const std::string &key,
+                 std::string &values);
 
-    std::vector<std::vector<std::string> > GetColumnFamilyNames();
+    int Delete(const std::string &table, const std::string &key);
 
     ~CabinDB();
 
   private:
-    rocksdb::DB *db_;
-    std::string dbpath_;
+    rocksdb::DB *rocksdb_;
     rocksdb::Options options_;
-    std::vector<std::vector<std::string> > leveled_cf_names_;
-    std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_map_;
+    std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
+
+    void SetOptions(const char *dbfilename);
+	  void KeepOnlyRequestedFields(data::Row &row,
+                const std::vector<std::string> *fields, data::Row &selectedColumns);
+    void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+    void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
+                                    std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };
 
 }
