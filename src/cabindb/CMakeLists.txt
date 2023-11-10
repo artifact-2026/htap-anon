@@ -1,7 +1,6 @@
 set(cabindb_srcs
     compactor.cc
     cabin_db.cc
-    transformer/cracker.cc
 )
 
 list(APPEND cabindb_srcs rocksdb-rados-env/env_librados.cc)
