@@ -28,12 +28,15 @@ namespace ROCKSDB_NAMESPACE {
 
     };
 
-   CabinDB::CabinDB(const std::string& dbname, const char *dbfilename, bool bootstrap)
+   CabinDB::CabinDB(const std::string& dbname, const char *dbfilename, bool bootstrap, bool transform)
    {
     SetOptions(dbfilename);
     rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_);
     options_.listeners.emplace_back(compactor);
-    options_.transformer = std::make_shared<rocksdb::Cracker>();
+
+    if (transform) {
+        options_.transformer = std::make_shared<rocksdb::Cracker>();
+    }
 
     std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
     GetColumnFamilyDescriptors(dbname, column_family_descriptors);

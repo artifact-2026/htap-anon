@@ -374,6 +374,14 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("bootstrap",argv[argindex]);
       argindex++;
+    } else if(strcmp(argv[argindex],"-transform")==0){
+      argindex++;
+      if(argindex >= argc){
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("transform",argv[argindex]);
+      argindex++;
     } else if(strcmp(argv[argindex],"-throughput")==0){
       argindex++;
       if(argindex >= argc){
@@ -549,6 +557,7 @@ void Init(utils::Properties &props){
   props.SetProperty("load","false");
   props.SetProperty("run","false");
   props.SetProperty("bootstrap","true");
+  props.SetProperty("transform","false");
   props.SetProperty("runtime", "15");
   props.SetProperty("threadcount","1");
   props.SetProperty("throughput","false");

@@ -94,10 +94,10 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
 
-        std::string config_path = "/etc/ceph/ceph.conf";
-        std::string rados_pool;
-        rados_pool.append(dbfilename).append("_pool");
-        options_.env = new rocksdb::EnvLibrados(dbfilename, config_path, rados_pool);
+        //std::string config_path = "/etc/ceph/ceph.conf";
+        //std::string rados_pool;
+        //rados_pool.append(dbfilename).append("_pool");
+        //options_.env = new rocksdb::EnvLibrados(dbfilename, config_path, rados_pool);
 
         //options_.max_background_jobs = 16;
         //options_.max_write_buffer_number = 32;

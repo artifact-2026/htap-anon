@@ -5,7 +5,7 @@
 #include "db/test_rocks_db.h"
 #include "db/mycelium.h"
 #include "db/mycelium_row_strawman.h"
-#include "db/mycelium_column_strawman.h"
+#include "db/rocksdb_column_strawman.h"
 
 using namespace std;
 
@@ -21,11 +21,11 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-mycelium");
     return new Mycelium(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "mycelium_row_strawman") {
-    std::string dbpath = props.GetProperty("dbpath","/tmp/test-mycelium");
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-mycelium-strawman");
     return new MyceliumRowStrawman(dbpath.c_str(), props);
-  } else if (props["dbname"] == "mycelium_column_strawman") {
-    std::string dbpath = props.GetProperty("dbpath","/tmp/test-mycelium");
-    return new MyceliumColumnStrawman(dbpath.c_str(), props);
+  } else if (props["dbname"] == "rocksdb_column_strawman") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-rocksdb-strawman");
+    return new RocksdbColumnStrawman(props["dbname"], dbpath.c_str(), props);
   } else return nullptr;
 }
 

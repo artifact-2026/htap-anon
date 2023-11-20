@@ -1,5 +1,5 @@
-#ifndef YCSB_CPLUSPLUS_MYCELIUM_COLUMN_STRAWMAN_H
-#define YCSB_CPLUSPLUS_MYCELIUM_COLUMN_STRAWMAN_H
+#ifndef YCSB_CPLUSPLUS_ROCKSDB_COLUMN_STRAWMAN_H
+#define YCSB_CPLUSPLUS_ROCKSDB_COLUMN_STRAWMAN_H
 
 #include "core/db.h"
 
@@ -19,9 +19,9 @@
 
 namespace ycsbc {
 
-class MyceliumColumnStrawman : public DB{
+class RocksdbColumnStrawman : public DB{
     public :
-        MyceliumColumnStrawman(const char *dbfilename, utils::Properties &props);
+        RocksdbColumnStrawman(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::vector<std::string> *fields,
                  data::Row &result);
@@ -38,15 +38,15 @@ class MyceliumColumnStrawman : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~MyceliumColumnStrawman() {};
+        ~RocksdbColumnStrawman() {};
     
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
         int noResults;
-        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_map_;
+        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
 
-        void SetOptions(utils::Properties &props, const char *dbfilename);
+        void SetOptions(utils::Properties &props, const char *dbfilename, int num_cfs);
         // serialize for inserts
         void SerializeValue(std::vector<KVPair> &kvs, std::string &value);
         // de-serialize one record
@@ -55,6 +55,10 @@ class MyceliumColumnStrawman : public DB{
                     std::vector<KVPair> &kvs);
 	    void KeepOnlyRequestedFields(data::Row &row,
                     const std::vector<std::string> *fields, data::Row &selectedColumns);
+        void GetColumnFamilyDescriptors(const std::string& dbname,
+                    std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+        void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
+                            std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };  
 
 }

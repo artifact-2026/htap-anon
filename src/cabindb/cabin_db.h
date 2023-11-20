@@ -37,7 +37,7 @@ typedef std::pair<std::string, std::string> KVPair;
 
 class CabinDB {
   public:
-    CabinDB(const std::string& dbname, const char *dbfilename, bool bootstrap);
+    CabinDB(const std::string& dbname, const char *dbfilename, bool bootstrap, bool transform);
 
     int Read(const std::string &table, const std::string &key,
                  const std::vector<std::string> *fields,
