@@ -35,6 +35,8 @@ bool StrStartWith(const char *str, const char *pre);
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props);
 void Init(utils::Properties &props);
 void PrintInfo(utils::Properties &props);
+void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats);
+void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats);
 
 int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
     bool is_loading) {
@@ -121,7 +123,6 @@ int main( const int argc, const char *argv[]) {
   string morerun = props["morerun"];
 
   vector<future<int>> actual_ops;
-  vector<future<struct throughput_data>> throughput_ops;
   int total_ops = 0;
   int sum = 0;
   utils::Timer<double> timer;
@@ -129,74 +130,11 @@ int main( const int argc, const char *argv[]) {
   PrintInfo(props);
 
   if( load ) {
-    // Loads data
-    ycsbc::CoreWorkload wl;
-    wl.Init(props);
-
-    uint64_t load_start = get_now_micros();
-    total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
-    for (int i = 0; i < num_threads; ++i) {
-      actual_ops.emplace_back(async(launch::async,
-          DelegateClient, db, &wl, total_ops / num_threads, true));
-    }
-    assert((int)actual_ops.size() == num_threads);
-
-    sum = 0;
-    for (auto &n : actual_ops) {
-      assert(n.valid());
-      sum += n.get();
-    }
-    uint64_t load_end = get_now_micros();
-    uint64_t use_time = load_end - load_start;
-    printf("********** load result **********\n");
-    printf("loading records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
-    printf("*********************************\n");
-
-    if ( print_stats ) {
-      printf("-------------- db statistics --------------\n");
-      db->PrintStats();
-      printf("-------------------------------------------\n");
-    }
-
+    runLoad(props, num_threads, db, print_stats);
   }
 
   if( throughput ) {
-    // Measures throughput
-    ycsbc::CoreWorkload wl;
-    wl.Init(props);
-
-    //uint64_t work_start = get_now_micros();
-    total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
-    for (int i = 0; i < num_threads; ++i) {
-      throughput_ops.emplace_back(async(launch::async,
-          DelegateForThroughput, db, &wl, throughput_type, run_time));
-    }
-    assert((int)throughput_ops.size() == num_threads);
-
-    int sum[35] = {};
-    for (auto &n : throughput_ops) {
-      assert(n.valid());
-      struct throughput_data th_work = n.get();
-      for (int k=0; k < 35; k++) {
-        sum[k] += th_work.arr[k];
-      }
-    }
-    //uint64_t work_end = get_now_micros();
-    //uint64_t use_time = work_end - work_start;
-    printf("********** throughput result **********\n");
-    int run_time_in_minutes = run_time/60+1;
-    for (int k=0; k < run_time_in_minutes; k++) {
-      printf("throughput record:%d time (minute):%d\n", sum[k], k+1);
-    }
-    //printf("throughput records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
-    printf("*********************************\n");
-
-    if ( print_stats ) {
-      printf("-------------- db statistics --------------\n");
-      db->PrintStats();
-      printf("-------------------------------------------\n");
-    }
-
+    runXput(props, num_threads, db, throughput_type, run_time, print_stats);
   }
 
   if( run ) {
@@ -320,8 +258,6 @@ int main( const int argc, const char *argv[]) {
         db->PrintStats();
         printf("-------------------------------------------\n");
       }
-
-
     }
     
   }
@@ -344,6 +280,73 @@ int main( const int argc, const char *argv[]) {
   }
   delete db;
   return 0;
+}
+
+void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats) {
+  vector<future<int>> actual_ops;
+  ycsbc::CoreWorkload wl;
+  wl.Init(props);
+
+  uint64_t load_start = get_now_micros();
+  int total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
+  for (int i = 0; i < num_threads; ++i) {
+    actual_ops.emplace_back(async(launch::async,
+        DelegateClient, db, &wl, total_ops / num_threads, true));
+  }
+  assert((int)actual_ops.size() == num_threads);
+
+  int sum = 0;
+  for (auto &n : actual_ops) {
+    assert(n.valid());
+    sum += n.get();
+  }
+  uint64_t load_end = get_now_micros();
+  uint64_t use_time = load_end - load_start;
+  printf("********** load result **********\n");
+  printf("loading records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
+  printf("*********************************\n");
+
+  if ( print_stats ) {
+    printf("-------------- db statistics --------------\n");
+    db->PrintStats();
+    printf("-------------------------------------------\n");
+  }
+}
+
+void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats) {
+    vector<future<struct throughput_data>> throughput_ops;
+    ycsbc::CoreWorkload wl;
+    wl.Init(props);
+
+    for (int i = 0; i < num_threads; ++i) {
+      throughput_ops.emplace_back(async(launch::async,
+          DelegateForThroughput, db, &wl, throughput_type, run_time));
+    }
+    assert((int)throughput_ops.size() == num_threads);
+
+    // run_time is given in number of seconds
+    int sum[num_threads] = {};
+    int run_time_in_minutes = run_time/60;
+    for (auto &n : throughput_ops) {
+      assert(n.valid());
+      struct throughput_data th_work = n.get();
+      for (int k=0; k < run_time_in_minutes; k++) {
+        sum[k] += th_work.arr[k];
+      }
+    }
+    
+    printf("********** throughput result **********\n");
+    for (int k=0; k < run_time_in_minutes; k++) {
+      printf("throughput records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f MBytes/sec)\n", 
+          sum[k], 1.0 * run_time, 1.0 * sum[k] / 60, 1.0 * sum[k] * 1024 / (1e6 * 60));
+    }  
+    printf("*********************************\n");
+
+    if ( print_stats ) {
+      printf("-------------- db statistics --------------\n");
+      db->PrintStats();
+      printf("-------------------------------------------\n");
+    }
 }
 
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) {
