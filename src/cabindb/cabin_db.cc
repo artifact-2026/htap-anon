@@ -160,7 +160,7 @@ namespace ROCKSDB_NAMESPACE {
     void CabinDB::SetOptions(const char *dbfilename)
     {
         options_.create_if_missing = true;
-        //options_.enable_pipelined_write = true;
+        options_.enable_pipelined_write = true;
 
         /*
         std::string config_path = "/etc/ceph/ceph.conf";
@@ -177,9 +177,9 @@ namespace ROCKSDB_NAMESPACE {
         //options_.write_buffer_size = 2 << 30;
         //options_.db_write_buffer_size = 2 << 30;
 
-        options_.level0_file_num_compaction_trigger = 2;
-        options_.level0_slowdown_writes_trigger = 3;     
-        options_.level0_stop_writes_trigger = 5;
+        //options_.level0_file_num_compaction_trigger = 2;
+        //options_.level0_slowdown_writes_trigger = 3;     
+        //options_.level0_stop_writes_trigger = 5;
 
         //options_.use_direct_reads = true;
         //options_.use_direct_io_for_flush_and_compaction = true;

@@ -27,7 +27,7 @@ atomic<uint64_t> ops_time[ycsbc::Operation::READMODIFYWRITE + 1];
 
 struct throughput_data
 {
-  int arr[35];
+  int arr[60];
 };
 
 void UsageMessage(const char *command);
@@ -71,6 +71,9 @@ struct throughput_data DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload 
   db->Init();
   ycsbc::Client client(*db, *wl);
   struct throughput_data td_oks;
+  for (int i = 0; i < 60; i++) {
+    td_oks.arr[i] = 0;
+  }
 
   int oks = 0;
   int i = 0;
@@ -78,14 +81,15 @@ struct throughput_data DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload 
   std::chrono::time_point step = start;
 
   while (true) {
-    if (std::chrono::steady_clock::now() - start > std::chrono::seconds(runTime)) {
+    if (std::chrono::steady_clock::now() - start > std::chrono::seconds(runTime+1)) {
       td_oks.arr[i] = oks;
       break;
     }
 
-    if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(60)) {
+    if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(5)) {
       td_oks.arr[i] = oks;
       i += 1;
+      oks = 0;
       step = std::chrono::steady_clock::now();
     }
 
@@ -325,20 +329,20 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
     assert((int)throughput_ops.size() == num_threads);
 
     // run_time is given in number of seconds
-    int sum[num_threads] = {};
-    int run_time_in_minutes = run_time/60;
+    int run_time_in_units = run_time/5;
+    int sum[run_time_in_units] = {};
     for (auto &n : throughput_ops) {
       assert(n.valid());
       struct throughput_data th_work = n.get();
-      for (int k=0; k < run_time_in_minutes; k++) {
+      for (int k=0; k < run_time_in_units; k++) {
         sum[k] += th_work.arr[k];
       }
     }
     
     printf("********** throughput result **********\n");
-    for (int k=0; k < run_time_in_minutes; k++) {
+    for (int k=0; k < run_time_in_units; k++) {
       printf("throughput records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f MBytes/sec)\n", 
-          sum[k], 1.0 * run_time, 1.0 * sum[k] / 60, 1.0 * sum[k] * 1024 / (1e6 * 60));
+          sum[k], 1.0 * 5, 1.0 * sum[k] / 5, 1.0 * sum[k] * 1024 / (1e6 * 5));
     }  
     printf("*********************************\n");
 

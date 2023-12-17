@@ -24,7 +24,7 @@ void CabinCompactor::OnFlushCompleted(DB* db, const FlushJobInfo& info) {
     }
 
     int splits = 1;
-    for (int i = 1; i < options_.compacting_column_family_num_levels; i++) {
+    for (int i = 1; i < options_.compacting_column_family_num_levels - 1; i++) {
         splits *= 2;
         if (i == options_.compacting_column_family_num_levels-1 || i > options_.num_columns) {
             splits = options_.num_columns;

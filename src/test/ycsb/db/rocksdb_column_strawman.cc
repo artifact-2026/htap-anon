@@ -150,9 +150,9 @@ namespace ycsbc {
         //options_.write_buffer_size = 2 << 30;
         //options_.db_write_buffer_size = 2 << 30;
 
-        //options_.level0_file_num_compaction_trigger = 8;
-        //options_.level0_slowdown_writes_trigger = 16;     
-        //options_.level0_stop_writes_trigger = 16;
+        options_.level0_file_num_compaction_trigger = 4;
+        options_.level0_slowdown_writes_trigger = 8;     
+        options_.level0_stop_writes_trigger = 12;
 
         //options_.use_direct_reads = true;
         //options_.use_direct_io_for_flush_and_compaction = true;
