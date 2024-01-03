@@ -51,7 +51,7 @@ CompactionTask* CabinCompactor::PickCompaction(DB* db, const std::string& cf_nam
         }
     }
 
-    return new CompactionTask(db, this, cf_name, cf_handles_.at(cf_name), input_file_names, input_level, compact_options_, false);
+    return new CompactionTask(db, this, cf_name, cf_handles_.at(cf_name), input_file_names, options_.num_levels-1, compact_options_, false);
 }
 
 void CabinCompactor::ScheduleCompaction(CompactionTask* task) {
