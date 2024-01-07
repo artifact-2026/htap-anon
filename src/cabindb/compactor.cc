@@ -55,23 +55,19 @@ CompactionTask* CabinCompactor::PickCompaction(DB* db, const std::string& cf_nam
 }
 
 void CabinCompactor::ScheduleCompaction(CompactionTask* task) {
-    if (task->column_family_name.find("sys") == std::string::npos) {
-        printf("Scheduling compaction task for column family: %s\n", task->column_family_name.c_str());
-        options_.env->Schedule(&CabinCompactor::CompactFiles, task);
-    }
+    options_.env->Schedule(&CabinCompactor::CompactFiles, task);
 }
     
 void CabinCompactor::CompactFiles(void* arg) {
     std::unique_ptr<CompactionTask> task(reinterpret_cast<CompactionTask*>(arg));
     assert(task);
     assert(task->db);
-    printf("compacting for column family: %s\n", task->column_family_name.c_str());
     Status s = task->db->CompactFiles(task->compact_options,
                                       task->column_family_handle,
                                       task->input_file_names,
                                       task->output_level);
     if (s.ok()) {
-        printf("CompactFiles() finished with status %s\n", s.ToString().c_str());
+        printf("CompactFiles() for %s finished with status %s\n", task->column_family_name.c_str(), s.ToString().c_str());
     } else if (!s.IsIOError() && task->retry_on_fail) {
          // If a compaction task with its retry_on_fail=true failed,
          // try to schedule another compaction in case the reason
