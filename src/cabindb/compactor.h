@@ -23,8 +23,7 @@ struct CompactionTask;
 class Compactor : public EventListener {
  public:
     virtual CompactionTask* PickCompaction(DB* db,
-                                           const std::string& cf_name,
-                                           const int input_level) = 0;
+                                           const std::string& cf_name) = 0;
     // Schedule and run the specified compaction task in background.
     virtual void ScheduleCompaction(CompactionTask* task) = 0;
 };
@@ -60,7 +59,7 @@ class CabinCompactor : public Compactor {
 
     void OnFlushCompleted(DB* db, const FlushJobInfo& info) override;
 
-    CompactionTask* PickCompaction(DB* db, const std::string& cf_name, const int input_level) override;
+    CompactionTask* PickCompaction(DB* db, const std::string& cf_name) override;
 
     void ScheduleCompaction(CompactionTask* task) override;
     
