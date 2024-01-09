@@ -27,7 +27,8 @@ atomic<uint64_t> ops_time[ycsbc::Operation::READMODIFYWRITE + 1];
 
 struct throughput_data
 {
-  int arr[60];
+  int xput[120];
+  int exec_time[120];
 };
 
 void UsageMessage(const char *command);
@@ -72,24 +73,28 @@ struct throughput_data DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload 
   ycsbc::Client client(*db, *wl);
   struct throughput_data td_oks;
   for (int i = 0; i < 60; i++) {
-    td_oks.arr[i] = 0;
+    td_oks.xput[i] = 0;
   }
 
   int oks = 0;
   int i = 0;
+  int64_t exec_time = 0; 
   std::chrono::time_point start = std::chrono::steady_clock::now();
   std::chrono::time_point step = start;
+  std::chrono::time_point exec_start = start;
 
   while (true) {
     if (std::chrono::steady_clock::now() - start > std::chrono::seconds(runTime+1)) {
-      td_oks.arr[i] = oks;
+      td_oks.xput[i] = oks;
       break;
     }
 
     if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(5)) {
-      td_oks.arr[i] = oks;
+      td_oks.xput[i] = oks;
+      td_oks.exec_time[i] = exec_time;
       i += 1;
       oks = 0;
+      exec_time = 0;
       step = std::chrono::steady_clock::now();
     }
 
@@ -97,6 +102,14 @@ struct throughput_data DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload 
       oks += client.DoRead();
     } else if (throughputType == 2) {
       oks += client.DoInsert();
+    } else if (throughputType == 3) {
+      oks += client.DoRead();
+      exec_time += int64_t((std::chrono::steady_clock::now() - exec_start).count());
+      exec_start = std::chrono::steady_clock::now();
+    } else if (throughputType == 4) {
+      oks += client.DoInsert();
+      exec_time += int64_t((std::chrono::steady_clock::now() - exec_start).count());
+      exec_start = std::chrono::steady_clock::now();
     }
   }
   db->Close();
@@ -331,18 +344,20 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
     // run_time is given in number of seconds
     int run_time_in_units = run_time/5;
     int sum[run_time_in_units] = {};
+    int64_t sum_time[run_time_in_units] = {};
     for (auto &n : throughput_ops) {
       assert(n.valid());
       struct throughput_data th_work = n.get();
       for (int k=0; k < run_time_in_units; k++) {
-        sum[k] += th_work.arr[k];
+        sum[k] += th_work.xput[k];
+        sum_time[k] += th_work.exec_time[k];
       }
     }
     
     printf("********** throughput result **********\n");
     for (int k=0; k < run_time_in_units; k++) {
-      printf("throughput records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f MBytes/sec)\n", 
-          sum[k], 1.0 * 5, 1.0 * sum[k] / 5, 1.0 * sum[k] * 1024 / (1e6 * 5));
+      printf("throughput records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f MBytes/sec), Latency:%.2f\n", 
+          sum[k], 1.0 * 5, 1.0 * sum[k] / 5, 1.0 * sum[k] * 1024 / (1e6 * 5), double(sum_time[k]*1000000000)/sum[k]);
     }  
     printf("*********************************\n");
 
