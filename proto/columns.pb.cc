@@ -153,8 +153,8 @@ void AddDescriptorsImpl() {
   static const char descriptor[] GOOGLE_PROTOBUF_ATTRIBUTE_SECTION_VARIABLE(protodesc_cold) = {
       "\n\rcolumns.proto\022\004data\" \n\005Table\022\027\n\004rows\030\001"
       " \003(\0132\t.data.Row\"$\n\003Row\022\035\n\007columns\030\001 \003(\0132"
-      "\014.data.Column\"%\n\006Column\022\014\n\004name\030\001 \002(\t\022\r\n"
-      "\005value\030\002 \002(\t"
+      "\014.data.Column\"%\n\006Column\022\014\n\004name\030\001 \001(\t\022\r\n"
+      "\005value\030\002 \001(\t"
   };
   ::google::protobuf::DescriptorPool::InternalAddGeneratedFile(
       descriptor, 132);
@@ -387,7 +387,6 @@ void Table::CopyFrom(const Table& from) {
 }
 
 bool Table::IsInitialized() const {
-  if (!::google::protobuf::internal::AllAreInitialized(this->rows())) return false;
   return true;
 }
 
@@ -620,7 +619,6 @@ void Row::CopyFrom(const Row& from) {
 }
 
 bool Row::IsInitialized() const {
-  if (!::google::protobuf::internal::AllAreInitialized(this->columns())) return false;
   return true;
 }
 
@@ -731,7 +729,7 @@ bool Column::MergePartialFromCodedStream(
     tag = p.first;
     if (!p.second) goto handle_unusual;
     switch (::google::protobuf::internal::WireFormatLite::GetTagFieldNumber(tag)) {
-      // required string name = 1;
+      // optional string name = 1;
       case 1: {
         if (static_cast< ::google::protobuf::uint8>(tag) ==
             static_cast< ::google::protobuf::uint8>(10u /* 10 & 0xFF */)) {
@@ -747,7 +745,7 @@ bool Column::MergePartialFromCodedStream(
         break;
       }
 
-      // required string value = 2;
+      // optional string value = 2;
       case 2: {
         if (static_cast< ::google::protobuf::uint8>(tag) ==
             static_cast< ::google::protobuf::uint8>(18u /* 18 & 0xFF */)) {
@@ -790,7 +788,7 @@ void Column::SerializeWithCachedSizes(
   (void) cached_has_bits;
 
   cached_has_bits = _has_bits_[0];
-  // required string name = 1;
+  // optional string name = 1;
   if (cached_has_bits & 0x00000001u) {
     ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
       this->name().data(), static_cast<int>(this->name().length()),
@@ -800,7 +798,7 @@ void Column::SerializeWithCachedSizes(
       1, this->name(), output);
   }
 
-  // required string value = 2;
+  // optional string value = 2;
   if (cached_has_bits & 0x00000002u) {
     ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
       this->value().data(), static_cast<int>(this->value().length()),
@@ -825,7 +823,7 @@ void Column::SerializeWithCachedSizes(
   (void) cached_has_bits;
 
   cached_has_bits = _has_bits_[0];
-  // required string name = 1;
+  // optional string name = 1;
   if (cached_has_bits & 0x00000001u) {
     ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
       this->name().data(), static_cast<int>(this->name().length()),
@@ -836,7 +834,7 @@ void Column::SerializeWithCachedSizes(
         1, this->name(), target);
   }
 
-  // required string value = 2;
+  // optional string value = 2;
   if (cached_has_bits & 0x00000002u) {
     ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
       this->value().data(), static_cast<int>(this->value().length()),
@@ -855,26 +853,6 @@ void Column::SerializeWithCachedSizes(
   return target;
 }
 
-size_t Column::RequiredFieldsByteSizeFallback() const {
-// @@protoc_insertion_point(required_fields_byte_size_fallback_start:data.Column)
-  size_t total_size = 0;
-
-  if (has_name()) {
-    // required string name = 1;
-    total_size += 1 +
-      ::google::protobuf::internal::WireFormatLite::StringSize(
-        this->name());
-  }
-
-  if (has_value()) {
-    // required string value = 2;
-    total_size += 1 +
-      ::google::protobuf::internal::WireFormatLite::StringSize(
-        this->value());
-  }
-
-  return total_size;
-}
 size_t Column::ByteSizeLong() const {
 // @@protoc_insertion_point(message_byte_size_start:data.Column)
   size_t total_size = 0;
@@ -884,19 +862,21 @@ size_t Column::ByteSizeLong() const {
       ::google::protobuf::internal::WireFormat::ComputeUnknownFieldsSize(
         _internal_metadata_.unknown_fields());
   }
-  if (((_has_bits_[0] & 0x00000003) ^ 0x00000003) == 0) {  // All required fields are present.
-    // required string name = 1;
-    total_size += 1 +
-      ::google::protobuf::internal::WireFormatLite::StringSize(
-        this->name());
+  if (_has_bits_[0 / 32] & 3u) {
+    // optional string name = 1;
+    if (has_name()) {
+      total_size += 1 +
+        ::google::protobuf::internal::WireFormatLite::StringSize(
+          this->name());
+    }
 
-    // required string value = 2;
-    total_size += 1 +
-      ::google::protobuf::internal::WireFormatLite::StringSize(
-        this->value());
+    // optional string value = 2;
+    if (has_value()) {
+      total_size += 1 +
+        ::google::protobuf::internal::WireFormatLite::StringSize(
+          this->value());
+    }
 
-  } else {
-    total_size += RequiredFieldsByteSizeFallback();
   }
   int cached_size = ::google::protobuf::internal::ToCachedSize(total_size);
   SetCachedSize(cached_size);
@@ -953,7 +933,6 @@ void Column::CopyFrom(const Column& from) {
 }
 
 bool Column::IsInitialized() const {
-  if ((_has_bits_[0] & 0x00000003) != 0x00000003) return false;
   return true;
 }
 

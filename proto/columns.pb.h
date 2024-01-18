@@ -395,7 +395,7 @@ class Column : public ::google::protobuf::Message /* @@protoc_insertion_point(cl
 
   // accessors -------------------------------------------------------
 
-  // required string name = 1;
+  // optional string name = 1;
   bool has_name() const;
   void clear_name();
   static const int kNameFieldNumber = 1;
@@ -410,7 +410,7 @@ class Column : public ::google::protobuf::Message /* @@protoc_insertion_point(cl
   ::std::string* release_name();
   void set_allocated_name(::std::string* name);
 
-  // required string value = 2;
+  // optional string value = 2;
   bool has_value() const;
   void clear_value();
   static const int kValueFieldNumber = 2;
@@ -431,9 +431,6 @@ class Column : public ::google::protobuf::Message /* @@protoc_insertion_point(cl
   void clear_has_name();
   void set_has_value();
   void clear_has_value();
-
-  // helper for ByteSizeLong()
-  size_t RequiredFieldsByteSizeFallback() const;
 
   ::google::protobuf::internal::InternalMetadataWithArena _internal_metadata_;
   ::google::protobuf::internal::HasBits<1> _has_bits_;
@@ -521,7 +518,7 @@ Row::columns() const {
 
 // Column
 
-// required string name = 1;
+// optional string name = 1;
 inline bool Column::has_name() const {
   return (_has_bits_[0] & 0x00000001u) != 0;
 }
@@ -587,7 +584,7 @@ inline void Column::set_allocated_name(::std::string* name) {
   // @@protoc_insertion_point(field_set_allocated:data.Column.name)
 }
 
-// required string value = 2;
+// optional string value = 2;
 inline bool Column::has_value() const {
   return (_has_bits_[0] & 0x00000002u) != 0;
 }

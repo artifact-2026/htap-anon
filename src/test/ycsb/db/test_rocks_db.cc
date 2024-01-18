@@ -1,6 +1,7 @@
 #include "core/core_workload.h"
 #include "test_rocks_db.h"
 #include "lib/coding.h"
+#include "cabindb/compactor.h"
 
 using namespace std;
 
@@ -100,7 +101,7 @@ namespace ycsbc {
         //options_.write_buffer_size = 2 << 30;
         //options_.db_write_buffer_size = 2 << 30;
 
-        //options_.level0_file_num_compaction_trigger = 8;
+        options_.level0_file_num_compaction_trigger = 1;
         //options_.level0_slowdown_writes_trigger = 16;     
         //options_.level0_stop_writes_trigger = 16;
 

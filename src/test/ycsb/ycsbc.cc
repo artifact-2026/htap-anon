@@ -27,8 +27,8 @@ atomic<uint64_t> ops_time[ycsbc::Operation::READMODIFYWRITE + 1];
 
 struct throughput_data
 {
-  int xput[120];
-  int exec_time[120];
+  uint64_t xput[120];
+  uint64_t exec_time[120];
 };
 
 void UsageMessage(const char *command);
@@ -89,7 +89,7 @@ struct throughput_data DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload 
       break;
     }
 
-    if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(5)) {
+    if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(25)) {
       td_oks.xput[i] = oks;
       td_oks.exec_time[i] = exec_time;
       i += 1;
@@ -342,9 +342,10 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
     assert((int)throughput_ops.size() == num_threads);
 
     // run_time is given in number of seconds
-    int run_time_in_units = run_time/5;
-    int sum[run_time_in_units] = {};
+    int run_time_in_units = run_time/25;
+    uint64_t sum[run_time_in_units] = {};
     int64_t sum_time[run_time_in_units] = {};
+    uint64_t total = 0;
     for (auto &n : throughput_ops) {
       assert(n.valid());
       struct throughput_data th_work = n.get();
@@ -353,12 +354,16 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
         sum_time[k] += th_work.exec_time[k];
       }
     }
+
+    for (int k=4; k < run_time_in_units; k++) {
+      total += sum[k];
+    }
     
     printf("********** throughput result **********\n");
-    for (int k=0; k < run_time_in_units; k++) {
-      printf("throughput records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f MBytes/sec), Latency:%.2f\n", 
-          sum[k], 1.0 * 5, 1.0 * sum[k] / 5, 1.0 * sum[k] * 1024 / (1e6 * 5), double(sum_time[k]*1000000000)/sum[k]);
-    }  
+    //for (int k=0; k < run_time_in_units; k++) {
+    printf("throughput records:%ld  use time: 100 - %d s  TPS:%.2f tps\n", 
+        total, run_time, 1.0 * total / (1.0 * (run_time - 100)));
+    //}  
     printf("*********************************\n");
 
     if ( print_stats ) {

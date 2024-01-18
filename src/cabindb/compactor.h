@@ -73,6 +73,7 @@ class CabinCompactor : public Compactor {
     CompactionOptions compact_options_;
     std::map<std::string, rocksdb::ColumnFamilyHandle*> cf_handles_;
     std::mutex _mutex;
+    static std::map<rocksdb::ColumnFamilyHandle*, std::vector<std::string> > compact_files_map_;
 };
 
 }

@@ -11,6 +11,6 @@ message Row {
 }
 
 message Column {
-  required string name = 1;
-  required string value = 2;
+  optional string name = 1;
+  optional string value = 2;
 } 
