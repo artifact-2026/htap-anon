@@ -21,7 +21,7 @@ namespace ycsbc {
                                               dbfilename,
                                               &rocksdb_);
             if (!s.ok()){
-                std::cerr<<"Can't open mycelium "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                std::cerr<<"Can't open precracking "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
 
@@ -33,7 +33,7 @@ namespace ycsbc {
                                           &cf_handles,
                                           &rocksdb_);
             if (!s.ok()){
-                std::cerr<<"Can't open mycelium "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                std::cerr<<"Can't open precracking "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
         }
@@ -139,6 +139,12 @@ namespace ycsbc {
         options_.enable_pipelined_write = true;
         options_.num_columns = num_cfs;
 
+        options_.IncreaseParallelism(16);
+        options_.level0_slowdown_writes_trigger = 256;     
+        options_.level0_stop_writes_trigger = 324;
+        options_.max_open_files = 512;
+        options_.level0_file_num_compaction_trigger = 4;
+
         //std::string config_path = "/etc/ceph/ceph.conf";
         //std::string rados_pool;
         //rados_pool.append(dbfilename).append("_pool");
@@ -149,10 +155,6 @@ namespace ycsbc {
         //options_.target_file_size_base = 64ul * 1024 * 1024;
         //options_.write_buffer_size = 2 << 30;
         //options_.db_write_buffer_size = 2 << 30;
-
-        options_.level0_file_num_compaction_trigger = 4;
-        options_.level0_slowdown_writes_trigger = 8;     
-        options_.level0_stop_writes_trigger = 12;
 
         //options_.use_direct_reads = true;
         //options_.use_direct_io_for_flush_and_compaction = true;

@@ -178,8 +178,11 @@ namespace ROCKSDB_NAMESPACE {
         //options_.db_write_buffer_size = 2 << 30;
 
         //options_.level0_file_num_compaction_trigger = 2;
-        options_.level0_slowdown_writes_trigger = 15;     
-        options_.level0_stop_writes_trigger = 20;
+        options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
+        options_.IncreaseParallelism(16);
+        options_.level0_slowdown_writes_trigger = 256;     
+        options_.level0_stop_writes_trigger = 324;
+        options_.max_open_files = 512;
 
         //options_.use_direct_reads = true;
         //options_.use_direct_io_for_flush_and_compaction = true;
@@ -187,8 +190,7 @@ namespace ROCKSDB_NAMESPACE {
         //options_.max_open_files = 20480;
         //options_.max_file_opening_threads = 32;
 
-        options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
-        options_.IncreaseParallelism(5);
+        
     }
 
     void CabinDB::KeepOnlyRequestedFields(data::Row &row,

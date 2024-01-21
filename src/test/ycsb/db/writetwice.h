@@ -1,5 +1,5 @@
-#ifndef YCSB_CPLUSPLUS_MYCELIUM_ROW_STRAWMAN_H
-#define YCSB_CPLUSPLUS_MYCELIUM_ROW_STRAWMAN_H
+#ifndef YCSB_CPLUSPLUS_WRITETWICE_H
+#define YCSB_CPLUSPLUS_WRITETWICE_H
 
 #include "core/db.h"
 
@@ -19,9 +19,9 @@
 
 namespace ycsbc {
 
-class MyceliumRowStrawman : public DB{
+class Writetwice : public DB{
     public :
-        MyceliumRowStrawman(const char *dbfilename, utils::Properties &props);
+        Writetwice(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::vector<std::string> *fields,
                  data::Row &result);
@@ -38,22 +38,21 @@ class MyceliumRowStrawman : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~MyceliumRowStrawman() {};
+        ~Writetwice() {};
     
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
+        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         int noResults;
 
-        void SetOptions(utils::Properties &props, const char *dbfilename);
-        // serialize for inserts
-        void SerializeValue(std::vector<KVPair> &kvs, std::string &value);
-        // de-serialize one record
-        void DeSerializeValue(std::string &value,
-                    const std::vector<std::string> *fields,
-                    std::vector<KVPair> &kvs);
+        void SetOptions(const char *dbfilename);
 	    void KeepOnlyRequestedFields(data::Row &row,
-                    const std::vector<std::string> *fields, data::Row &selectedColumns);
+                const std::vector<std::string> *fields, data::Row &selectedColumns);
+        void GetColumnFamilyDescriptors(const std::string& dbname,
+                                        std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+        void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
+                                    std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };  
 
 }

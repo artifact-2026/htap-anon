@@ -355,14 +355,18 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
       }
     }
 
-    for (int k=4; k < run_time_in_units; k++) {
+    //for (int k=4; k < run_time_in_units; k++) {
+    //  total += sum[k];
+    //}
+    for (int k=0; k < run_time_in_units; k++) {
       total += sum[k];
     }
     
     printf("********** throughput result **********\n");
     //for (int k=0; k < run_time_in_units; k++) {
     printf("throughput records:%ld  use time: 100 - %d s  TPS:%.2f tps\n", 
-        total, run_time, 1.0 * total / (1.0 * (run_time - 100)));
+        //total, run_time, 1.0 * total / (1.0 * (run_time - 100)));
+        total, run_time, 1.0 * total / (1.0 * run_time));
     //}  
     printf("*********************************\n");
 
@@ -448,6 +452,14 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
         exit(0);
       }
       props.SetProperty("dbname", argv[argindex]);
+      argindex++;
+    } else if (strcmp(argv[argindex], "-table") == 0) {
+      argindex++;
+      if (argindex >= argc) {
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("table", argv[argindex]);
       argindex++;
     } else if (strcmp(argv[argindex], "-host") == 0) {
       argindex++;
