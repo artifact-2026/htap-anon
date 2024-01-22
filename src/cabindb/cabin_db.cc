@@ -184,8 +184,8 @@ namespace ROCKSDB_NAMESPACE {
         options_.level0_stop_writes_trigger = 324;
         options_.max_open_files = 512;
 
-        //options_.use_direct_reads = true;
-        //options_.use_direct_io_for_flush_and_compaction = true;
+        options_.use_direct_reads = true;
+        options_.use_direct_io_for_flush_and_compaction = true;
 
         //options_.max_open_files = 20480;
         //options_.max_file_opening_threads = 32;

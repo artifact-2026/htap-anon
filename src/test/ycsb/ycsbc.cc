@@ -355,18 +355,14 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
       }
     }
 
-    //for (int k=4; k < run_time_in_units; k++) {
-    //  total += sum[k];
-    //}
-    for (int k=0; k < run_time_in_units; k++) {
+    for (int k=4; k < run_time_in_units; k++) {
       total += sum[k];
     }
     
     printf("********** throughput result **********\n");
     //for (int k=0; k < run_time_in_units; k++) {
     printf("throughput records:%ld  use time: 100 - %d s  TPS:%.2f tps\n", 
-        //total, run_time, 1.0 * total / (1.0 * (run_time - 100)));
-        total, run_time, 1.0 * total / (1.0 * run_time));
+        total, run_time, 1.0 * total / (1.0 * (run_time - 100)));
     //}  
     printf("*********************************\n");
 
