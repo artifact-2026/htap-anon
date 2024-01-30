@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cmath>
+#include <stack>
 
 #include "cabin_db.h"
 #include "rocksdb/db.h"
@@ -28,7 +29,11 @@ namespace ROCKSDB_NAMESPACE {
 
     };
 
-   CabinDB::CabinDB(const std::string& dbname, const char *dbfilename, bool bootstrap, bool transform)
+   CabinDB::CabinDB(const std::string& dbname,
+                    const char *dbfilename,
+                    bool bootstrap,
+                    bool transform,
+                    std::string translevel)
    {
     SetOptions(dbfilename);
     rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_);
@@ -36,10 +41,11 @@ namespace ROCKSDB_NAMESPACE {
 
     if (transform) {
         options_.transformer = std::make_shared<rocksdb::Cracker>();
+        options_.translevel = translevel;
     }
 
     std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
-    GetColumnFamilyDescriptors(dbname, column_family_descriptors);
+    GetColumnFamilyDescriptors(dbname, column_family_descriptors, translevel);
     std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
 
     if (bootstrap) {
@@ -180,9 +186,9 @@ namespace ROCKSDB_NAMESPACE {
         //options_.level0_file_num_compaction_trigger = 2;
         options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
         options_.IncreaseParallelism(16);
-        options_.level0_slowdown_writes_trigger = 256;     
-        options_.level0_stop_writes_trigger = 324;
-        options_.max_open_files = 512;
+        options_.level0_slowdown_writes_trigger = 9999999;     
+        options_.level0_stop_writes_trigger = 99999999;
+        options_.max_open_files = -1;
 
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
@@ -208,25 +214,41 @@ namespace ROCKSDB_NAMESPACE {
         }
     }
 
-    void CabinDB::GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
+    void CabinDB::GetColumnFamilyDescriptors(const std::string& dbname, 
+                                             std::vector<rocksdb::ColumnFamilyDescriptor>& column_families,
+                                             std::string translevel)
     {
         options_.SetCompactingLevelWithinColumnFamilyGroup(0);
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
                         dbname, rocksdb::ColumnFamilyOptions(options_)));
-        
+
         int level = 1;
-        int splits = 1;
+        int splits = 2;
+        int columns = options_.num_columns;
+        std::stack<std::string> parents;
+        parents.push(dbname+"_sys_cf_");
+
         while (level < options_.compacting_column_family_num_levels) {
-            splits *= 2;
-            if (level == options_.compacting_column_family_num_levels - 1 || splits > options_.num_columns) {
-                splits = options_.num_columns;
+            if (columns > 1) {
+                if (level == options_.compacting_column_family_num_levels - 1) {
+                    splits = columns;
+                }
+                
+                int stackLen = parents.size();
+
+                for (int i = 0; i < stackLen; i++) {
+                    std::string parent_name = parents.top();
+                    parents.pop();
+                    for (int j= 0; j < splits; j++) {
+                        std::string cf_name = parent_name + std::to_string(level) + "-" + std::to_string(j);
+                        options_.SetCompactingLevelWithinColumnFamilyGroup(level);
+                        column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
+                        parents.push(cf_name);
+                    }
+                }
             }
-            for (int i= 0; i < splits; i++) {
-                std::string cf_name = dbname + "_sys_cf_" + std::to_string(level) + "_" + std::to_string(i);
-                options_.SetCompactingLevelWithinColumnFamilyGroup(level);
-                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
-            }
-            
+
+            columns /= splits;
             level += 1;
         }
     }

@@ -10,7 +10,8 @@ namespace ycsbc {
     Mycelium::Mycelium(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","true"));
         bool transform = utils::StrToBool(props.GetProperty("transform","true"));
-        cabindb_ = new rocksdb::CabinDB(dbname, dbfilename, bootstrap, transform);
+        std::string translevel = props.GetProperty("translevel","all");
+        cabindb_ = new rocksdb::CabinDB(dbname, dbfilename, bootstrap, transform, translevel);
     }
 
     /*

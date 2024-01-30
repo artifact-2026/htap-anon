@@ -86,9 +86,9 @@ namespace ycsbc {
         options_.enable_pipelined_write = true;
 
         options_.IncreaseParallelism(16);
-        options_.level0_slowdown_writes_trigger = 256;     
-        options_.level0_stop_writes_trigger = 324;
-        options_.max_open_files = 512;
+        options_.level0_slowdown_writes_trigger = 9999999;     
+        options_.level0_stop_writes_trigger = 99999999;
+        options_.max_open_files = -1;
         options_.level0_file_num_compaction_trigger = 4;
 
         // options for turning compaction off

@@ -1,4 +1,6 @@
 #include <iostream>
+#include <cmath>
+#include <stack>
 #include "core/core_workload.h"
 #include "writetwice.h"
 #include "lib/coding.h"
@@ -132,9 +134,9 @@ namespace ycsbc {
 
         options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
         options_.IncreaseParallelism(16);
-        options_.level0_slowdown_writes_trigger = 256;
-        options_.level0_stop_writes_trigger = 324;
-        options_.max_open_files = 512;
+        options_.level0_slowdown_writes_trigger = 9999999;
+        options_.level0_stop_writes_trigger = 99999999;
+        options_.max_open_files = -1;
 
         options_.AllowTransformationWhileCompacting(2, 4, 16);
         options_.write_both = true;
@@ -178,18 +180,32 @@ namespace ycsbc {
                         dbname, rocksdb::ColumnFamilyOptions(options_)));
         
         int level = 1;
-        int splits = 1;
+        int splits = 2;
+        int columns = options_.num_columns;
+        std::stack<std::string> parents;
+        parents.push(dbname+"_sys_cf_");
+
         while (level < options_.compacting_column_family_num_levels) {
-            splits *= 2;
-            if (level == options_.compacting_column_family_num_levels - 1 || splits > options_.num_columns) {
-                splits = options_.num_columns;
+            if (columns > 1) {
+                if (level == options_.compacting_column_family_num_levels - 1) {
+                    splits = columns;
+                }
+                
+                int stackLen = parents.size();
+
+                for (int i = 0; i < stackLen; i++) {
+                    std::string parent_name = parents.top();
+                    parents.pop();
+                    for (int j= 0; j < splits; j++) {
+                        std::string cf_name = parent_name + std::to_string(level) + "-" + std::to_string(j);
+                        options_.SetCompactingLevelWithinColumnFamilyGroup(level);
+                        column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
+                        parents.push(cf_name);
+                    }
+                }
             }
-            for (int i= 0; i < splits; i++) {
-                std::string cf_name = dbname + "_sys_cf_" + std::to_string(level) + "_" + std::to_string(i);
-                options_.SetCompactingLevelWithinColumnFamilyGroup(level);
-                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
-            }
-            
+
+            columns /= splits;
             level += 1;
         }
 

@@ -37,7 +37,11 @@ typedef std::pair<std::string, std::string> KVPair;
 
 class CabinDB {
   public:
-    CabinDB(const std::string& dbname, const char *dbfilename, bool bootstrap, bool transform);
+    CabinDB(const std::string& dbname,
+            const char *dbfilename,
+            bool bootstrap,
+            bool transform,
+            std::string translevel);
 
     int Read(const std::string &table, const std::string &key,
                  const std::vector<std::string> *fields,
@@ -65,7 +69,9 @@ class CabinDB {
     void SetOptions(const char *dbfilename);
 	  void KeepOnlyRequestedFields(data::Row &row,
                 const std::vector<std::string> *fields, data::Row &selectedColumns);
-    void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+    void GetColumnFamilyDescriptors(const std::string& dbname,
+                                    std::vector<rocksdb::ColumnFamilyDescriptor>& column_families,
+                                    std::string translevel);
     void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                                     std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };
