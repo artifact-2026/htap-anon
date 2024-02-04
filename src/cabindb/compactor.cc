@@ -24,22 +24,14 @@ void CabinCompactor::OnFlushCompleted(DB* db, const FlushJobInfo& info) {
             task->retry_on_fail = true;
         }
         ScheduleCompaction(task);
-    
-        int splits = 1;
-        for (int i = 1; i < options_.compacting_column_family_num_levels - 1; i++) {
-            splits *= 2;
-            if (i == options_.compacting_column_family_num_levels-1 || i > options_.num_columns) {
-                splits = options_.num_columns;
-            }
-            for (int j = 0; j < splits; j++) {
-                std::string column_family_name = info.cf_name + "_sys_cf_" + std::to_string(i) + "_" + std::to_string(j);
-                task = PickCompaction(db, column_family_name);
-                if (task != nullptr) {
-                    if (info.triggered_writes_stop) {
-                        task->retry_on_fail = true;
-                    }
-                    ScheduleCompaction(task);
+
+        for (auto cf : cf_handles_) {
+            task = PickCompaction(db, cf.first);
+            if (task != nullptr) {
+                if (info.triggered_writes_stop) {
+                    task->retry_on_fail = true;
                 }
+                ScheduleCompaction(task);
             }
         }
     }

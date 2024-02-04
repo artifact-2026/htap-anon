@@ -1,6 +1,6 @@
 #include <iostream>
 #include <cmath>
-#include <stack>
+#include <queue>
 #include "core/core_workload.h"
 #include "writetwice.h"
 #include "lib/coding.h"
@@ -182,8 +182,8 @@ namespace ycsbc {
         int level = 1;
         int splits = 2;
         int columns = options_.num_columns;
-        std::stack<std::string> parents;
-        parents.push(dbname+"_sys_cf_");
+        std::queue<std::string> parents;
+        parents.push(dbname+"_sys_cf");
 
         while (level < options_.compacting_column_family_num_levels) {
             if (columns > 1) {
@@ -191,13 +191,13 @@ namespace ycsbc {
                     splits = columns;
                 }
                 
-                int stackLen = parents.size();
+                int queueLen = parents.size();
 
-                for (int i = 0; i < stackLen; i++) {
-                    std::string parent_name = parents.top();
-                    parents.pop();
+                for (int i = 0; i < queueLen; i++) {
+                    std::string parent_name = parents.front();
+                    parents.pop(); 
                     for (int j= 0; j < splits; j++) {
-                        std::string cf_name = parent_name + std::to_string(level) + "-" + std::to_string(j);
+                        std::string cf_name = parent_name + "_level-" + std::to_string(level) + "-" + std::to_string(j);
                         options_.SetCompactingLevelWithinColumnFamilyGroup(level);
                         column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
                         parents.push(cf_name);

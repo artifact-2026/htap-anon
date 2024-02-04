@@ -1,6 +1,6 @@
 #include <iostream>
 #include <cmath>
-#include <stack>
+#include <queue>
 
 #include "cabin_db.h"
 #include "rocksdb/db.h"
@@ -225,8 +225,17 @@ namespace ROCKSDB_NAMESPACE {
         int level = 1;
         int splits = 2;
         int columns = options_.num_columns;
-        std::stack<std::string> parents;
-        parents.push(dbname+"_sys_cf_");
+        std::queue<std::string> parents;
+        parents.push(dbname+"_sys_cf");
+
+/*
+        for (int i = 0; i < options_.num_columns; i++) {
+            std::string cf_name = parent_name + "_level-" + std::to_string(level) + "-" + std::to_string(j);
+            options_.SetCompactingLevelWithinColumnFamilyGroup(level);
+            column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
+            parents.push(cf_name);
+        }
+*/
 
         while (level < options_.compacting_column_family_num_levels) {
             if (columns > 1) {
@@ -234,13 +243,13 @@ namespace ROCKSDB_NAMESPACE {
                     splits = columns;
                 }
                 
-                int stackLen = parents.size();
+                int queueLen = parents.size();
 
-                for (int i = 0; i < stackLen; i++) {
-                    std::string parent_name = parents.top();
+                for (int i = 0; i < queueLen; i++) {
+                    std::string parent_name = parents.front();
                     parents.pop();
                     for (int j= 0; j < splits; j++) {
-                        std::string cf_name = parent_name + std::to_string(level) + "-" + std::to_string(j);
+                        std::string cf_name = parent_name + "_level-" + std::to_string(level) + "-" + std::to_string(j);
                         options_.SetCompactingLevelWithinColumnFamilyGroup(level);
                         column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
                         parents.push(cf_name);
@@ -251,10 +260,12 @@ namespace ROCKSDB_NAMESPACE {
             columns /= splits;
             level += 1;
         }
+        
     }
 
-    void CabinDB::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
-                                              std::vector<rocksdb::ColumnFamilyHandle*> handles)
+    void CabinDB::BuildColumnFamilyHandleMap(
+                                std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
+                                std::vector<rocksdb::ColumnFamilyHandle*> handles)
     {
         for (size_t i = 0; i < handles.size(); i++) {
             cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
