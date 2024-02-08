@@ -195,13 +195,19 @@ namespace ycsbc {
 
                 for (int i = 0; i < queueLen; i++) {
                     std::string parent_name = parents.front();
-                    parents.pop(); 
+                    parents.pop();
+
                     for (int j= 0; j < splits; j++) {
                         std::string cf_name = parent_name + "_level-" + std::to_string(level) + "-" + std::to_string(j);
                         options_.SetCompactingLevelWithinColumnFamilyGroup(level);
                         column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
                         parents.push(cf_name);
                     }
+                    
+                    options_.SetCompactingLevelWithinColumnFamilyGroup(-1);
+                    std::string extra_cf_name = parent_name + "_level-" + std::to_string(level) + "-pure_storage";
+                    column_families.push_back(rocksdb::ColumnFamilyDescriptor(extra_cf_name,
+                                                    rocksdb::ColumnFamilyOptions(options_)));
                 }
             }
 
@@ -209,10 +215,7 @@ namespace ycsbc {
             level += 1;
         }
 
-        options_.SetCompactingLevelWithinColumnFamilyGroup(-1);
-        std::string extra_cf_name = dbname + "_pure_storage";
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(extra_cf_name,
-                                    rocksdb::ColumnFamilyOptions(options_)));
+        
     }
 
     void Writetwice::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,

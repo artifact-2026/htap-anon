@@ -26,6 +26,10 @@ void CabinCompactor::OnFlushCompleted(DB* db, const FlushJobInfo& info) {
         ScheduleCompaction(task);
 
         for (auto cf : cf_handles_) {
+            if (cf.first.find("pure_storage") != std::string::npos) {
+                continue;
+            }
+            
             task = PickCompaction(db, cf.first);
             if (task != nullptr) {
                 if (info.triggered_writes_stop) {
@@ -58,7 +62,7 @@ CompactionTask* CabinCompactor::PickCompaction(DB* db, const std::string& cf_nam
         }
     }
 
-    if (input_file_names.size() < 4) {
+    if (cf_name.find("_sys_cf") == std::string::npos && input_file_names.size() < 4) {
         return nullptr;
     }
     
