@@ -59,6 +59,8 @@ namespace ROCKSDB_NAMESPACE {
 
         s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
     } else {
+        column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
+            rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions(options_)));
         rocksdb::Status s = rocksdb::DB::Open(options_,
                                           dbfilename,
                                           column_family_descriptors,
@@ -80,7 +82,7 @@ namespace ROCKSDB_NAMESPACE {
     auto it = cfhandles_.find(table);
     if (it != cfhandles_.end()) {
         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                  cfhandles_[0],
+                                  it->second,
                                   key,
                                   &value);
         
@@ -218,6 +220,7 @@ namespace ROCKSDB_NAMESPACE {
                                              std::vector<rocksdb::ColumnFamilyDescriptor>& column_families,
                                              std::string translevel)
     {
+        
         options_.SetCompactingLevelWithinColumnFamilyGroup(0);
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
                         dbname, rocksdb::ColumnFamilyOptions(options_)));

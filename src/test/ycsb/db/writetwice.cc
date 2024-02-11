@@ -39,6 +39,8 @@ namespace ycsbc {
 
             s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
         } else {
+            column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
+                    rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions(options_)));
             rocksdb::Status s = rocksdb::DB::Open(options_,
                                               dbfilename,
                                               column_family_descriptors,
