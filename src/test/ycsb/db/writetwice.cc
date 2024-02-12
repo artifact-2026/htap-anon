@@ -62,16 +62,18 @@ namespace ycsbc {
                       data::Row &result) 
     {
         std::string value;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                          key,
-                                          &value);
+        auto it = cfhandles_.find(table);
+        if (it != cfhandles_.end()) {
+            rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                  it->second,
+                                  key,
+                                  &value);
         
-        if (s.ok()) {
-            result.ParseFromString(value);
-            return 0;
+            if (s.ok()) {
+                result.ParseFromString(value);
+                return 0;
+            }
         }
-
-        noResults++;
         return 1;
     }
 
@@ -224,7 +226,6 @@ namespace ycsbc {
                                               std::vector<rocksdb::ColumnFamilyHandle*> handles)
     {
         for (size_t i = 0; i < handles.size(); i++) {
-            std::cout << "cf name: " << column_family_descriptors[i].name << std::endl;
             cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
         }
     }
