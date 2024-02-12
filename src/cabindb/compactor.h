@@ -55,7 +55,7 @@ struct CompactionTask {
 
 class CabinCompactor : public Compactor {
  public:
-    CabinCompactor(const Options &options);
+    CabinCompactor(const Options &options, const std::string compacting_cf);
 
     void OnFlushCompleted(DB* db, const FlushJobInfo& info) override;
 
@@ -69,6 +69,7 @@ class CabinCompactor : public Compactor {
 
     ~CabinCompactor() {};
  private:
+    const std::string compacting_cf_name_;
     Options options_;
     CompactionOptions compact_options_;
     std::map<std::string, rocksdb::ColumnFamilyHandle*> cf_handles_;

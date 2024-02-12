@@ -17,7 +17,7 @@ namespace ycsbc {
         bool transform = utils::StrToBool(props.GetProperty("transform","true"));
         SetOptions(dbfilename);
 
-        rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_);
+        rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_, dbname);
         options_.listeners.emplace_back(compactor);
 
         if (transform) {
@@ -124,9 +124,14 @@ namespace ycsbc {
 
     int Writetwice::Delete(const std::string &table, const std::string &key)
     {
-        rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(), key);
-        if (s.ok()) {
-            return 0;
+        auto it = cfhandles_.find(table);
+        if (it != cfhandles_.end()) {
+            rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(),
+                                             it->second,
+                                             key);
+            if (s.ok()) {
+                return 0;
+            }
         }
         return 1;
     }

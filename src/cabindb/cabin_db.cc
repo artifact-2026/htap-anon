@@ -36,7 +36,7 @@ namespace ROCKSDB_NAMESPACE {
                     std::string translevel)
    {
     SetOptions(dbfilename);
-    rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_);
+    rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_, dbname);
     options_.listeners.emplace_back(compactor);
 
     if (transform) {
