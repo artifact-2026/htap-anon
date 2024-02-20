@@ -18,13 +18,12 @@ namespace ycsbc {
     * Read is for point query over all columns
     */
     int TestRocksDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
-                      data::Row &result) 
+                      std::string &result) 
     {
-        std::string value;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &value);
+        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &result);
         
         if (s.ok()) {
-            result.ParseFromString(value);
+            //result.ParseFromString(value);
             return 0;
         }
 
@@ -34,22 +33,24 @@ namespace ycsbc {
 
     int TestRocksDB::Scan(const std::string &table, const std::string &begin_key,
                           int32_t len, const std::vector<std::string> *fields,
-                          std::vector<data::Row> &result) 
+                          std::vector<std::string> &result) 
     {
         result.clear();
         auto it = rocksdb_->NewIterator(rocksdb::ReadOptions());
         it->Seek(begin_key);
         for (int i = 0; i < len && it->Valid(); i++) {
             std::string value = it->value().ToString();
-            data::Row row;
-            row.ParseFromString(value);
 
-	    if (fields != NULL) {
-              data::Row selectedColumns;
-              KeepOnlyRequestedFields(row, fields, selectedColumns);
-              result.push_back(selectedColumns);
-	    } else {
-	      result.push_back(row);
+	        if (fields != NULL) {
+                data::Row row;
+                row.ParseFromString(value);
+                data::Row selectedColumns;
+                KeepOnlyRequestedFields(row, fields, selectedColumns);
+                std::string stitchedValue;
+                selectedColumns.SerializeToString(&stitchedValue);
+                result.push_back(stitchedValue);
+	        } else {
+	            result.push_back(value);
             }	      
             it->Next();
         }

@@ -24,11 +24,11 @@ class RocksdbColumnStrawman : public DB{
         RocksdbColumnStrawman(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::vector<std::string> *fields,
-                 data::Row &result);
+                 std::string &result);
 
         int Scan(const std::string &table, const std::string &begin_key,
                  int32_t len, const std::vector<std::string> *fields,
-                 std::vector<data::Row> &result);
+                 std::vector<std::string> &result);
 
         int Insert(const std::string &table, const std::string &key,
                    std::string &values);

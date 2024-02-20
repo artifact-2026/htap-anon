@@ -18,7 +18,7 @@ namespace ycsbc {
     * Read is for point query over all columns
     */
     int Mycelium::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
-                      data::Row &result) 
+                      std::string &result)
     {
         int read = cabindb_->Read(table, key, fields, result);
         if (read != 0) {
@@ -29,7 +29,7 @@ namespace ycsbc {
 
     int Mycelium::Scan(const std::string &table, const std::string &begin_key,
                           int32_t len, const std::vector<std::string> *fields,
-                          std::vector<data::Row> &result) 
+                          std::vector<std::string> &result) 
     {
         cabindb_->Scan(table, begin_key, len, fields, result);
         return result.size();

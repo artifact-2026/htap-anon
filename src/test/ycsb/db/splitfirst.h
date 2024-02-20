@@ -1,5 +1,5 @@
-#ifndef YCSB_CPLUSPLUS_WRITETWICE_H
-#define YCSB_CPLUSPLUS_WRITETWICE_H
+#ifndef YCSB_CPLUSPLUS_SPLITFIRST_H
+#define YCSB_CPLUSPLUS_SPLITFIRST_H
 
 #include "core/db.h"
 
@@ -15,13 +15,12 @@
 
 #include "core/properties.h"
 #include "core/core_workload.h"
-#include "proto/columns.pb.h"
 
 namespace ycsbc {
 
-class Writetwice : public DB{
+class Splitfirst : public DB{
     public :
-        Writetwice(const std::string& dbname, const char *dbfilename, utils::Properties &props);
+        Splitfirst(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::vector<std::string> *fields,
                  std::string &result);
@@ -38,7 +37,7 @@ class Writetwice : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~Writetwice() {};
+        ~Splitfirst() {};
     
     private:
         rocksdb::DB *rocksdb_;
@@ -47,8 +46,6 @@ class Writetwice : public DB{
         int noResults;
 
         void SetOptions(const char *dbfilename);
-	    void KeepOnlyRequestedFields(data::Row &row,
-                const std::vector<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname,
                                         std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,

@@ -46,9 +46,8 @@ namespace ycsbc {
     * Read is for point query over all columns
     */
     int RocksdbColumnStrawman::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
-                      data::Row &result) 
+                      std::string &result) 
     {
-        std::string values;
         for (auto field : *fields) {
             std::string value;
             rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
@@ -60,23 +59,21 @@ namespace ycsbc {
                 noResults++;
                 return 1;
             }
-            values += value;
+            result += value;
         }
 
-        result.ParseFromString(values);
-        return 1;
+        return 0;
     }
 
     int RocksdbColumnStrawman::Scan(const std::string &table, const std::string &begin_key,
                           int32_t len, const std::vector<std::string> *fields,
-                          std::vector<data::Row> &result) 
+                          std::vector<std::string> &result) 
     {
         result.clear();
 
-        std::vector<std::string> values;
         for (int32_t i = 0; i < len; i++) {
             std::string value = "";
-            values.push_back(value);
+            result.push_back(value);
         }
 
         for (auto field : *fields) {
@@ -84,16 +81,8 @@ namespace ycsbc {
             it->Seek(begin_key);
             for (int32_t i = 0; i < len && it->Valid(); i++) {
                 std::string val = it->value().ToString();
-                values[i] += val;
+                result[i] += val;
                 it->Next();
-            }
-        }
-
-        for (int32_t i = 0; i < len; i++) {
-            data::Row row;
-            if (values[i] != "") {
-                row.ParseFromString(values[i]);
-                result.push_back(row);
             }
         }
         

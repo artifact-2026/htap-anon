@@ -76,18 +76,16 @@ namespace ROCKSDB_NAMESPACE {
    }
 
    int CabinDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
-                      data::Row &result)
+                      std::string &result)
    {
-    std::string value;
     auto it = cfhandles_.find(table);
     if (it != cfhandles_.end()) {
         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
                                   it->second,
                                   key,
-                                  &value);
+                                  &result);
         
         if (s.ok()) {
-            result.ParseFromString(value);
             return 0;
         }
     }
@@ -96,7 +94,7 @@ namespace ROCKSDB_NAMESPACE {
 
     int CabinDB::Scan(const std::string &table, const std::string &begin_key,
                           int32_t len, const std::vector<std::string> *fields,
-                          std::vector<data::Row> &result)
+                          std::vector<std::string> &result)
     {
         result.clear();
         auto ith = cfhandles_.find(table);
@@ -105,15 +103,17 @@ namespace ROCKSDB_NAMESPACE {
             it->Seek(begin_key);
             for (int i = 0; i < len && it->Valid(); i++) {
                 std::string value = it->value().ToString();
-                data::Row row;
-                row.ParseFromString(value);
 
 	            if (fields != NULL) {
+                    data::Row row;
+                    row.ParseFromString(value);
                     data::Row selectedColumns;
                     KeepOnlyRequestedFields(row, fields, selectedColumns);
-                    result.push_back(selectedColumns);
+                    std::string stitchedValue;
+                    selectedColumns.SerializeToString(&stitchedValue);
+                    result.push_back(stitchedValue);
 	            } else {
-	                result.push_back(row);
+	                result.push_back(value);
                 }	      
                 it->Next();
             }

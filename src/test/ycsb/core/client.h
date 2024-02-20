@@ -102,7 +102,7 @@ inline int Client::TransactionRead() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
   //std::vector<DB::KVPair> result;
-  data::Row result;
+  std::string result;
   if (!workload_.read_all_fields()) {
     std::vector<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
@@ -117,7 +117,7 @@ inline int Client::TransactionReadModifyWrite() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
   //std::vector<DB::KVPair> result;
-  data::Row result;
+  std::string result;
 
   if (!workload_.read_all_fields()) {
     std::vector<std::string> fields;
@@ -148,7 +148,7 @@ inline int Client::TransactionScan() {
   std::string max_key;
   workload_.NextTransactionScanKey(key, max_key);
   int len = workload_.NextScanLength();
-  std::vector<data::Row> result;
+  std::vector<std::string> result;
   if (!workload_.read_all_fields()) {
     std::vector<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
