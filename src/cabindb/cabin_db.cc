@@ -36,8 +36,8 @@ namespace ROCKSDB_NAMESPACE {
                     std::string translevel)
    {
     SetOptions(dbfilename);
-    //rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_, dbname);
-    //options_.listeners.emplace_back(compactor);
+    rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_, dbname);
+    options_.listeners.emplace_back(compactor);
 
     if (transform) {
         options_.transformer = std::make_shared<rocksdb::Cracker>();
@@ -72,7 +72,7 @@ namespace ROCKSDB_NAMESPACE {
         }
     }
     BuildColumnFamilyHandleMap(column_family_descriptors, cf_handles);
-    //compactor->SetColumnFamilyHandles(cfhandles_);
+    compactor->SetColumnFamilyHandles(cfhandles_);
    }
 
    int CabinDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
@@ -186,7 +186,7 @@ namespace ROCKSDB_NAMESPACE {
         //options_.db_write_buffer_size = 2 << 30;
 
         //options_.level0_file_num_compaction_trigger = 2;
-        //ßßoptions_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
+        //options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
         options_.IncreaseParallelism(16);
         options_.level0_slowdown_writes_trigger = 9999999;     
         options_.level0_stop_writes_trigger = 99999999;

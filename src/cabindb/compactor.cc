@@ -21,31 +21,31 @@ void CabinCompactor::OnFlushCompleted(DB* db, const FlushJobInfo& info) {
     if (info.cf_name.find(compacting_cf_name_) == std::string::npos) {
         return;
     }
-    CompactionTask* task = PickCompaction(db, info.cf_name);
-    if (task != nullptr) {
-        if (info.triggered_writes_stop) {
-            task->retry_on_fail = true;
-        }
-        if (task->column_family_name.find(compacting_cf_name_) != std::string::npos) {
-            ScheduleCompaction(task);
-        }
-        
+    //CompactionTask* task = PickCompaction(db, info.cf_name);
+    //if (task != nullptr) {
+     //   if (info.triggered_writes_stop) {
+     //       task->retry_on_fail = true;
+     //   }
+     //   if (task->column_family_name.find(compacting_cf_name_) != std::string::npos) {
+     //       ScheduleCompaction(task);
+     //   }
         for (auto cf : cf_handles_) {
             if (cf.first.find("pure_storage") != std::string::npos) {
                 continue;
             }
             
-            task = PickCompaction(db, cf.first);
+            CompactionTask* task = PickCompaction(db, cf.first);
             if (task != nullptr) {
                 if (info.triggered_writes_stop) {
                     task->retry_on_fail = true;
                 }
                 if (task->column_family_name.find(compacting_cf_name_) != std::string::npos) {
+                    std::cout << "Holly scheduling: " << task->column_family_name << std::endl;
                     ScheduleCompaction(task);
                 }
             }
         }
-    }
+   // }
 }
 
 CompactionTask* CabinCompactor::PickCompaction(DB* db, const std::string& cf_name) {
@@ -58,7 +58,6 @@ CompactionTask* CabinCompactor::PickCompaction(DB* db, const std::string& cf_nam
     }
     rocksdb::ColumnFamilyMetaData cf_meta;
     db->GetColumnFamilyMetaData(cfhandle, &cf_meta);
-
     std::vector<std::string> input_file_names;
     for (auto level : cf_meta.levels) {
 	    for (auto file : level.files) {
@@ -69,6 +68,9 @@ CompactionTask* CabinCompactor::PickCompaction(DB* db, const std::string& cf_nam
         }
     }
 
+    if (input_file_names.size() > 0) {
+        std::cout << "Holly picking compaction: " << cf_name << ", levels=" << cf_meta.levels.size() << ", files=" << input_file_names.size() << std::endl;
+    }
     if (cf_name.find("_sys_cf") == std::string::npos && input_file_names.size() < 4) {
         return nullptr;
     }
