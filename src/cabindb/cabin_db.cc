@@ -36,8 +36,8 @@ namespace ROCKSDB_NAMESPACE {
                     std::string translevel)
    {
     SetOptions(dbfilename);
-    rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_, dbname);
-    options_.listeners.emplace_back(compactor);
+    //rocksdb::CabinCompactor* compactor = new rocksdb::CabinCompactor(options_, dbname);
+    //options_.listeners.emplace_back(compactor);
 
     if (transform) {
         options_.transformer = std::make_shared<rocksdb::Cracker>();
@@ -72,7 +72,7 @@ namespace ROCKSDB_NAMESPACE {
         }
     }
     BuildColumnFamilyHandleMap(column_family_descriptors, cf_handles);
-    compactor->SetColumnFamilyHandles(cfhandles_);
+    //compactor->SetColumnFamilyHandles(cfhandles_);
    }
 
    int CabinDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
