@@ -1,4 +1,4 @@
-add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX)
+add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DFLATBUFF_INCLUDE=$FLATBUFF_INC)
 
 set(ycsb_srcs
     ycsbc.cc
@@ -8,6 +8,7 @@ set(ycsb_srcs
     db/writetwice.cc
     db/rocksdb_column_strawman.cc
     db/splitfirst.cc
+    db/test_flatbuffers.cc
     core/core_workload.cc)
 add_executable(ycsb_test ${ycsb_srcs})
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src/test/ycsb)
@@ -21,4 +22,5 @@ target_link_libraries(
     rocksdb
     ${Protobuf_LIBRARIES}
     proto
+    ${FLATBUFFERS_LIBRARY}
 )

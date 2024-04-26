@@ -7,6 +7,7 @@
 #include "db/writetwice.h"
 #include "db/rocksdb_column_strawman.h"
 #include "db/splitfirst.h"
+#include "db/test_flatbuffers.h"
 
 using namespace std;
 
@@ -27,6 +28,9 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
   } else if (props["dbname"] == "rocksdb_column_strawman") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-rocksdb-strawman");
     return new RocksdbColumnStrawman(props["dbname"], dbpath.c_str(), props);
+  } else if (props["dbname"] == "flatbuffers") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-fb");
+    return new TestFlatBuffers(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "splitfirst") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-splitfirst");
     return new Splitfirst(props["dbname"], dbpath.c_str(), props);

@@ -410,6 +410,14 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("transform",argv[argindex]);
       argindex++;
+    } else if(strcmp(argv[argindex],"-transform_type")==0){
+      argindex++;
+      if(argindex >= argc){
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("transform_type",argv[argindex]);
+      argindex++;
     } else if(strcmp(argv[argindex],"-translevel")==0){
       argindex++;
       if(argindex >= argc){
@@ -602,6 +610,7 @@ void Init(utils::Properties &props){
   props.SetProperty("run","false");
   props.SetProperty("bootstrap","true");
   props.SetProperty("transform","false");
+  props.SetProperty("transform_type", "0");
   props.SetProperty("translevel", "all");
   props.SetProperty("runtime", "15");
   props.SetProperty("threadcount","1");
