@@ -95,7 +95,7 @@ namespace ycsbc {
         options_.level0_file_num_compaction_trigger = 4;
 
         options_.transformer = std::make_shared<rocksdb::Bytecoder>();
-        options_.transform_type = 2;
+        options_.transform_type = 1;
 
         uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
         uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));

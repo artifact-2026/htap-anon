@@ -197,16 +197,18 @@ void CoreWorkload::BuildRecord(data::Row &value) {
   for (int i = 0; i < field_count_; ++i) {
     data::Column* column = value.add_columns();
     column->set_name("field"+std::to_string(i));
-    std::string val;
-    column->set_value(val.append(field_len_generator_->Next(), utils::RandomPrintChar()));
+    //std::string val;
+    //column->set_value(val.append(field_len_generator_->Next(), utils::RandomPrintChar()));
+    column->set_value(std::to_string(utils::RandomPrintInt()));
   }
 }
 
 void CoreWorkload::BuildColumn(data::Row &value) {
   data::Column* column = value.add_columns();
   column->set_name(NextFieldName());
-  std::string val;
-  column->set_value(val.append(field_len_generator_->Next(), utils::RandomPrintChar()));
+  //std::string val;
+  //column->set_value(val.append(field_len_generator_->Next(), utils::RandomPrintChar()));
+  column->set_value(std::to_string(utils::RandomPrintInt()));
 }
 
 size_t CoreWorkload::GetRecordLength() {

@@ -40,6 +40,10 @@ inline char RandomPrintChar() {
   return rand() % 94 + 33;
 }
 
+inline int RandomPrintInt() {
+  return rand() % 50000;
+}
+
 class Exception : public std::exception {
  public:
   Exception(const std::string &message) : message_(message) { }
