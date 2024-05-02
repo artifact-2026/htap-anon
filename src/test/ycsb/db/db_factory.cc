@@ -8,6 +8,7 @@
 #include "db/rocksdb_column_strawman.h"
 #include "db/splitfirst.h"
 #include "db/test_flatbuffers.h"
+#include "db/test_fb_cracker.h"
 
 using namespace std;
 
@@ -31,9 +32,9 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
   } else if (props["dbname"] == "flatbuffers") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-fb");
     return new TestFlatBuffers(props["dbname"], dbpath.c_str(), props);
-  } else if (props["dbname"] == "splitfirst") {
-    std::string dbpath = props.GetProperty("dbpath","/tmp/test-splitfirst");
-    return new Splitfirst(props["dbname"], dbpath.c_str(), props);
+  } else if (props["dbname"] == "fb_cracker") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-fb-cracker");
+    return new TestFbCracker(props["dbname"], dbpath.c_str(), props);
   } else return nullptr;
 }
 

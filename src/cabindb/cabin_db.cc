@@ -41,6 +41,7 @@ namespace ROCKSDB_NAMESPACE {
 
     if (transform) {
         options_.transformer = std::make_shared<rocksdb::Cracker>();
+        options_.transform_type = 0;
         options_.translevel = translevel;
     }
 
@@ -180,6 +181,7 @@ namespace ROCKSDB_NAMESPACE {
         //options_.max_background_jobs = 16;
         //options_.max_write_buffer_number = 32;
         options_.AllowTransformationWhileCompacting(2, 4, 16);
+        options_.SetTransformType(1);
 
         //options_.target_file_size_base = 64ul * 1024 * 1024;
         //options_.write_buffer_size = 2 << 30;

@@ -2,13 +2,13 @@
 #include "test_rocks_db.h"
 #include "lib/coding.h"
 #include "cabindb/compactor.h"
-#include "test_flatbuffers.h"
+#include "test_fb_cracker.h"
 #include "lib/rocksdb/transformer/bytecoder.h"
 
 using namespace std;
 
 namespace ycsbc {
-    TestFlatBuffers::TestFlatBuffers(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
+    TestFBCracker::TestFBCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         noResults = 0;
         SetOptions(props);
         rocksdb::Status s = rocksdb::DB::Open(options_, 
@@ -19,7 +19,7 @@ namespace ycsbc {
     /*
     * Read is for point query over all columns
     */
-    int TestFlatBuffers::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
+    int TestFBCracker::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
                       std::string &result) 
     {
         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &result);
@@ -33,7 +33,7 @@ namespace ycsbc {
         return 1;
     }
 
-    int TestFlatBuffers::Scan(const std::string &table, const std::string &begin_key,
+    int TestFBCracker::Scan(const std::string &table, const std::string &begin_key,
                           int32_t len, const std::vector<std::string> *fields,
                           std::vector<std::string> &result) 
     {
@@ -60,7 +60,7 @@ namespace ycsbc {
         return result.size();
     }
 
-    int TestFlatBuffers::Insert(const std::string &table, const std::string &key, std::string &values)
+    int TestFBCracker::Insert(const std::string &table, const std::string &key, std::string &values)
     {
         rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(), key, values);
         if (s.ok()) {
@@ -69,12 +69,12 @@ namespace ycsbc {
         return 1;
     }
 
-    int TestFlatBuffers::Update(const std::string &table, const std::string &key, std::string &values)
+    int TestFBCracker::Update(const std::string &table, const std::string &key, std::string &values)
     {
         return Insert(table, key, values);
     }
 
-    int TestFlatBuffers::Delete(const std::string &table, const std::string &key)
+    int TestFBPCracker::Delete(const std::string &table, const std::string &key)
     {
         rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(), key);
         if (s.ok()) {
@@ -83,7 +83,7 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestFlatBuffers::SetOptions(utils::Properties &props)
+    void TestFBCracker::SetOptions(utils::Properties &props)
     {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
@@ -94,8 +94,8 @@ namespace ycsbc {
         options_.max_open_files = -1;
         options_.level0_file_num_compaction_trigger = 4;
 
-        options_.transformer = std::make_shared<rocksdb::Bytecoder>();
-        options_.SetTransformType(3);
+        options_.transformer = std::make_shared<rocksdb::Bycracker>();
+        options_.SetTransformType(2);
 
         uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
         uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));
@@ -107,7 +107,7 @@ namespace ycsbc {
         cache_ = rocksdb::NewLRUCache(cache_size);
     }
 
-    void TestFlatBuffers::KeepOnlyRequestedFields(data::Row &row,
+    void TestFBCracker::KeepOnlyRequestedFields(data::Row &row,
                     const std::vector<std::string> *fields, data::Row &selectedColumns)
     {
         for (auto field : *fields) {
