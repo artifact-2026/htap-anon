@@ -20,10 +20,20 @@ namespace ycsbc {
     int TestRocksDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
                       std::string &result) 
     {
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &result);
+        std::string value;
+        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &value);
         
         if (s.ok()) {
-            //result.ParseFromString(value);
+            if (fields != NULL && fields.size() > 0) {
+                data::Row row;
+                row.ParseFromString(value);
+                data::Row selectedColumns;
+                KeepOnlyRequestedFields(row, fields, selectedColumns);
+                selectedColumns.SerializeToString(&result);
+            } else {
+                result = value;
+            }
+            
             return 0;
         }
 
