@@ -9,6 +9,7 @@ set(ycsb_srcs
     db/rocksdb_column_strawman.cc
     db/splitfirst.cc
     db/test_flatbuffers.cc
+    db/test_fb_cracker.cc
     core/core_workload.cc)
 add_executable(ycsb_test ${ycsb_srcs})
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src/test/ycsb)

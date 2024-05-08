@@ -148,7 +148,8 @@ namespace ycsbc {
         options_.level0_stop_writes_trigger = 99999999;
         options_.max_open_files = -1;
 
-        options_.AllowTransformationWhileCompacting(2, 4, 16);
+        options_.AllowTransformationWhileCompacting(2, 4, 16, 1);
+        options_.SetTransformType(1);
         options_.write_both = true;
 
         //options_.max_background_jobs = 16;

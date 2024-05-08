@@ -74,7 +74,7 @@ namespace ycsbc {
         return Insert(table, key, values);
     }
 
-    int TestFBPCracker::Delete(const std::string &table, const std::string &key)
+    int TestFBCracker::Delete(const std::string &table, const std::string &key)
     {
         rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(), key);
         if (s.ok()) {
