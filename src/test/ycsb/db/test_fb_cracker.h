@@ -21,7 +21,7 @@ namespace ycsbc {
 
 class TestFBCracker : public DB{
     public :
-        TestFBPCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props);
+        TestFBCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::vector<std::string> *fields,
                  std::string &result);

@@ -24,7 +24,7 @@ namespace ycsbc {
         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &value);
         
         if (s.ok()) {
-            if (fields != NULL && fields.size() > 0) {
+            if (fields != NULL && fields->size() > 0) {
                 data::Row row;
                 row.ParseFromString(value);
                 data::Row selectedColumns;
@@ -51,7 +51,7 @@ namespace ycsbc {
         for (int i = 0; i < len && it->Valid(); i++) {
             std::string value = it->value().ToString();
 
-	        if (fields != NULL) {
+	        if (fields != NULL && fields->size() > 0) {
                 data::Row row;
                 row.ParseFromString(value);
                 data::Row selectedColumns;

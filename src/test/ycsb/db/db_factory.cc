@@ -34,7 +34,7 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
     return new TestFlatBuffers(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "fb_cracker") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-fb-cracker");
-    return new TestFbCracker(props["dbname"], dbpath.c_str(), props);
+    return new TestFBCracker(props["dbname"], dbpath.c_str(), props);
   } else return nullptr;
 }
 
