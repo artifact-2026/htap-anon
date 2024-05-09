@@ -3,7 +3,7 @@
 #include "lib/coding.h"
 #include "cabindb/compactor.h"
 #include "test_fb_cracker.h"
-#include "lib/rocksdb/transformer/bytecoder.h"
+#include "lib/rocksdb/transformer/bytecracker.h"
 
 using namespace std;
 
@@ -94,7 +94,7 @@ namespace ycsbc {
         options_.max_open_files = -1;
         options_.level0_file_num_compaction_trigger = 4;
 
-        options_.transformer = std::make_shared<rocksdb::Bycracker>();
+        options_.transformer = std::make_shared<rocksdb::Bytecracker>();
         options_.SetTransformType(2);
 
         uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
