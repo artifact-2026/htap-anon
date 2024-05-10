@@ -23,11 +23,11 @@ class Writetwice : public DB{
     public :
         Writetwice(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
-                 const std::vector<std::string> *fields,
+                 const std::set<std::string> *fields,
                  std::string &result);
 
         int Scan(const std::string &table, const std::string &begin_key,
-                 int32_t len, const std::vector<std::string> *fields,
+                 int32_t len, const std::set<std::string> *fields,
                  std::vector<std::string> &result);
 
         int Insert(const std::string &table, const std::string &key,
@@ -48,7 +48,7 @@ class Writetwice : public DB{
 
         void SetOptions(const char *dbfilename);
 	    void KeepOnlyRequestedFields(data::Row &row,
-                const std::vector<std::string> *fields, data::Row &selectedColumns);
+                const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname,
                                         std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,

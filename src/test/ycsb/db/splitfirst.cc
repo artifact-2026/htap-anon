@@ -55,7 +55,7 @@ namespace ycsbc {
     /*
     * Read is for point query over all columns
     */
-    int Splitfirst::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
+    int Splitfirst::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
         std::string value;
@@ -74,7 +74,7 @@ namespace ycsbc {
     }
 
     int Splitfirst::Scan(const std::string &table, const std::string &begin_key,
-                          int32_t len, const std::vector<std::string> *fields,
+                          int32_t len, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
         result.clear();

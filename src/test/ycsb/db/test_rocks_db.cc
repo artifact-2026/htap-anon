@@ -17,14 +17,14 @@ namespace ycsbc {
     /*
     * Read is for point query over all columns
     */
-    int TestRocksDB::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
+    int TestRocksDB::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
         std::string value;
         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &value);
         
         if (s.ok()) {
-            if (fields != NULL && fields->size() > 0) {
+            if (fields != nullptr && fields->size() > 0) {
                 data::Row row;
                 row.ParseFromString(value);
                 data::Row selectedColumns;
@@ -42,7 +42,7 @@ namespace ycsbc {
     }
 
     int TestRocksDB::Scan(const std::string &table, const std::string &begin_key,
-                          int32_t len, const std::vector<std::string> *fields,
+                          int32_t len, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
         result.clear();
@@ -51,7 +51,7 @@ namespace ycsbc {
         for (int i = 0; i < len && it->Valid(); i++) {
             std::string value = it->value().ToString();
 
-	        if (fields != NULL && fields->size() > 0) {
+	        if (fields != nullptr && fields->size() > 0) {
                 data::Row row;
                 row.ParseFromString(value);
                 data::Row selectedColumns;
@@ -118,8 +118,8 @@ namespace ycsbc {
         //options_.write_buffer_size = 2 << 30;
         //options_.db_write_buffer_size = 2 << 30;
 
-        //options_.use_direct_reads = true;
-        //options_.use_direct_io_for_flush_and_compaction = true;
+        options_.use_direct_reads = true;
+        options_.use_direct_io_for_flush_and_compaction = true;
 
         //options_.max_open_files = 20480;
         //options_.max_file_opening_threads = 32;
@@ -135,18 +135,15 @@ namespace ycsbc {
     }
 
     void TestRocksDB::KeepOnlyRequestedFields(data::Row &row,
-                    const std::vector<std::string> *fields, data::Row &selectedColumns)
+                    const std::set<std::string> *fields, data::Row &selectedColumns)
     {
-        for (auto field : *fields) {
-            for (int i = 0; i < row.columns_size(); i++) {
-                if (row.columns(i).name().compare(field) == 0) {
-                    data::Column* selectedColumn = selectedColumns.add_columns();
-                    selectedColumn->set_name(row.columns(i).name());
-                    selectedColumn->set_value(row.columns(i).value());
-                    break;
-                }
+        for (int i = 0; i < row.columns_size(); i++) {
+            auto it = fields->find(row.columns(i).name());
+            if (it != fields->end()) {
+                data::Column* selectedColumn = selectedColumns.add_columns();
+                selectedColumn->set_name(row.columns(i).name());
+                selectedColumn->set_value(row.columns(i).value());
             }
         }
     }
-
 }

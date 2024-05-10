@@ -45,7 +45,7 @@ namespace ycsbc {
     /*
     * Read is for point query over all columns
     */
-    int RocksdbColumnStrawman::Read(const std::string &table, const std::string &key, const std::vector<std::string> *fields,
+    int RocksdbColumnStrawman::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
         for (auto field : *fields) {
@@ -66,7 +66,7 @@ namespace ycsbc {
     }
 
     int RocksdbColumnStrawman::Scan(const std::string &table, const std::string &begin_key,
-                          int32_t len, const std::vector<std::string> *fields,
+                          int32_t len, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
         result.clear();
@@ -155,7 +155,7 @@ namespace ycsbc {
     }
 
     void RocksdbColumnStrawman::KeepOnlyRequestedFields(data::Row &row,
-                    const std::vector<std::string> *fields, data::Row &selectedColumns)
+                    const std::set<std::string> *fields, data::Row &selectedColumns)
     {
         for (auto field : *fields) {
             for (int i = 0; i < row.columns_size(); i++) {

@@ -18,11 +18,11 @@ class Mycelium : public DB{
     public :
         Mycelium(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
-                 const std::vector<std::string> *fields,
+                 const std::set<std::string> *fields,
                  std::string &result);
 
         int Scan(const std::string &table, const std::string &begin_key,
-                 int32_t len, const std::vector<std::string> *fields,
+                 int32_t len, const std::set<std::string> *fields,
                  std::vector<std::string> &result);
 
         int Insert(const std::string &table, const std::string &key,

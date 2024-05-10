@@ -38,7 +38,7 @@ class DB {
   /// @return Zero on success, or a non-zero error code on error/record-miss.
   ///
   virtual int Read(const std::string &table, const std::string &key,
-                   const std::vector<std::string> *fields,
+                   const std::set<std::string> *fields,
 		               std::string &result) = 0;
   ///
   /// Performs a range scan for a set of records in the database.
@@ -54,7 +54,7 @@ class DB {
   /// @return Zero on success, or a non-zero error code on error.
   ///
   virtual int Scan(const std::string &table, const std::string &begin_key,
-                   int32_t len, const std::vector<std::string> *fields,
+                   int32_t len, const std::set<std::string> *fields,
                    std::vector<std::string> &result) = 0;
   ///
   /// Updates a record in the database.

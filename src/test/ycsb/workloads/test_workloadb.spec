@@ -1,5 +1,5 @@
 # Yahoo! Cloud System Benchmark
-# Workload B: Read mostly workload
+# Workload B: Point query, reading 1 column
 #   Application example: photo tagging; add a tag is an update, but most operations are to read tags
 #                        
 #   Read/update ratio: 95/5
@@ -10,10 +10,11 @@ fieldcount=16
 fieldlength=64
 
 recordcount=2000000
-operationcount=100000
+operationcount=10000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readallfields=false
+requestdistribution=zipfian
 
 readproportion=1.0
 updateproportion=0

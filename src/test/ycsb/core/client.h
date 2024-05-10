@@ -2,8 +2,6 @@
 //  client.h
 //  YCSB-C
 //
-//  Created by Jinglei Ren on 12/10/14.
-//  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
 //
 
 #ifndef YCSB_C_CLIENT_H_
@@ -104,9 +102,9 @@ inline int Client::TransactionRead() {
   //std::vector<DB::KVPair> result;
   std::string result;
   if (!workload_.read_all_fields()) {
-    std::vector<std::string> fields;
+    std::set<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
-    fields.push_back("field1");
+    fields.insert("field1");
     return db_.Read(table, key, &fields, result);
   } else {
     return db_.Read(table, key, NULL, result);
@@ -120,9 +118,9 @@ inline int Client::TransactionReadModifyWrite() {
   std::string result;
 
   if (!workload_.read_all_fields()) {
-    std::vector<std::string> fields;
+    std::set<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
-    fields.push_back("field1");
+    fields.insert("field1");
     db_.Read(table, key, &fields, result);
   } else {
     db_.Read(table, key, NULL, result);
@@ -150,9 +148,9 @@ inline int Client::TransactionScan() {
   int len = workload_.NextScanLength();
   std::vector<std::string> result;
   if (!workload_.read_all_fields()) {
-    std::vector<std::string> fields;
+    std::set<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
-    fields.push_back("field1");
+    fields.insert("field1");
     return db_.Scan(table, key, len, &fields, result);
   } else {
     return db_.Scan(table, key, len, NULL, result);

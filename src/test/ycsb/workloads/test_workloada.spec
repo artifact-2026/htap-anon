@@ -1,5 +1,5 @@
 # Yahoo! Cloud System Benchmark
-# Workload A: Write only workload
+# Workload A: Point Query, reading entire row
 #   Application example: Traffic monitoring sensor recording data
 #                        
 #   Insert ratio: 100
@@ -10,7 +10,7 @@ keylength=32
 fieldcount=16
 fieldlength=64
 recordcount=2000000
-operationcount=100000
+operationcount=10000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readproportion=1.0
@@ -19,3 +19,4 @@ scanproportion=0
 insertproportion=0
 
 readallfields=true
+requestdistribution=zipfian
