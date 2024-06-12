@@ -45,7 +45,8 @@ class Mycelium : public DB{
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
-        std::vector<rocksdb::ColumnFamilyHandle*> leveled_cfhandles_;
+        std::vector<rocksdb::ColumnFamilyHandle*> cfhandlelist_;
+        std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
         int noResults;
 
         void SetOptions(const char *dbfilename);
@@ -56,6 +57,7 @@ class Mycelium : public DB{
                                     std::string translevel);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                                     std::vector<rocksdb::ColumnFamilyHandle*> handles);
+        void BuildQueryHandles(std::set<std::string> fields);
 };  
 
 }

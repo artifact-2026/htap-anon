@@ -63,92 +63,47 @@ namespace ycsbc {
     int Mycelium::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result)
     {
-        /*std::string value;
-        std::queue<std::string> children;
-        children.push(table);
-
-        for (int i = 0; i < 4; i++) {
-            int queueLen = childen.size();
-
-            for (int j = 0; j < queueLen; j++) {
-                std::string tab = children.front();
-                children.pop();
-
-                auto it = cfhandles_.find(tab);
-                if (it == cfhandles_.end()) {
-                    return 1;
-                }
-
-                rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                              it->second,
-                                              key,
-                                              value);
-
-            }
-        }*/
-       
-        bool found = false;
-        int level = 0;
-        int idx = 0; 
-        int lvl = 1;
-        int totalHdls = leveled_cfhandles_.size();
-        data::Row selectedColumns;
-        std::set<std::string> modifiableFields; // Make a copy
-        if (fields != nullptr) {
-            modifiableFields = *fields;
+        if (cached_cfhandles_.size() == 0) {
+            BuildQueryHandles(std::set<std::string>(fields->begin(), fields->end()));
         }
-  
-        while (!found && level < options_.compacting_column_family_num_levels) {
-            while (idx < totalHdls && idx < 2*lvl-1) {
-                std::string partial;
-                rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                                      leveled_cfhandles_[idx],
-                                                      key,
-                                                      &partial);
-                if (partial == "") {
-                    idx = 2*lvl - 1;
-                    break;
-                }
-                
-                if (!found) {
-                    found = true;
-                }
 
-                if (modifiableFields.size() == 0) {
-                    result += partial;
-                    idx++;
-                    continue;
+        bool found = false;
+        std::string rawResult; 
+        for (int level = 0; level < 4; level++) {
+            auto it = cached_cfhandles_.find(level);
+            if (it != cached_cfhandles_.end()) {
+                for (auto hdl : it->second) {
+                    std::string value;
+                    rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                              hdl,
+                                              key,
+                                              &value);
+                    if (value.empty()) {
+                        break;
+                    } else if (!found) {
+                        found = true;
+                    }
+                    rawResult += value;
                 }
-
-                data::Row row;
-                row.ParseFromString(partial);
-                for (int i = 0; i < row.columns_size(); i++) {
-                    modifiableFields.erase(row.columns(i).name());
-                    data::Column* selectedColumn = selectedColumns.add_columns();
-                    selectedColumn->set_name(row.columns(i).name());
-                    selectedColumn->set_value(row.columns(i).value());
-                }
-
-                if (modifiableFields.size() == 0) {
-                    break;
-                }
-
-                idx++;
             }
-
-            level++;
-            lvl *= 2;
-
-            if (idx >= totalHdls) {
+            if (found) {
                 break;
             }
         }
 
-        if (found && result == "") {
-            selectedColumns.SerializeToString(&result);
+        data::Row row;
+        row.ParseFromString(rawResult);
+        size_t fieldsFound = 0;
+        for (int i = 0; i < row.columns_size(); i++) {
+            if (fields == nullptr || fields->find(row.columns(i).name()) != fields->end()) {
+                result += row.columns(i).name() + "::" + row.columns(i).value() + ",";
+                fieldsFound++;
+                if (fields != nullptr && fieldsFound >= fields->size()) {
+                    break;
+                }
+            }
         }
-        
-        return 1;
+        return 0;
     }
 
     int Mycelium::Scan(const std::string &table, const std::string &begin_key,
@@ -162,7 +117,7 @@ namespace ycsbc {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), ith->second);
             it->Seek(begin_key);
 
-            int totalHdls = leveled_cfhandles_.size();
+            int totalHdls = cfhandlelist_.size();
             
             for (int i = 0; i < len && it->Valid(); i++)
             {
@@ -181,7 +136,7 @@ namespace ycsbc {
                     while (idx < totalHdls && idx < 2*lvl-1) {
                         std::string partial;
                         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                                      leveled_cfhandles_[idx],
+                                                      cfhandlelist_[idx],
                                                       begin_key,
                                                       &partial);
                         if (partial == "") {
@@ -364,8 +319,60 @@ namespace ycsbc {
     {
         for (size_t i = 0; i < handles.size(); i++)
         {
+            if (column_family_descriptors[i].name == rocksdb::kDefaultColumnFamilyName) {
+                continue;
+            }
             cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
-            leveled_cfhandles_.push_back(handles[i]);
+            cfhandlelist_.push_back(handles[i]);
+        }
+
+        
+    }
+
+    void Mycelium::BuildQueryHandles(std::set<std::string> fields) {
+        std::set<int> fieldpositions;
+        for (auto field : fields) {
+            int pos = 0;
+            for (size_t i=5; i < field.size(); i++) {
+                if (!isdigit(field[i])) {
+                    break;
+                }
+                pos = pos*10 + field[i] - '0';
+            }
+            fieldpositions.insert(pos);
+        }
+
+        int columns = options_.num_columns;
+        int splits = 1;
+        std::map<int, std::set<int>> leveled_positions;
+        for (int level=1; level < 4; level++) {
+            splits *= 2;
+            columns /= 2;
+            std::set<int> probes;
+            for (auto pos : fieldpositions) {
+                probes.insert(pos/columns);
+            }
+            leveled_positions.insert({level, probes});
+        }
+
+        std::vector<rocksdb::ColumnFamilyHandle *> level0hdls;
+        level0hdls.push_back(cfhandlelist_[0]);
+        cached_cfhandles_.insert({0, level0hdls});
+
+        int index = 1;
+        int sz = 1;
+        for (int level = 1; level < 4; level++) {
+            std::vector<rocksdb::ColumnFamilyHandle *> levelhdls;
+
+            auto it = leveled_positions.find(level);
+            if (it != leveled_positions.end()) {
+                for (auto pos : it->second) {
+                    levelhdls.push_back(cfhandlelist_[index+pos]);
+                }
+                cached_cfhandles_.insert({level, levelhdls});
+            }
+            sz *= 2;
+            index += sz;
         }
     }
 
