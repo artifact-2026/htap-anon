@@ -104,7 +104,7 @@ inline int Client::TransactionRead() {
   if (!workload_.read_all_fields()) {
     std::set<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
-    fields.insert("field1");
+    fields.insert("field0");
     return db_.Read(table, key, &fields, result);
   } else {
     return db_.Read(table, key, NULL, result);
@@ -145,12 +145,13 @@ inline int Client::TransactionScan() {
   std::string key;
   std::string max_key;
   workload_.NextTransactionScanKey(key, max_key);
-  int len = workload_.NextScanLength();
+  //int len = workload_.NextScanLength();
+  int len = 2;
   std::vector<std::string> result;
   if (!workload_.read_all_fields()) {
     std::set<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
-    fields.insert("field1");
+    fields.insert("field0");
     return db_.Scan(table, key, len, &fields, result);
   } else {
     return db_.Scan(table, key, len, NULL, result);

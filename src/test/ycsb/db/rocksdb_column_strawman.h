@@ -45,6 +45,7 @@ class RocksdbColumnStrawman : public DB{
         rocksdb::Options options_;
         int noResults;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
+        std::vector<rocksdb::ColumnFamilyHandle*> handleList_;
 
         void SetOptions(utils::Properties &props, const char *dbfilename, int num_cfs);
         // serialize for inserts

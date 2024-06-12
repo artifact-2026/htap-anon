@@ -48,10 +48,26 @@ namespace ycsbc {
     int RocksdbColumnStrawman::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
-        for (auto field : *fields) {
+        if (fields == nullptr) {
+            for (auto handle : handleList_) {
+                std::string value;
+                rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                              handle,
+                                              key,
+                                              &value);
+        
+                if (value == "") {
+                    noResults++;
+                }
+                result += value;
+            }
+            return 0;
+        }
+
+        for (size_t i = 0; i < fields->size(); i++) {
             std::string value;
             rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                          cfhandles_[field],
+                                          handleList_[i],
                                           key,
                                           &value);
         
@@ -61,7 +77,6 @@ namespace ycsbc {
             }
             result += value;
         }
-
         return 0;
     }
 
@@ -147,8 +162,8 @@ namespace ycsbc {
         //options_.write_buffer_size = 2 << 30;
         //options_.db_write_buffer_size = 2 << 30;
 
-        //options_.use_direct_reads = true;
-        //options_.use_direct_io_for_flush_and_compaction = true;
+        options_.use_direct_reads = true;
+        options_.use_direct_io_for_flush_and_compaction = true;
 
         //options_.max_open_files = 20480;
         //options_.max_file_opening_threads = 32;
@@ -183,6 +198,7 @@ namespace ycsbc {
     {
         for (size_t i = 0; i < handles.size(); i++) {
             cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
+            handleList_.push_back(handles[i]);
         }
     }
 

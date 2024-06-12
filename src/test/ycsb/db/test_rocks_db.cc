@@ -7,11 +7,45 @@ using namespace std;
 
 namespace ycsbc {
     TestRocksDB::TestRocksDB(const char *dbfilename, utils::Properties &props) {
+        bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","true"));
         noResults = 0;
         SetOptions(props);
-        rocksdb::Status s = rocksdb::DB::Open(options_, 
+
+        std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
+        GetColumnFamilyDescriptors(column_family_descriptors);
+        std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
+
+        if (bootstrap) {
+            rocksdb::Status s = rocksdb::DB::Open(options_, 
                                               dbfilename,
                                               &rocksdb_);
+
+            if (!s.ok()){
+                std::cerr<<"Can't open rocksdb "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                exit(0);
+            }
+
+            s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
+        } else {
+            column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
+                    rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions(options_)));
+            rocksdb::Status s = rocksdb::DB::Open(options_,
+                                              dbfilename,
+                                              column_family_descriptors,
+                                              &cf_handles,
+                                              &rocksdb_);
+            if (!s.ok()){
+                std::cerr<<"Can't open rocksdb "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                exit(0);
+            }
+        }
+        BuildColumnFamilyHandles(cf_handles);
+    }
+
+    void TestRocksDB::GetColumnFamilyDescriptors(std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
+    {
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+                "rocksdb", rocksdb::ColumnFamilyOptions(options_)));
     }
 
     /*
@@ -22,16 +56,20 @@ namespace ycsbc {
     {
         std::string value;
         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &value);
+        size_t fieldsFound = 0;
         
         if (s.ok()) {
-            if (fields != nullptr && fields->size() > 0) {
-                data::Row row;
-                row.ParseFromString(value);
-                data::Row selectedColumns;
-                KeepOnlyRequestedFields(row, fields, selectedColumns);
-                selectedColumns.SerializeToString(&result);
-            } else {
-                result = value;
+            data::Row row;
+            row.ParseFromString(value);
+
+            for (int i = 0; i < row.columns_size(); i++) {
+                if (fields == nullptr || fields->find(row.columns(i).name()) != fields->end()) {
+                    result += row.columns(i).name() + "::" + row.columns(i).value() + ",";
+                    fieldsFound++;
+                    if (fields != nullptr && fieldsFound >= fields->size()) {
+                        break;
+                    }
+                }
             }
             
             return 0;
@@ -123,15 +161,18 @@ namespace ycsbc {
 
         //options_.max_open_files = 20480;
         //options_.max_file_opening_threads = 32;
+        rocksdb::BlockBasedTableOptions table_options;
+        table_options.block_cache = nullptr;  // Disable the block cache
+        options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
 
-        uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
-        uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));
-        uint32_t value_len = stoi(props.GetProperty(CoreWorkload::FIELD_LENGTH_PROPERTY));
-        uint32_t cache_size = nums * (key_len + value_len) / 10;
-        if(cache_size < 8 << 20) {
-            cache_size = 8 << 20;
-        }
-        cache_ = rocksdb::NewLRUCache(cache_size);
+        //uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
+        //uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));
+        //uint32_t value_len = stoi(props.GetProperty(CoreWorkload::FIELD_LENGTH_PROPERTY));
+        //uint32_t cache_size = nums * (key_len + value_len) / 10;
+        //if(cache_size < 8 << 20) {
+        //    cache_size = 8 << 20;
+        //}
+        //cache_ = rocksdb::NewLRUCache(cache_size);
     }
 
     void TestRocksDB::KeepOnlyRequestedFields(data::Row &row,
@@ -144,6 +185,13 @@ namespace ycsbc {
                 selectedColumn->set_name(row.columns(i).name());
                 selectedColumn->set_value(row.columns(i).value());
             }
+        }
+    }
+
+    void TestRocksDB::BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle *> handles)
+    {
+        for (size_t i = 0; i < handles.size(); i++) {
+            cfhandles_.push_back(handles[i]);
         }
     }
 }

@@ -5,15 +5,57 @@
 #include "test_flatbuffers.h"
 #include "lib/rocksdb/transformer/bytecoder.h"
 
+#include <iostream>
+#include <iomanip> // Include for std::setfill and std::setw
+
 using namespace std;
 
 namespace ycsbc {
     TestFlatBuffers::TestFlatBuffers(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
+        bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","true"));
+        bool transform = utils::StrToBool(props.GetProperty("transform","true"));
         noResults = 0;
         SetOptions(props);
-        rocksdb::Status s = rocksdb::DB::Open(options_, 
+
+        if (transform) {
+            options_.transformer = std::make_shared<rocksdb::Bytecoder>();
+        }
+
+        std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
+        GetColumnFamilyDescriptors(dbname, column_family_descriptors);
+        std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
+
+        if (bootstrap) {
+            rocksdb::Status s = rocksdb::DB::Open(options_, 
                                               dbfilename,
                                               &rocksdb_);
+            if (!s.ok()){
+                std::cerr<<"Can't open flatbuffers "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                exit(0);
+            }
+
+            s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
+        } else {
+            column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
+                    rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions(options_)));
+            rocksdb::Status s = rocksdb::DB::Open(options_,
+                                              dbfilename,
+                                              column_family_descriptors,
+                                              &cf_handles,
+                                              &rocksdb_);
+            if (!s.ok()){
+                std::cerr<<"Can't open flatbuffers "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                exit(0);
+            }
+        }
+        BuildColumnFamilyHandles(cf_handles);
+    }
+        
+    void TestFlatBuffers::GetColumnFamilyDescriptors(const std::string& dbname,
+                    std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
+    {
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+                "flatbuffers", rocksdb::ColumnFamilyOptions(options_)));
     }
 
     /*
@@ -22,13 +64,31 @@ namespace ycsbc {
     int TestFlatBuffers::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &result);
-        
+        std::string value;
+        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), key, &value);
+        size_t fieldsFound = 0;
+
         if (s.ok()) {
-            //result.ParseFromString(value);
+            std::vector<uint8_t> vec(value.begin(), value.end());
+            const FbRow* fbRow = GetFbRow(vec.data());
+
+            if (fbRow != nullptr) {
+                const flatbuffers::Vector<flatbuffers::Offset<NumericColumn>>* numcols = fbRow->numcols();
+                if (numcols != nullptr) {
+                    for (size_t i = 0; i < numcols->size(); i++) {
+                        if (fields == nullptr || fields->find(numcols->Get(i)->name()->str()) != fields->end()) {
+                            result += numcols->Get(i)->name()->str() + "::" + std::to_string(numcols->Get(i)->value());
+                            fieldsFound++;
+                            if (fields != nullptr && fieldsFound >= fields->size()) {
+                                break;
+                            }
+                        }
+                    }    
+                }
+            }
             return 0;
         }
-
+    
         noResults++;
         return 1;
     }
@@ -37,26 +97,51 @@ namespace ycsbc {
                           int32_t len, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
-        result.clear();
+        /*result.clear();
         auto it = rocksdb_->NewIterator(rocksdb::ReadOptions());
         it->Seek(begin_key);
         for (int i = 0; i < len && it->Valid(); i++) {
             std::string value = it->value().ToString();
 
-	        if (fields != NULL) {
-                data::Row row;
-                row.ParseFromString(value);
-                data::Row selectedColumns;
-                KeepOnlyRequestedFields(row, fields, selectedColumns);
-                std::string stitchedValue;
-                selectedColumns.SerializeToString(&stitchedValue);
-                result.push_back(stitchedValue);
-	        } else {
-	            result.push_back(value);
-            }	      
+            if (fields == nullptr) {
+                result.push_back(value);
+                continue;
+            }
+
+            std::vector<uint8_t> vec(value.begin(), value.end());
+            const FbRow* fbRow = GetFbRow(vec.data());
+            flatbuffers::Verifier verifier(vec.data(), vec.size());
+            bool valid = fbRow->Verify(verifier);
+
+            if (!valid) {
+                std::cerr << "FlatBuffers verification failed." << std::endl;
+                continue;
+            }
+        
+            if (fbRow != nullptr) {
+                const flatbuffers::Vector<uint64_t>* numcols = fbRow->numericCols();
+                if (numcols != nullptr) {
+                    size_t cols = fields->size();
+                    if (cols > numcols->size()) {
+                        cols = numcols->size();
+                    }
+
+                    std::string singlevalue;
+                    for (size_t i = 0; i < cols; i++) {
+                        singlevalue += std::to_string(numcols->Get(i)) + "::";
+                    }
+                    result.push_back(singlevalue);
+                } else {
+                    std::cerr << "Failed to get valid FlatBuffers data" << std::endl;
+                    continue;
+                }
+            } else {
+                std::cerr << "Failed to get valid FlatBuffers data" << std::endl;
+                continue;
+            }     
             it->Next();
         }
-        
+        */
         return result.size();
     }
 
@@ -92,19 +177,23 @@ namespace ycsbc {
         options_.level0_slowdown_writes_trigger = 9999999;     
         options_.level0_stop_writes_trigger = 99999999;
         options_.max_open_files = -1;
-        options_.level0_file_num_compaction_trigger = 4;
 
-        options_.transformer = std::make_shared<rocksdb::Bytecoder>();
         options_.SetTransformType(3);
+        options_.use_direct_reads = true;
+        options_.use_direct_io_for_flush_and_compaction = true;
 
-        uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
-        uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));
-        uint32_t value_len = stoi(props.GetProperty(CoreWorkload::FIELD_LENGTH_PROPERTY));
-        uint32_t cache_size = nums * (key_len + value_len) / 10;
-        if(cache_size < 8 << 20) {
-            cache_size = 8 << 20;
-        }
-        cache_ = rocksdb::NewLRUCache(cache_size);
+        rocksdb::BlockBasedTableOptions table_options;
+        table_options.block_cache = nullptr;  // Disable the block cache
+        options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
+        
+        //uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
+        //uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));
+        //uint32_t value_len = stoi(props.GetProperty(CoreWorkload::FIELD_LENGTH_PROPERTY));
+        //uint32_t cache_size = nums * (key_len + value_len) / 10;
+        //if(cache_size < 8 << 20) {
+        //    cache_size = 8 << 20;
+        //}
+        //cache_ = rocksdb::NewLRUCache(cache_size);
     }
 
     void TestFlatBuffers::KeepOnlyRequestedFields(data::Row &row,
@@ -119,6 +208,13 @@ namespace ycsbc {
                     break;
                 }
             }
+        }
+    }
+
+    void TestFlatBuffers::BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle *> handles)
+    {
+        for (size_t i = 0; i < handles.size(); i++) {
+            cfhandles_.push_back(handles[i]);
         }
     }
 

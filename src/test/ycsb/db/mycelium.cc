@@ -63,66 +63,91 @@ namespace ycsbc {
     int Mycelium::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result)
     {
-        std::string finalResult;
-        bool found = false;
-        int level = 0;
-        std::string table_name;
+        /*std::string value;
+        std::queue<std::string> children;
+        children.push(table);
 
-        //if (fields == nullptr)
-        //{
-            int idx = 0; 
-            int lvl = 1;
-            int totalHdls = leveled_cfhandles_.size();
-            while (!found && level < options_.num_levels)
-            {
-                while (idx < totalHdls && idx < 2*lvl-1) {
-                    rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                                          leveled_cfhandles_[idx],
-                                                          key,
-                                                          &result);
-                    if (s.ok() && result != "") {
-                        found = true;
-                    } else {
-                        break;
-                    }
+        for (int i = 0; i < 4; i++) {
+            int queueLen = childen.size();
 
-                    idx++;
-                }
+            for (int j = 0; j < queueLen; j++) {
+                std::string tab = children.front();
+                children.pop();
 
-                level++;
-                lvl *= 2;
-
-                if (idx >= totalHdls) {
-                    break;
-                }
-            }
-        //} 
-        /*else {
-            std::string tab;
-            while (!found && level < options_.compacting_column_family_num_levels)
-            {
-                if (level == 0) {
-                    tab = table;
-                } else {
-                    tab = table_name + std::to_string(level) + "-" + std::to_string(0);
-                }
-                
                 auto it = cfhandles_.find(tab);
-                if (it != cfhandles_.end())
-                {
-                    rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                                          it->second,
-                                                          key,
-                                                          &result);
-
-                    if (result != "") {
-                        found = true;
-                    }
+                if (it == cfhandles_.end()) {
+                    return 1;
                 }
-                
-                level++;
+
+                rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                              it->second,
+                                              key,
+                                              value);
+
             }
         }*/
+       
+        bool found = false;
+        int level = 0;
+        int idx = 0; 
+        int lvl = 1;
+        int totalHdls = leveled_cfhandles_.size();
+        data::Row selectedColumns;
+        std::set<std::string> modifiableFields; // Make a copy
+        if (fields != nullptr) {
+            modifiableFields = *fields;
+        }
+  
+        while (!found && level < options_.compacting_column_family_num_levels) {
+            while (idx < totalHdls && idx < 2*lvl-1) {
+                std::string partial;
+                rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                                      leveled_cfhandles_[idx],
+                                                      key,
+                                                      &partial);
+                if (partial == "") {
+                    idx = 2*lvl - 1;
+                    break;
+                }
+                
+                if (!found) {
+                    found = true;
+                }
+
+                if (modifiableFields.size() == 0) {
+                    result += partial;
+                    idx++;
+                    continue;
+                }
+
+                data::Row row;
+                row.ParseFromString(partial);
+                for (int i = 0; i < row.columns_size(); i++) {
+                    modifiableFields.erase(row.columns(i).name());
+                    data::Column* selectedColumn = selectedColumns.add_columns();
+                    selectedColumn->set_name(row.columns(i).name());
+                    selectedColumn->set_value(row.columns(i).value());
+                }
+
+                if (modifiableFields.size() == 0) {
+                    break;
+                }
+
+                idx++;
+            }
+
+            level++;
+            lvl *= 2;
+
+            if (idx >= totalHdls) {
+                break;
+            }
+        }
+
+        if (found && result == "") {
+            selectedColumns.SerializeToString(&result);
+        }
+        
         return 1;
     }
 
@@ -130,33 +155,77 @@ namespace ycsbc {
                           int32_t len, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
-        result.clear();
+        /*result.clear();
         auto ith = cfhandles_.find(table);
         if (ith != cfhandles_.end())
         {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), ith->second);
             it->Seek(begin_key);
+
+            int totalHdls = leveled_cfhandles_.size();
+            
             for (int i = 0; i < len && it->Valid(); i++)
             {
                 std::string value = it->value().ToString();
+                bool found = false;
+                int level = 0;
+                int idx = 0; 
+                int lvl = 1;
+                std::set<std::string> modifiableFields; // Make a copy
+                if (fields != nullptr) {
+                    modifiableFields = *fields;
+                }
+                data::Row selectedColumns;
 
-                if (fields != NULL)
-                {
-                    data::Row row;
-                    row.ParseFromString(value);
-                    data::Row selectedColumns;
-                    KeepOnlyRequestedFields(row, fields, selectedColumns);
-                    std::string stitchedValue;
-                    selectedColumns.SerializeToString(&stitchedValue);
-                    result.push_back(stitchedValue);
+                while (!found && level < options_.compacting_column_family_num_levels) {
+                    while (idx < totalHdls && idx < 2*lvl-1) {
+                        std::string partial;
+                        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                                      leveled_cfhandles_[idx],
+                                                      begin_key,
+                                                      &partial);
+                        if (partial == "") {
+                            idx = 2*lvl - 1;
+                            break;
+                        }
+                
+                        if (!found) {
+                            found = true;
+                        }
+
+                        if (modifiableFields.size() == 0) {
+                            result += partial;
+                            idx++;
+                            continue;
+                        }
+
+                        data::Row row;
+                        row.ParseFromString(partial);
+                        for (int i = 0; i < row.columns_size(); i++) {
+                            modifiableFields.erase(row.columns(i).name());
+                            data::Column* selectedColumn = selectedColumns.add_columns();
+                            selectedColumn->set_name(row.columns(i).name());
+                            selectedColumn->set_value(row.columns(i).value());
+                        }
+
+                        if (modifiableFields.size() == 0) {
+                            break;
+                        }
+
+                        idx++;
+                    }
+
+                    level++;
+                    lvl *= 2;
+
+                    if (idx >= totalHdls) {
+                        break;
+                    }
                 }
-                else
-                {
-                    result.push_back(value);
-                }
+
                 it->Next();
             }
-        }
+        }*/
 
         return result.size();
     }
@@ -256,53 +325,36 @@ namespace ycsbc {
                                              std::vector<rocksdb::ColumnFamilyDescriptor> &column_families,
                                              std::string translevel)
     {
-
         options_.SetCompactingLevelWithinColumnFamilyGroup(0);
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname, rocksdb::ColumnFamilyOptions(options_)));
+      
+        std::string prefix = dbname + "_sys_cf";
+        std::queue<int> parents;
+        parents.push(options_.num_columns);
 
-        int level = 1;
-        int splits = 2;
-        int columns = options_.num_columns;
-        std::queue<std::string> parents;
-        parents.push(dbname + "_sys_cf");
+        for (int level = 1; level < options_.compacting_column_family_num_levels; level++) {
+            int queueLen = parents.size();
 
-        /*
-                for (int i = 0; i < options_.num_columns; i++) {
-                    std::string cf_name = parent_name + "_level-" + std::to_string(level) + "-" + std::to_string(j);
-                    options_.SetCompactingLevelWithinColumnFamilyGroup(level);
-                    column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
-                    parents.push(cf_name);
+            for (int j = 0; j < queueLen; j++) {
+                int parent_cols = parents.front();
+                parents.pop();
+                if (parent_cols < 2) {
+                    continue;
                 }
-        */
+                rocksdb::Options cfoptions = options_;
+                cfoptions.SetCompactingLevelWithinColumnFamilyGroup(level);
 
-        while (level < options_.compacting_column_family_num_levels)
-        {
-            if (columns > 1)
-            {
-                if (level == options_.compacting_column_family_num_levels - 1)
-                {
-                    splits = columns;
-                }
+                int child1 = parent_cols/2;
+                std::string cfname1 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2);
+                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(cfoptions)));
+                parents.push(child1);
 
-                int queueLen = parents.size();
-
-                for (int i = 0; i < queueLen; i++)
-                {
-                    std::string parent_name = parents.front();
-                    parents.pop();
-                    for (int j = 0; j < splits; j++)
-                    {
-                        std::string cf_name = parent_name + "_level-" + std::to_string(level) + "-" + std::to_string(j);
-                        options_.SetCompactingLevelWithinColumnFamilyGroup(level);
-                        column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
-                        parents.push(cf_name);
-                    }
-                }
+                int child2 = parent_cols - child1;
+                std::string cfname2 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2+1);
+                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname2, rocksdb::ColumnFamilyOptions(cfoptions)));
+                parents.push(child2);
             }
-
-            columns /= splits;
-            level += 1;
         }
     }
 
@@ -313,6 +365,7 @@ namespace ycsbc {
         for (size_t i = 0; i < handles.size(); i++)
         {
             cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
+            leveled_cfhandles_.push_back(handles[i]);
         }
     }
 

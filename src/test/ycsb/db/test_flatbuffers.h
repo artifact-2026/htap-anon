@@ -46,16 +46,15 @@ class TestFlatBuffers : public DB{
         int noResults;
         std::shared_ptr<rocksdb::Cache> cache_;
         std::shared_ptr<rocksdb::Statistics> dbstats_;
+        std::vector<rocksdb::ColumnFamilyHandle*> cfhandles_;
 
         void SetOptions(utils::Properties &props);
         // serialize for inserts
-        void SerializeValue(std::vector<KVPair> &kvs, std::string &value);
-        // de-serialize one record
-        void DeSerializeValue(std::string &value,
-                              const std::vector<std::string> *fields,
-                              std::vector<KVPair> &kvs);
+        void GetColumnFamilyDescriptors(const std::string& dbname,
+                std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void KeepOnlyRequestedFields(data::Row &row,
                 const std::set<std::string> *fields, data::Row &selectedColumns);
+        void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };  
 
 }
