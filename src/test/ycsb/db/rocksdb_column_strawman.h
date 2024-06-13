@@ -46,20 +46,16 @@ class RocksdbColumnStrawman : public DB{
         int noResults;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         std::vector<rocksdb::ColumnFamilyHandle*> handleList_;
+        std::set<int> queryPositions_;
 
         void SetOptions(utils::Properties &props, const char *dbfilename, int num_cfs);
-        // serialize for inserts
-        void SerializeValue(std::vector<KVPair> &kvs, std::string &value);
-        // de-serialize one record
-        void DeSerializeValue(std::string &value,
-                    const std::vector<std::string> *fields,
-                    std::vector<KVPair> &kvs);
 	    void KeepOnlyRequestedFields(data::Row &row,
                     const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname,
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                             std::vector<rocksdb::ColumnFamilyHandle*> handles);
+        std::set<int> GetQueryingHandles(std::set<std::string> fields);
 };  
 
 }

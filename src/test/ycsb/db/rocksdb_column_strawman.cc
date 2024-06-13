@@ -58,35 +58,29 @@ namespace ycsbc {
         
                 if (value == "") {
                     noResults++;
+                    return 1;
                 }
 
-                data::Row row;
-                row.ParseFromString(value);
-
-                for (int i = 0; i < row.columns_size(); i++) {
-                    result += row.columns(i).name() + "::" + row.columns(i).value() + ",";
-                }
+                result += value;
             }
             return 0;
         }
 
-        for (size_t i = 0; i < fields->size(); i++) {
+        std::set<int> queryCols;
+        if (queryPositions_.size() == 0) {
+            queryCols = GetQueryingHandles(std::set<std::string>(fields->begin(), fields->end()));
+        }
+
+        for (auto qc : queryCols) {
             std::string value;
             rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                          handleList_[i],
+                                          handleList_[qc],
                                           key,
                                           &value);
         
             if (!s.ok()) {
                 noResults++;
                 return 1;
-            }
-
-            data::Row row;
-            row.ParseFromString(value);
-
-            for (int i = 0; i < row.columns_size(); i++) {
-                result += row.columns(i).name() + "::" + row.columns(i).value() + ",";
             }
         }
         return 0;
@@ -96,23 +90,25 @@ namespace ycsbc {
                           int32_t len, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
-        result.clear();
-
-        for (int32_t i = 0; i < len; i++) {
-            std::string value = "";
-            result.push_back(value);
+        std::set<int> queryCols;
+        if (queryPositions_.size() == 0 && fields != nullptr) {
+            queryCols = GetQueryingHandles(std::set<std::string>(fields->begin(), fields->end()));
         }
 
-        for (auto field : *fields) {
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[field]);
-            it->Seek(begin_key);
-            for (int32_t i = 0; i < len && it->Valid(); i++) {
-                std::string val = it->value().ToString();
-                result[i] += val;
-                it->Next();
-            }
+        int queryPos = 0;
+        if (queryCols.size() > 0) {
+            auto itt = queryCols.begin();
+            queryPos = *itt;
         }
-        
+
+        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), handleList_[queryPos]);
+        it->Seek(begin_key);
+        for (int i = 0; i < len && it->Valid(); i++) {
+            std::string val = it->value().ToString();
+            result.push_back(val);
+            it->Next();
+        }
+
         return result.size();
     }
 
@@ -124,7 +120,7 @@ namespace ycsbc {
             std::string serializedColumn;
             row.columns(i).SerializeToString(&serializedColumn);
             rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
-                                          cfhandles_[table+"_col_"+std::to_string(i/2)],
+                                          cfhandles_[table+"_col_"+std::to_string(i)],
                                           key,
                                           serializedColumn);
             if (!s.ok()) {
@@ -199,7 +195,7 @@ namespace ycsbc {
     void RocksdbColumnStrawman::GetColumnFamilyDescriptors(const std::string& dbname,
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
-        for (int i = 0; i < options_.num_columns/2; i++) {
+        for (int i = 0; i < options_.num_columns; i++) {
             std::string cf_name = dbname + "_col_" + std::to_string(i);
             column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
         }
@@ -215,6 +211,18 @@ namespace ycsbc {
             cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
             handleList_.push_back(handles[i]);
         }
+    }
+
+    std::set<int> RocksdbColumnStrawman::GetQueryingHandles(std::set<std::string> fields) {
+        std::set<int> fieldpositions;
+        for (auto field : fields) {
+            int pos = 0;
+            for (size_t i = 5; i < field.size(); i++) {
+                pos = pos*10 + field[i] - '0';
+            }
+            fieldpositions.insert(pos);
+        }
+        return fieldpositions;
     }
 
 }

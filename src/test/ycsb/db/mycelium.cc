@@ -109,78 +109,33 @@ namespace ycsbc {
     int Mycelium::Scan(const std::string &table, const std::string &begin_key,
                           int32_t len, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
-    {
-        /*result.clear();
-        auto ith = cfhandles_.find(table);
-        if (ith != cfhandles_.end())
-        {
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), ith->second);
-            it->Seek(begin_key);
+    { 
+        if (cached_cfhandles_.size() == 0) {
+            BuildQueryHandles(std::set<std::string>(fields->begin(), fields->end()));
+        }
 
-            int totalHdls = cfhandlelist_.size();
-            
-            for (int i = 0; i < len && it->Valid(); i++)
-            {
-                std::string value = it->value().ToString();
-                bool found = false;
-                int level = 0;
-                int idx = 0; 
-                int lvl = 1;
-                std::set<std::string> modifiableFields; // Make a copy
-                if (fields != nullptr) {
-                    modifiableFields = *fields;
-                }
-                data::Row selectedColumns;
-
-                while (!found && level < options_.compacting_column_family_num_levels) {
-                    while (idx < totalHdls && idx < 2*lvl-1) {
-                        std::string partial;
-                        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                                      cfhandlelist_[idx],
-                                                      begin_key,
-                                                      &partial);
-                        if (partial == "") {
-                            idx = 2*lvl - 1;
-                            break;
-                        }
-                
-                        if (!found) {
-                            found = true;
-                        }
-
-                        if (modifiableFields.size() == 0) {
-                            result += partial;
-                            idx++;
-                            continue;
-                        }
-
-                        data::Row row;
-                        row.ParseFromString(partial);
-                        for (int i = 0; i < row.columns_size(); i++) {
-                            modifiableFields.erase(row.columns(i).name());
-                            data::Column* selectedColumn = selectedColumns.add_columns();
-                            selectedColumn->set_name(row.columns(i).name());
-                            selectedColumn->set_value(row.columns(i).value());
-                        }
-
-                        if (modifiableFields.size() == 0) {
-                            break;
-                        }
-
-                        idx++;
-                    }
-
-                    level++;
-                    lvl *= 2;
-
-                    if (idx >= totalHdls) {
-                        break;
-                    }
-                }
-
-                it->Next();
+        int32_t remaining_len = len;
+        int32_t level_len = 0;
+        for (int level = 0; level < 4; level++) {
+            level_len = remaining_len/(4 - level);
+            remaining_len -= level_len;
+            if (level_len < 1) {
+                continue;
             }
-        }*/
+
+            auto it = cached_cfhandles_.find(level);
+            if (it != cached_cfhandles_.end()) {
+                if (it->second.size() > 0) {
+                    auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), it->second[0]);
+                    itt->Seek(begin_key);
+                    for (int i = 0; i < level_len && itt->Valid(); i++) {
+                        std::string value = itt->value().ToString();
+                        result.push_back(value);
+                        itt->Next();
+                    }
+                }
+            }
+        }
 
         return result.size();
     }
