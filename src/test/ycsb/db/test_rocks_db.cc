@@ -89,17 +89,23 @@ namespace ycsbc {
         for (int i = 0; i < len && it->Valid(); i++) {
             std::string value = it->value().ToString();
 
-	        if (fields != nullptr && fields->size() > 0) {
-                data::Row row;
-                row.ParseFromString(value);
-                data::Row selectedColumns;
-                KeepOnlyRequestedFields(row, fields, selectedColumns);
-                std::string stitchedValue;
-                selectedColumns.SerializeToString(&stitchedValue);
-                result.push_back(stitchedValue);
-	        } else {
-	            result.push_back(value);
-            }	      
+            data::Row row;
+            row.ParseFromString(value);
+            std::string res;
+            size_t fieldsFound = 0;
+
+            for (int i = 0; i < row.columns_size(); i++) {
+                if (fields == nullptr || fields->find(row.columns(i).name()) != fields->end()) {
+                    res += row.columns(i).name() + "::" + row.columns(i).value() + ",";
+                    fieldsFound++;
+                    if (fields != nullptr && fieldsFound >= fields->size()) {
+                        break;
+                    }
+                }
+            }
+
+            result.push_back(res);
+      
             it->Next();
         }
         
@@ -142,9 +148,6 @@ namespace ycsbc {
 
         // options for turning compaction off
         //options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
-        //options_.level0_slowdown_writes_trigger = 9999999;
-        //options_.level0_stop_writes_trigger = 9999999;
-        //options_.level0_file_num_compaction_trigger = -1;
         //options_.soft_pending_compaction_bytes_limit = 8192 * 1073741824ull;
         //options_.hard_pending_compaction_bytes_limit = 8192 * 1073741824ull;
         //options_.max_open_files = 8192000;

@@ -59,7 +59,13 @@ namespace ycsbc {
                 if (value == "") {
                     noResults++;
                 }
-                result += value;
+
+                data::Row row;
+                row.ParseFromString(value);
+
+                for (int i = 0; i < row.columns_size(); i++) {
+                    result += row.columns(i).name() + "::" + row.columns(i).value() + ",";
+                }
             }
             return 0;
         }
@@ -75,7 +81,13 @@ namespace ycsbc {
                 noResults++;
                 return 1;
             }
-            result += value;
+
+            data::Row row;
+            row.ParseFromString(value);
+
+            for (int i = 0; i < row.columns_size(); i++) {
+                result += row.columns(i).name() + "::" + row.columns(i).value() + ",";
+            }
         }
         return 0;
     }
@@ -112,7 +124,7 @@ namespace ycsbc {
             std::string serializedColumn;
             row.columns(i).SerializeToString(&serializedColumn);
             rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
-                                          cfhandles_[table+"_col_"+std::to_string(i)],
+                                          cfhandles_[table+"_col_"+std::to_string(i/2)],
                                           key,
                                           serializedColumn);
             if (!s.ok()) {
@@ -187,7 +199,7 @@ namespace ycsbc {
     void RocksdbColumnStrawman::GetColumnFamilyDescriptors(const std::string& dbname,
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
-        for (int i = 0; i < options_.num_columns; i++) {
+        for (int i = 0; i < options_.num_columns/2; i++) {
             std::string cf_name = dbname + "_col_" + std::to_string(i);
             column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
         }
@@ -197,6 +209,9 @@ namespace ycsbc {
                             std::vector<rocksdb::ColumnFamilyHandle*> handles)
     {
         for (size_t i = 0; i < handles.size(); i++) {
+            if (column_family_descriptors[i].name == rocksdb::kDefaultColumnFamilyName) {
+                continue;
+            }
             cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
             handleList_.push_back(handles[i]);
         }
