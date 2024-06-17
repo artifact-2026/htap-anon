@@ -43,19 +43,22 @@ class TestFBCracker : public DB{
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
+        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
+        std::vector<rocksdb::ColumnFamilyHandle*> cfhandlelist_;
+        std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
         int noResults;
-        std::shared_ptr<rocksdb::Cache> cache_;
-        std::shared_ptr<rocksdb::Statistics> dbstats_;
+        //std::shared_ptr<rocksdb::Cache> cache_;
+        //std::shared_ptr<rocksdb::Statistics> dbstats_;
 
         void SetOptions(utils::Properties &props);
-        // serialize for inserts
-        void SerializeValue(std::vector<KVPair> &kvs, std::string &value);
-        // de-serialize one record
-        void DeSerializeValue(std::string &value,
-                              const std::vector<std::string> *fields,
-                              std::vector<KVPair> &kvs);
         void KeepOnlyRequestedFields(data::Row &row,
                 const std::set<std::string> *fields, data::Row &selectedColumns);
+        void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
+                                    std::vector<rocksdb::ColumnFamilyHandle *> handles);
+        void BuildQueryHandles(std::set<std::string> fields);
+        void GetColumnFamilyDescriptors(const std::string &dbname,
+                                             std::vector<rocksdb::ColumnFamilyDescriptor> &column_families,
+                                             std::string translevel);
 };  
 
 }

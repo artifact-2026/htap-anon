@@ -64,7 +64,22 @@ namespace ycsbc {
                       std::string &result)
     {
         if (cached_cfhandles_.size() == 0) {
-            BuildQueryHandles(std::set<std::string>(fields->begin(), fields->end()));
+            if (fields != nullptr) {
+                BuildQueryHandles(std::set<std::string>(fields->begin(), fields->end()));
+            } else {
+                int index = 0;
+                int sz = 1;
+                for (int level = 0; level < 4; level++) {
+                    std::vector<rocksdb::ColumnFamilyHandle *> levelhdls;
+
+                    for (int i = 0; i < sz; i++) {
+                        levelhdls.push_back(cfhandlelist_[index+i]);
+                    }
+                    index += sz;
+                    sz *= 2;
+                    cached_cfhandles_.insert({level, levelhdls});
+                }
+            }
         }
 
         bool found = false;

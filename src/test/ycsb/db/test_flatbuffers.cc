@@ -70,9 +70,10 @@ namespace ycsbc {
 
         if (s.ok()) {
             std::vector<uint8_t> vec(value.begin(), value.end());
+            flatbuffers::Verifier verifier(vec.data(), vec.size());
             const FbRow* fbRow = GetFbRow(vec.data());
 
-            if (fbRow != nullptr) {
+            if (fbRow != nullptr && fbRow->Verify(verifier)) {
                 const flatbuffers::Vector<flatbuffers::Offset<NumericColumn>>* numcols = fbRow->numcols();
                 if (numcols != nullptr) {
                     for (size_t i = 0; i < numcols->size(); i++) {
