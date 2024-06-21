@@ -199,7 +199,7 @@ class CoreWorkload {
 };
 
 inline std::string CoreWorkload::NextSequenceKey() {
-  uint64_t key_num = key_generator_->Next();
+  uint64_t key_num = key_generator_->Next() % record_count_;
   return BuildKeyName(key_num);
 }
 
