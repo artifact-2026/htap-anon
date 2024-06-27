@@ -46,7 +46,7 @@ class TestRocksDB : public DB{
         int noResults;
         std::shared_ptr<rocksdb::Cache> cache_;
         std::shared_ptr<rocksdb::Statistics> dbstats_;
-        std::vector<rocksdb::ColumnFamilyHandle*> cfhandles_;
+        rocksdb::ColumnFamilyHandle* cfhandle_;
 
         void SetOptions(utils::Properties &props);
         // serialize for inserts
@@ -58,7 +58,8 @@ class TestRocksDB : public DB{
 	    void KeepOnlyRequestedFields(data::Row &row,
                         const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
-        void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyHandle*> handles);                
+        void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
+                                                std::vector<rocksdb::ColumnFamilyHandle *> handles);        
 };  
 
 }
