@@ -9,7 +9,7 @@ git submodule update --init --recursive
 
 #### - Prepare the dependencies  
 sudo apt-get update  
-sudo apt-get install cmake libgflags-dev protobuf-compiler ninja-build libsnappy-dev zlib1g-dev libbz2-dev flatbuffers-compiler flatbuffers-compiler-dev libflatbuffers-dev
+sudo apt-get install cmake libgflags-dev protobuf-compiler ninja-build libsnappy-dev zlib1g-dev libbz2-dev flatbuffers-compiler flatbuffers-compiler-dev libflatbuffers-dev librados-dev libradospp-dev
 
 #### - Build code  
 mkdir build  

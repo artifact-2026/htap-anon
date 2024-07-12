@@ -141,10 +141,16 @@ namespace ycsbc {
         options_.enable_pipelined_write = true;
 
         options_.IncreaseParallelism(16);
-        options_.level0_slowdown_writes_trigger = 9999999;     
-        options_.level0_stop_writes_trigger = 99999999;
+        options_.level0_slowdown_writes_trigger = 16;     
+        options_.level0_stop_writes_trigger = 24;
         options_.max_open_files = -1;
-        options_.level0_file_num_compaction_trigger = 4;
+        options_.level0_file_num_compaction_trigger = 8;
+
+        options_.max_write_buffer_number = 3;
+        options_.write_buffer_size = 67108864;
+        options_.target_file_size_base = 67108864;
+
+        options_.num_levels = 4;
 
         // options for turning compaction off
         //options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
@@ -154,9 +160,6 @@ namespace ycsbc {
         //options_.max_file_opening_threads = 49200;
 
         //options_.max_background_jobs = 16;
-        //options_.max_write_buffer_number = 32;
-        //options_.target_file_size_base = 64ul * 1024 * 1024;
-        //options_.write_buffer_size = 2 << 30;
         //options_.db_write_buffer_size = 2 << 30;
 
         options_.use_direct_reads = true;

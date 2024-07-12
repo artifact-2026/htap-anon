@@ -206,23 +206,25 @@ namespace ycsbc {
         */
 
         // options_.max_background_jobs = 16;
-        // options_.max_write_buffer_number = 32;
         options_.AllowTransformationWhileCompacting(2, 4, 16, 1);
         options_.SetTransformType(1);
 
-        // options_.target_file_size_base = 64ul * 1024 * 1024;
-        // options_.write_buffer_size = 2 << 30;
         // options_.db_write_buffer_size = 2 << 30;
-
-        // options_.level0_file_num_compaction_trigger = 2;
         // options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
         options_.IncreaseParallelism(16);
-        options_.level0_slowdown_writes_trigger = 9999999;
-        options_.level0_stop_writes_trigger = 99999999;
+        options_.level0_slowdown_writes_trigger = 16;
+        options_.level0_stop_writes_trigger = 24;
         options_.max_open_files = -1;
+        options_.level0_file_num_compaction_trigger = 8;
 
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
+        
+        options_.max_write_buffer_number = 3;
+        options_.write_buffer_size = 67108864;
+        options_.target_file_size_base = 67108864;
+
+        options_.num_levels = 4;
 
         // options_.max_open_files = 20480;
         // options_.max_file_opening_threads = 32;

@@ -18,6 +18,11 @@ include_directories(/usr/include)
 include_directories(${protobuf_INCLUDE_DIR})
 include_directories(${FLATBUFFERS_INCLUDE_DIRS})
 
+set(BUILD_DIR ${CMAKE_BINARY_DIR})
+
+# Copy run_script.sh from the source directory to the build directory
+configure_file(run_script.sh ${BUILD_DIR}/run_script.sh COPYONLY)
+
 #set(ROCKSDB_INCLUDE_DIR /lib/rocksdb/include/rocksdb/)
 #set(ROCKSDB_LIB_DIR /lib/rocksdb)
 

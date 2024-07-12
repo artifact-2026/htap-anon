@@ -1,0 +1,10 @@
+.autotools
+*.cproject
+*.project
+*.swp
+.token*
+.settings/
+.vscode/
+build/
+scratch
+cheatsheet
