@@ -410,7 +410,7 @@ class Column : public ::google::protobuf::Message /* @@protoc_insertion_point(cl
   ::std::string* release_name();
   void set_allocated_name(::std::string* name);
 
-  // optional string value = 2;
+  // optional bytes value = 2;
   bool has_value() const;
   void clear_value();
   static const int kValueFieldNumber = 2;
@@ -420,7 +420,7 @@ class Column : public ::google::protobuf::Message /* @@protoc_insertion_point(cl
   void set_value(::std::string&& value);
   #endif
   void set_value(const char* value);
-  void set_value(const char* value, size_t size);
+  void set_value(const void* value, size_t size);
   ::std::string* mutable_value();
   ::std::string* release_value();
   void set_allocated_value(::std::string* value);
@@ -584,7 +584,7 @@ inline void Column::set_allocated_name(::std::string* name) {
   // @@protoc_insertion_point(field_set_allocated:data.Column.name)
 }
 
-// optional string value = 2;
+// optional bytes value = 2;
 inline bool Column::has_value() const {
   return (_has_bits_[0] & 0x00000002u) != 0;
 }
@@ -621,7 +621,7 @@ inline void Column::set_value(const char* value) {
   value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(), ::std::string(value));
   // @@protoc_insertion_point(field_set_char:data.Column.value)
 }
-inline void Column::set_value(const char* value, size_t size) {
+inline void Column::set_value(const void* value, size_t size) {
   set_has_value();
   value_.SetNoArena(&::google::protobuf::internal::GetEmptyStringAlreadyInited(),
       ::std::string(reinterpret_cast<const char*>(value), size));

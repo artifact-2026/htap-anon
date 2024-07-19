@@ -26,8 +26,8 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
   } else if (props["dbname"] == "writetwice") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-writetwice");
     return new Writetwice(props["dbname"], dbpath.c_str(), props);
-  } else if (props["dbname"] == "rocksdb_column_strawman") {
-    std::string dbpath = props.GetProperty("dbpath","/tmp/test-rocksdb-strawman");
+  } else if (props["dbname"] == "precracking") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-precracking");
     return new RocksdbColumnStrawman(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "flatbuffers") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-fb");

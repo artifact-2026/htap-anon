@@ -210,17 +210,22 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
 
+        options_.transformer = std::make_shared<rocksdb::Bytecracker>();
         options_.AllowTransformationWhileCompacting(2, 4, 16, 1);
         options_.SetTransformType(2);
 
         options_.IncreaseParallelism(16);
-        options_.level0_slowdown_writes_trigger = 9999999;     
-        options_.level0_stop_writes_trigger = 99999999;
+        options_.level0_slowdown_writes_trigger = 16;     
+        options_.level0_stop_writes_trigger = 24;
         options_.max_open_files = -1;
-        options_.level0_file_num_compaction_trigger = 4;
+        options_.level0_file_num_compaction_trigger = 8;
 
-        options_.transformer = std::make_shared<rocksdb::Bytecracker>();
-        options_.SetTransformType(2);
+        options_.max_write_buffer_number = 3;
+        options_.write_buffer_size = 67108864;
+        options_.target_file_size_base = 67108864;
+
+        options_.num_levels = 4;
+
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
 

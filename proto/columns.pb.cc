@@ -154,7 +154,7 @@ void AddDescriptorsImpl() {
       "\n\rcolumns.proto\022\004data\" \n\005Table\022\027\n\004rows\030\001"
       " \003(\0132\t.data.Row\"$\n\003Row\022\035\n\007columns\030\001 \003(\0132"
       "\014.data.Column\"%\n\006Column\022\014\n\004name\030\001 \001(\t\022\r\n"
-      "\005value\030\002 \001(\t"
+      "\005value\030\002 \001(\014"
   };
   ::google::protobuf::DescriptorPool::InternalAddGeneratedFile(
       descriptor, 132);
@@ -745,16 +745,12 @@ bool Column::MergePartialFromCodedStream(
         break;
       }
 
-      // optional string value = 2;
+      // optional bytes value = 2;
       case 2: {
         if (static_cast< ::google::protobuf::uint8>(tag) ==
             static_cast< ::google::protobuf::uint8>(18u /* 18 & 0xFF */)) {
-          DO_(::google::protobuf::internal::WireFormatLite::ReadString(
+          DO_(::google::protobuf::internal::WireFormatLite::ReadBytes(
                 input, this->mutable_value()));
-          ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
-            this->value().data(), static_cast<int>(this->value().length()),
-            ::google::protobuf::internal::WireFormat::PARSE,
-            "data.Column.value");
         } else {
           goto handle_unusual;
         }
@@ -798,13 +794,9 @@ void Column::SerializeWithCachedSizes(
       1, this->name(), output);
   }
 
-  // optional string value = 2;
+  // optional bytes value = 2;
   if (cached_has_bits & 0x00000002u) {
-    ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
-      this->value().data(), static_cast<int>(this->value().length()),
-      ::google::protobuf::internal::WireFormat::SERIALIZE,
-      "data.Column.value");
-    ::google::protobuf::internal::WireFormatLite::WriteStringMaybeAliased(
+    ::google::protobuf::internal::WireFormatLite::WriteBytesMaybeAliased(
       2, this->value(), output);
   }
 
@@ -834,14 +826,10 @@ void Column::SerializeWithCachedSizes(
         1, this->name(), target);
   }
 
-  // optional string value = 2;
+  // optional bytes value = 2;
   if (cached_has_bits & 0x00000002u) {
-    ::google::protobuf::internal::WireFormat::VerifyUTF8StringNamedField(
-      this->value().data(), static_cast<int>(this->value().length()),
-      ::google::protobuf::internal::WireFormat::SERIALIZE,
-      "data.Column.value");
     target =
-      ::google::protobuf::internal::WireFormatLite::WriteStringToArray(
+      ::google::protobuf::internal::WireFormatLite::WriteBytesToArray(
         2, this->value(), target);
   }
 
@@ -870,10 +858,10 @@ size_t Column::ByteSizeLong() const {
           this->name());
     }
 
-    // optional string value = 2;
+    // optional bytes value = 2;
     if (has_value()) {
       total_size += 1 +
-        ::google::protobuf::internal::WireFormatLite::StringSize(
+        ::google::protobuf::internal::WireFormatLite::BytesSize(
           this->value());
     }
 

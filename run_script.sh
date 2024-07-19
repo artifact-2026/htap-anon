@@ -32,9 +32,9 @@ TEST_TYPE=$1
 if [ "$TEST_TYPE" != "baseline" ] && \
    [ "$TEST_TYPE" != "cracking" ] && \
    [ "$TEST_TYPE" != "flatbuffers" ] && \
-   [ "$TEST_TYPE" != "fb-cracking" ] && \
+   [ "$TEST_TYPE" != "crackfb" ] && \
    [ "$TEST_TYPE" != "precracking" ]; then
-   echo "TEST_TYPE is required with value = [baseline|cracking|flatbuffers|fb-cracking|precracking]"
+   echo "TEST_TYPE is required with value = [baseline|cracking|flatbuffers|crackfb|precracking]"
    exit 1
 fi
 
@@ -70,7 +70,7 @@ fi
 if [ "$LOAD_ONLY" = "true" ]; then
   echo "Loading $TEST_TYPE in $TEST_RESULT_DIRECTORY ..."
 
-  if [ "$TEST_TYPE" = "baseline" ]; then
+  if [ "$TEST_TYPE" = "baseline" ] || [ "$TEST_TYPE" = "precracking" ]; then
     ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
       -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
       -load true -run false -throughput false
@@ -78,6 +78,14 @@ if [ "$LOAD_ONLY" = "true" ]; then
     ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
       -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
       -load true -run false -throughput false -transform true -transform_type 1 -table $TEST_TYPE
+  elif [ "$TEST_TYPE" = "flatbuffers" ]; then
+    ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
+      -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
+      -load true -run false -throughput false -transform true -transform_type 3 -table $TEST_TYPE
+  elif [ "$TEST_TYPE" = "crackfb" ]; then
+    ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
+      -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
+      -load true -run false -throughput false -transform true -transform_type 2 -table $TEST_TYPE
   fi
 fi
 # ./src/test/ycsb/ycsb_test -db rocksdb -dbpath /holly/test_result/test-rocksdb -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 16 -load false -run false -throughput true -throughputtype 2 -runtime 300 -transform false

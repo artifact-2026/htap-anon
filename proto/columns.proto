@@ -12,5 +12,5 @@ message Row {
 
 message Column {
   optional string name = 1;
-  optional string value = 2;
+  optional bytes value = 2;
 } 
