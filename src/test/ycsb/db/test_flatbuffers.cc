@@ -12,10 +12,10 @@ using namespace std;
 
 namespace ycsbc {
     TestFlatBuffers::TestFlatBuffers(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
-        bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","true"));
+        bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         bool transform = utils::StrToBool(props.GetProperty("transform","true"));
         noResults = 0;
-        SetOptions(props);
+        SetOptions(props, bootstrap);
 
         if (transform) {
             options_.transformer = std::make_shared<rocksdb::Bytecoder>();
@@ -152,8 +152,11 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestFlatBuffers::SetOptions(utils::Properties &props)
+    void TestFlatBuffers::SetOptions(utils::Properties &props, bool logging)
     {
+        if (!logging) {
+            options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
+        }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
 

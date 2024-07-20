@@ -1,5 +1,5 @@
-#ifndef YCSB_C_FLAT_BUFFERS_AND_CRACKING_H
-#define YCSB_C_FLAT_BUFFERS_AND_CRACKING_H
+#ifndef YCSB_CPLUSPLUS_FLAT_BUFFERS_AND_CRACKING_H
+#define YCSB_CPLUSPLUS_FLAT_BUFFERS_AND_CRACKING_H
 
 #include "core/db.h"
 
@@ -50,7 +50,7 @@ class TestFBCracker : public DB{
         //std::shared_ptr<rocksdb::Cache> cache_;
         //std::shared_ptr<rocksdb::Statistics> dbstats_;
 
-        void SetOptions(utils::Properties &props);
+        void SetOptions(utils::Properties &props, bool logging);
         void KeepOnlyRequestedFields(data::Row &row,
                 const std::set<std::string> *fields, data::Row &selectedColumns);
         void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,

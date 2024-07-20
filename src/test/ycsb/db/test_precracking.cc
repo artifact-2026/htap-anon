@@ -1,5 +1,5 @@
 #include "core/core_workload.h"
-#include "rocksdb_column_strawman.h"
+#include "test_precracking.h"
 #include "lib/coding.h"
 #include "cabindb/rocksdb-rados-env/env_librados.h"
 
@@ -8,9 +8,9 @@ using namespace std;
 namespace ycsbc {
     RocksdbColumnStrawman::RocksdbColumnStrawman(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         noResults = 0;
-        bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","true"));
+        bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int num_cfs = stoi(props.GetProperty("fieldcount", "0"));
-        SetOptions(props, dbfilename, num_cfs);
+        SetOptions(props, dbfilename, num_cfs, bootstrap);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
@@ -67,9 +67,7 @@ namespace ycsbc {
         }
 
         std::set<int> queryCols;
-        if (queryPositions_.size() == 0) {
-            queryCols = GetQueryingHandles(std::set<std::string>(fields->begin(), fields->end()));
-        }
+        queryCols = GetQueryingHandles(std::set<std::string>(fields->begin(), fields->end()));
 
         for (auto qc : queryCols) {
             std::string value;
@@ -91,7 +89,7 @@ namespace ycsbc {
                           std::vector<std::string> &result) 
     {
         std::set<int> queryCols;
-        if (queryPositions_.size() == 0 && fields != nullptr) {
+        if (fields != nullptr) {
             queryCols = GetQueryingHandles(std::set<std::string>(fields->begin(), fields->end()));
         }
 
@@ -116,13 +114,14 @@ namespace ycsbc {
     {
         data::Row row;
         row.ParseFromString(values);
-        for (int i = 0; i < row.columns_size(); i++) {
-            std::string serializedColumn;
-            row.columns(i).SerializeToString(&serializedColumn);
+        for (int i = 0; i < row.columns_size()-1; i++) {
+            std::string serializedColumn1, serializedColumn2;
+            row.columns(i).SerializeToString(&serializedColumn1);
+            row.columns(++i).SerializeToString(&serializedColumn2);
             rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
-                                          cfhandles_[table+"_col_"+std::to_string(i)],
+                                          cfhandles_[table+"_col_"+std::to_string(i/2)],
                                           key,
-                                          serializedColumn);
+                                          serializedColumn1+serializedColumn2);
             if (!s.ok()) {
                 return 1;
             }
@@ -147,8 +146,11 @@ namespace ycsbc {
         return 1;
     }
 
-    void RocksdbColumnStrawman::SetOptions(utils::Properties &props, const char *dbfilename, int num_cfs)
+    void RocksdbColumnStrawman::SetOptions(utils::Properties &props, const char *dbfilename, int num_cfs, bool logging)
     {
+        if (!logging) {
+            options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
+        }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
         options_.num_columns = num_cfs;
@@ -193,7 +195,12 @@ namespace ycsbc {
     void RocksdbColumnStrawman::GetColumnFamilyDescriptors(const std::string& dbname,
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
-        for (int i = 0; i < options_.num_columns; i++) {
+        int splits = 1;
+        for (int i = 0; i < options_.num_levels-1; i++) {
+            splits *= 2;
+        }
+
+        for (int i = 0; i < splits; i++) {
             std::string cf_name = dbname + "_col_" + std::to_string(i);
             column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
         }
@@ -218,7 +225,7 @@ namespace ycsbc {
             for (size_t i = 5; i < field.size(); i++) {
                 pos = pos*10 + field[i] - '0';
             }
-            fieldpositions.insert(pos);
+            fieldpositions.insert(pos/2);
         }
         return fieldpositions;
     }

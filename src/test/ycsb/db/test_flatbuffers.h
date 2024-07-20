@@ -1,5 +1,5 @@
-#ifndef YCSB_C_FLAT_BUFFERS_H
-#define YCSB_C_FLAT_BUFFERS_H
+#ifndef YCSB_CPLUSPLUS_FLAT_BUFFERS_H
+#define YCSB_CPLUSPLUS_FLAT_BUFFERS_H
 
 #include "core/db.h"
 
@@ -48,7 +48,7 @@ class TestFlatBuffers : public DB{
         std::shared_ptr<rocksdb::Statistics> dbstats_;
         rocksdb::ColumnFamilyHandle* cfhandle_;
 
-        void SetOptions(utils::Properties &props);
+        void SetOptions(utils::Properties &props, bool logging);
         // serialize for inserts
         void GetColumnFamilyDescriptors(const std::string& dbname,
                 std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);

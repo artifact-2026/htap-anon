@@ -4,9 +4,9 @@ set(ycsb_srcs
     ycsbc.cc
     db/db_factory.cc
     db/test_rocks_db.cc
-    db/mycelium.cc
-    db/writetwice.cc
-    db/rocksdb_column_strawman.cc
+    db/test_cracking.cc
+    db/test_indexing.cc
+    db/test_precracking.cc
     db/splitfirst.cc
     db/test_flatbuffers.cc
     db/test_fb_cracker.cc

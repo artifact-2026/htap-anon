@@ -1,5 +1,5 @@
-#ifndef YCSB_CPLUSPLUS_ROCKSDB_COLUMN_STRAWMAN_H
-#define YCSB_CPLUSPLUS_ROCKSDB_COLUMN_STRAWMAN_H
+#ifndef YCSB_CPLUSPLUS_INDEXING_H
+#define YCSB_CPLUSPLUS_INDEXING_H
 
 #include "core/db.h"
 
@@ -19,9 +19,9 @@
 
 namespace ycsbc {
 
-class RocksdbColumnStrawman : public DB{
+class Indexing : public DB{
     public :
-        RocksdbColumnStrawman(const std::string& dbname, const char *dbfilename, utils::Properties &props);
+        Indexing(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::set<std::string> *fields,
                  std::string &result);
@@ -38,24 +38,21 @@ class RocksdbColumnStrawman : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~RocksdbColumnStrawman() {};
+        ~Indexing() {};
     
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
-        int noResults;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
-        std::vector<rocksdb::ColumnFamilyHandle*> handleList_;
-        std::set<int> queryPositions_;
+        int noResults;
 
-        void SetOptions(utils::Properties &props, const char *dbfilename, int num_cfs);
+        void SetOptions(const char *dbfilename, bool logging);
 	    void KeepOnlyRequestedFields(data::Row &row,
-                    const std::set<std::string> *fields, data::Row &selectedColumns);
+                const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname,
-                    std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+                                        std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
-                            std::vector<rocksdb::ColumnFamilyHandle*> handles);
-        std::set<int> GetQueryingHandles(std::set<std::string> fields);
+                                    std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };  
 
 }

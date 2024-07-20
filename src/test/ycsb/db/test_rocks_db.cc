@@ -7,9 +7,9 @@ using namespace std;
 
 namespace ycsbc {
     TestRocksDB::TestRocksDB(const char *dbfilename, utils::Properties &props) {
-        bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","true"));
+        bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         noResults = 0;
-        SetOptions(props);
+        SetOptions(props, bootstrap);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(column_family_descriptors);
@@ -135,8 +135,11 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestRocksDB::SetOptions(utils::Properties &props)
+    void TestRocksDB::SetOptions(utils::Properties &props, bool logging)
     {
+        if (!logging) {
+            options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
+        }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
 

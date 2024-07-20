@@ -3,7 +3,7 @@
 #include <queue>
 
 #include "core/core_workload.h"
-#include "mycelium.h"
+#include "test_cracking.h"
 #include "lib/coding.h"
 
 #include "rocksdb/db.h"
@@ -16,10 +16,10 @@ using namespace std;
 
 namespace ycsbc {
     Mycelium::Mycelium(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
-        bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","true"));
+        bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         bool transform = utils::StrToBool(props.GetProperty("transform","true"));
         std::string translevel = props.GetProperty("translevel","all");
-        SetOptions(dbfilename);
+        SetOptions(dbfilename, bootstrap);
 
         if (transform) {
             options_.transformer = std::make_shared<rocksdb::Cracker>();
@@ -193,8 +193,11 @@ namespace ycsbc {
         return 1;
     }
 
-    void Mycelium::SetOptions(const char *dbfilename)
+    void Mycelium::SetOptions(const char *dbfilename, bool logging)
     {
+        if (!logging) {
+            options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
+        }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
 

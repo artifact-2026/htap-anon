@@ -33,8 +33,9 @@ if [ "$TEST_TYPE" != "baseline" ] && \
    [ "$TEST_TYPE" != "cracking" ] && \
    [ "$TEST_TYPE" != "flatbuffers" ] && \
    [ "$TEST_TYPE" != "crackfb" ] && \
-   [ "$TEST_TYPE" != "precracking" ]; then
-   echo "TEST_TYPE is required with value = [baseline|cracking|flatbuffers|crackfb|precracking]"
+   [ "$TEST_TYPE" != "precracking" ] && \
+   [ "$TEST_TYPE" != "indexing" ]; then
+   echo "TEST_TYPE is required with value = [baseline|cracking|flatbuffers|crackfb|precracking|indexing]"
    exit 1
 fi
 
@@ -86,6 +87,10 @@ if [ "$LOAD_ONLY" = "true" ]; then
     ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
       -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
       -load true -run false -throughput false -transform true -transform_type 2 -table $TEST_TYPE
+  elif [ "$TEST_TYPE" = "indexing" ]; then
+    ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
+      -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
+      -load true -run false -throughput false -transform true -transform_type 4 -table $TEST_TYPE
   fi
 fi
 # ./src/test/ycsb/ycsb_test -db rocksdb -dbpath /holly/test_result/test-rocksdb -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 16 -load false -run false -throughput true -throughputtype 2 -runtime 300 -transform false
