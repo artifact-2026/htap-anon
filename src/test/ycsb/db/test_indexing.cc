@@ -179,7 +179,7 @@ namespace ycsbc {
         options_.SetCompactingLevelWithinColumnFamilyGroup(0);
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname, rocksdb::ColumnFamilyOptions(options_)));
         
-        std::string index_name = dbname + "_index_cf_";
+        std::string index_name = dbname + "_index_cf_0";
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(index_name, rocksdb::ColumnFamilyOptions(options_)));
     }
 
