@@ -1,10 +1,9 @@
 #include <queue>
 #include "core/core_workload.h"
-#include "test_rocks_db.h"
 #include "lib/coding.h"
-#include "cabindb/compactor.h"
 #include "test_fb_cracker.h"
-#include "lib/rocksdb/transformer/bytecracker.h"
+#include "lib/rocksdb/transformer/converter.h"
+#include "lib/rocksdb/transformer/distributor.h"
 
 using namespace std;
 
@@ -17,7 +16,7 @@ namespace ycsbc {
         SetOptions(props, bootstrap);
 
         if (transform) {
-            options_.transformer = std::make_shared<rocksdb::Bytecracker>();
+            options_.transformer = std::make_shared<rocksdb::Distributor>();
         }
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
@@ -213,9 +212,8 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
 
-        options_.transformer = std::make_shared<rocksdb::Bytecracker>();
-        options_.AllowTransformationWhileCompacting(2, 4, 16, 1);
-        options_.SetTransformType(2);
+        options_.AllowTransformationWhileCompacting(2, 4, 16, 
+                rocksdb::TransformerType::DISTRIBUTOR | rocksdb::TransformerType::CONVERTER);
 
         options_.IncreaseParallelism(16);
         options_.level0_slowdown_writes_trigger = 16;     

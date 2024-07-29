@@ -10,8 +10,8 @@
 #include <rocksdb/options.h>
 #include <rocksdb/db.h>
 #include <rocksdb/cache.h>
-#include <rocksdb/table.h>
 #include <rocksdb/filter_policy.h>
+#include <rocksdb/table.h>
 
 #include "core/properties.h"
 #include "core/core_workload.h"

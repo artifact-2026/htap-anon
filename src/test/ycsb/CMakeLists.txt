@@ -7,7 +7,6 @@ set(ycsb_srcs
     db/test_cracking.cc
     db/test_indexing.cc
     db/test_precracking.cc
-    db/splitfirst.cc
     db/test_flatbuffers.cc
     db/test_fb_cracker.cc
     core/core_workload.cc)
@@ -15,11 +14,10 @@ add_executable(ycsb_test ${ycsb_srcs})
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src/test/ycsb)
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR})
-target_include_directories(cabindb PUBLIC ${CMAKE_SOURCE_DIR}/lib/rocksdb/include)
-target_include_directories(cabindb PUBLIC ${CMAKE_SOURCE_DIR}/lib/rocksdb)
+target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/lib/rocksdb/include)
+target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/lib/rocksdb)
 target_link_libraries(
     ycsb_test
-    cabindb
     rocksdb
     ${Protobuf_LIBRARIES}
     proto

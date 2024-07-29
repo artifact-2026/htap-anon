@@ -8,9 +8,7 @@ SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -D FLATBUFFERS_CXX_FLAGS=-Wno-e
 FIND_PACKAGE(Protobuf REQUIRED)
 
 add_subdirectory(lib/rocksdb)
-add_subdirectory(src/cabindb)
 add_subdirectory(src/test/ycsb)
-add_subdirectory(src/example)
 add_subdirectory(proto)
 
 include_directories(${CMAKE_SOURCE_DIR}/lib/rocksdb/include)

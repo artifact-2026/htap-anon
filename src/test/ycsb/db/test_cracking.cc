@@ -9,8 +9,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
-#include "transformer/cracker.h"
-#include "cabindb/compactor.h"
+#include "transformer/distributor.h"
 
 using namespace std;
 
@@ -22,7 +21,7 @@ namespace ycsbc {
         SetOptions(dbfilename, bootstrap);
 
         if (transform) {
-            options_.transformer = std::make_shared<rocksdb::Cracker>();
+            options_.transformer = std::make_shared<rocksdb::Distributor>();
         }
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
@@ -209,8 +208,7 @@ namespace ycsbc {
         */
 
         // options_.max_background_jobs = 16;
-        options_.AllowTransformationWhileCompacting(2, 4, 16, 1);
-        options_.SetTransformType(1);
+        options_.AllowTransformationWhileCompacting(2, 4, 16, rocksdb::TransformerType::DISTRIBUTOR);
 
         // options_.db_write_buffer_size = 2 << 30;
         // options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;

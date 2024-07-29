@@ -1,7 +1,6 @@
 #include "core/core_workload.h"
 #include "test_rocks_db.h"
 #include "lib/coding.h"
-#include "cabindb/compactor.h"
 
 using namespace std;
 

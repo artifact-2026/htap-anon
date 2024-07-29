@@ -3,7 +3,6 @@
 #include "core/core_workload.h"
 #include "splitfirst.h"
 #include "lib/coding.h"
-#include "cabindb/compactor.h"
 
 using namespace std;
 

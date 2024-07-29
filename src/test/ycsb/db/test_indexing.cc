@@ -4,10 +4,8 @@
 #include "core/core_workload.h"
 #include "test_indexing.h"
 #include "lib/coding.h"
-#include "cabindb/rocksdb-rados-env/env_librados.h"
-#include "cabindb/compactor.h"
-#include "lib/rocksdb/transformer/cracker.h"
-#include "transformer/indexer.h"
+#include "lib/rocksdb/transformer/distributor.h"
+#include "transformer/augmenter.h"
 
 using namespace std;
 
@@ -19,7 +17,7 @@ namespace ycsbc {
         SetOptions(dbfilename, bootstrap);
 
         if (transform) {
-            options_.transformer = std::make_shared<rocksdb::Indexer>();
+            options_.transformer = std::make_shared<rocksdb::Augmenter>();
         }
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
@@ -146,8 +144,7 @@ namespace ycsbc {
 
         options_.num_levels = 4;
 
-        options_.AllowTransformationWhileCompacting(2, 4, 16, 1);
-        options_.SetTransformType(4);
+        options_.AllowTransformationWhileCompacting(2, 4, 16, rocksdb::TransformerType::AUGMENTER);
         options_.write_both = true;
 
         options_.use_direct_reads = true;

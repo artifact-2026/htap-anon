@@ -1,7 +1,6 @@
 #include "core/core_workload.h"
 #include "test_precracking.h"
 #include "lib/coding.h"
-#include "cabindb/rocksdb-rados-env/env_librados.h"
 
 using namespace std;
 

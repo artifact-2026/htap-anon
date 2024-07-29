@@ -1,9 +1,8 @@
 #include "core/core_workload.h"
 #include "test_rocks_db.h"
 #include "lib/coding.h"
-#include "cabindb/compactor.h"
 #include "test_flatbuffers.h"
-#include "lib/rocksdb/transformer/bytecoder.h"
+#include "lib/rocksdb/transformer/converter.h"
 
 #include <iostream>
 #include <iomanip> // Include for std::setfill and std::setw
@@ -18,7 +17,7 @@ namespace ycsbc {
         SetOptions(props, bootstrap);
 
         if (transform) {
-            options_.transformer = std::make_shared<rocksdb::Bytecoder>();
+            options_.transformer = std::make_shared<rocksdb::Converter>();
         }
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
@@ -172,7 +171,7 @@ namespace ycsbc {
 
         options_.num_levels = 4;
 
-        options_.SetTransformType(3);
+        options_.SetTransformType(rocksdb::TransformerType::CONVERTER);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
 
