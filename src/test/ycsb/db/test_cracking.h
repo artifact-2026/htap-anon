@@ -49,12 +49,11 @@ class Mycelium : public DB{
         std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
         int noResults;
 
-        void SetOptions(const char *dbfilename, bool logging);
+        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount);
 	    void KeepOnlyRequestedFields(data::Row &row,
                 const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname,
-                                    std::vector<rocksdb::ColumnFamilyDescriptor>& column_families,
-                                    std::string translevel);
+                                    std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                                     std::vector<rocksdb::ColumnFamilyHandle*> handles);
         void BuildQueryHandles(std::set<std::string> fields);

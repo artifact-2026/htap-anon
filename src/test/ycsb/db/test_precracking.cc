@@ -8,8 +8,9 @@ namespace ycsbc {
     RocksdbColumnStrawman::RocksdbColumnStrawman(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         noResults = 0;
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        int num_cfs = stoi(props.GetProperty("fieldcount", "0"));
-        SetOptions(props, dbfilename, num_cfs, bootstrap);
+        int levels = utils::StrToInt(props.GetProperty("levels", "7"));
+        int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
+        SetOptions(dbfilename, levels, fieldcount, bootstrap);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
@@ -145,14 +146,17 @@ namespace ycsbc {
         return 1;
     }
 
-    void RocksdbColumnStrawman::SetOptions(utils::Properties &props, const char *dbfilename, int num_cfs, bool logging)
+    void RocksdbColumnStrawman::SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
         }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
-        options_.num_columns = num_cfs;
+
+        options_.num_levels = levels;
+        options_.num_columns = fieldcount;
+        options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
 
         options_.IncreaseParallelism(16);
         options_.level0_slowdown_writes_trigger = 16;     
@@ -164,16 +168,8 @@ namespace ycsbc {
         options_.write_buffer_size = 67108864;
         options_.target_file_size_base = 67108864;
 
-        options_.num_levels = 4;
-
-        //options_.max_background_jobs = 16;
-        //options_.db_write_buffer_size = 2 << 30;
-
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
-
-        //options_.max_open_files = 20480;
-        //options_.max_file_opening_threads = 32;
     }
 
     void RocksdbColumnStrawman::KeepOnlyRequestedFields(data::Row &row,

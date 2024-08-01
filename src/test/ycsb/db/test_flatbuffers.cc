@@ -12,13 +12,12 @@ using namespace std;
 namespace ycsbc {
     TestFlatBuffers::TestFlatBuffers(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        bool transform = utils::StrToBool(props.GetProperty("transform","true"));
+        int levels = utils::StrToInt(props.GetProperty("levels", "7"));
+        int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         noResults = 0;
-        SetOptions(props, bootstrap);
+        SetOptions(props, bootstrap, levels, fieldcount);
 
-        if (transform) {
-            options_.transformer = std::make_shared<rocksdb::Converter>();
-        }
+        options_.transformer = std::make_shared<rocksdb::Converter>();
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
@@ -151,13 +150,17 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestFlatBuffers::SetOptions(utils::Properties &props, bool logging)
+    void TestFlatBuffers::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
         }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
+
+        options_.num_levels = levels;
+        options_.num_columns = fieldcount;
+        options_.SetTransformerType(rocksdb::TransformerType::CONVERTER);
 
         options_.IncreaseParallelism(16);
         options_.level0_slowdown_writes_trigger = 16;     
@@ -169,24 +172,12 @@ namespace ycsbc {
         options_.write_buffer_size = 67108864;
         options_.target_file_size_base = 67108864;
 
-        options_.num_levels = 4;
-
-        options_.SetTransformType(rocksdb::TransformerType::CONVERTER);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
 
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = nullptr;  // Disable the block cache
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
-        
-        //uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
-        //uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));
-        //uint32_t value_len = stoi(props.GetProperty(CoreWorkload::FIELD_LENGTH_PROPERTY));
-        //uint32_t cache_size = nums * (key_len + value_len) / 10;
-        //if(cache_size < 8 << 20) {
-        //    cache_size = 8 << 20;
-        //}
-        //cache_ = rocksdb::NewLRUCache(cache_size);
     }
 
     void TestFlatBuffers::KeepOnlyRequestedFields(data::Row &row,

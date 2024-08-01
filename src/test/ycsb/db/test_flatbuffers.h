@@ -48,7 +48,7 @@ class TestFlatBuffers : public DB{
         std::shared_ptr<rocksdb::Statistics> dbstats_;
         rocksdb::ColumnFamilyHandle* cfhandle_;
 
-        void SetOptions(utils::Properties &props, bool logging);
+        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
         // serialize for inserts
         void GetColumnFamilyDescriptors(const std::string& dbname,
                 std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);

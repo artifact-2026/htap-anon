@@ -8,7 +8,9 @@ namespace ycsbc {
     TestRocksDB::TestRocksDB(const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         noResults = 0;
-        SetOptions(props, bootstrap);
+        int levels = utils::StrToInt(props.GetProperty("levels", "7"));
+        int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
+        SetOptions(props, bootstrap, levels, fieldcount);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(column_family_descriptors);
@@ -134,13 +136,17 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestRocksDB::SetOptions(utils::Properties &props, bool logging)
+    void TestRocksDB::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
         }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
+
+        options_.num_levels = levels;
+        options_.num_columns = fieldcount;
+        options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
 
         options_.IncreaseParallelism(16);
         options_.level0_slowdown_writes_trigger = 16;     
@@ -152,35 +158,13 @@ namespace ycsbc {
         options_.write_buffer_size = 67108864;
         options_.target_file_size_base = 67108864;
 
-        options_.num_levels = 4;
-
-        // options for turning compaction off
-        //options_.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleNone;
-        //options_.soft_pending_compaction_bytes_limit = 8192 * 1073741824ull;
-        //options_.hard_pending_compaction_bytes_limit = 8192 * 1073741824ull;
-        //options_.max_open_files = 8192000;
-        //options_.max_file_opening_threads = 49200;
-
-        //options_.max_background_jobs = 16;
-        //options_.db_write_buffer_size = 2 << 30;
-
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
 
-        //options_.max_open_files = 20480;
-        //options_.max_file_opening_threads = 32;
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = nullptr;  // Disable the block cache
-        options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
-
-        //uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
-        //uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));
-        //uint32_t value_len = stoi(props.GetProperty(CoreWorkload::FIELD_LENGTH_PROPERTY));
-        //uint32_t cache_size = nums * (key_len + value_len) / 10;
-        //if(cache_size < 8 << 20) {
-        //    cache_size = 8 << 20;
-        //}
-        //cache_ = rocksdb::NewLRUCache(cache_size);
+        options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(
+            rocksdb::NewBlockBasedTableFactory(table_options));
     }
 
     void TestRocksDB::KeepOnlyRequestedFields(data::Row &row,

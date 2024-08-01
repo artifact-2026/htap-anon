@@ -48,7 +48,7 @@ class TestRocksDB : public DB{
         std::shared_ptr<rocksdb::Statistics> dbstats_;
         rocksdb::ColumnFamilyHandle* cfhandle_;
 
-        void SetOptions(utils::Properties &props, bool logging);
+        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
 	    void KeepOnlyRequestedFields(data::Row &row,
                         const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);

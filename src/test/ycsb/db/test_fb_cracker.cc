@@ -10,17 +10,15 @@ using namespace std;
 namespace ycsbc {
     TestFBCracker::TestFBCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        bool transform = utils::StrToBool(props.GetProperty("transform","true"));
-        std::string translevel = props.GetProperty("translevel","all");
+        int levels = utils::StrToInt(props.GetProperty("levels", "7"));
+        int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         noResults = 0;
-        SetOptions(props, bootstrap);
+        SetOptions(props, bootstrap, levels, fieldcount);
 
-        if (transform) {
-            options_.transformer = std::make_shared<rocksdb::Distributor>();
-        }
+        options_.transformer = std::make_shared<rocksdb::Distributor>();
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
-        GetColumnFamilyDescriptors(dbname, column_family_descriptors, translevel);
+        GetColumnFamilyDescriptors(dbname, column_family_descriptors);
         std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
 
         if (bootstrap) {
@@ -204,7 +202,7 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestFBCracker::SetOptions(utils::Properties &props, bool logging)
+    void TestFBCracker::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
@@ -212,8 +210,10 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
 
-        options_.AllowTransformationWhileCompacting(2, 4, 16, 
-                rocksdb::TransformerType::DISTRIBUTOR | rocksdb::TransformerType::CONVERTER);
+        options_.num_levels = levels;
+        options_.num_columns = fieldcount;
+        options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR | 
+                                    rocksdb::TransformerType::CONVERTER);
 
         options_.IncreaseParallelism(16);
         options_.level0_slowdown_writes_trigger = 16;     
@@ -224,8 +224,6 @@ namespace ycsbc {
         options_.max_write_buffer_number = 3;
         options_.write_buffer_size = 67108864;
         options_.target_file_size_base = 67108864;
-
-        options_.num_levels = 4;
 
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
@@ -321,10 +319,8 @@ namespace ycsbc {
     }
 
     void TestFBCracker::GetColumnFamilyDescriptors(const std::string &dbname,
-                                             std::vector<rocksdb::ColumnFamilyDescriptor> &column_families,
-                                             std::string translevel)
+                                             std::vector<rocksdb::ColumnFamilyDescriptor> &column_families)
     {
-        options_.SetCompactingLevelWithinColumnFamilyGroup(0);
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname, rocksdb::ColumnFamilyOptions(options_)));
       
@@ -341,17 +337,15 @@ namespace ycsbc {
                 if (parent_cols < 2) {
                     continue;
                 }
-                rocksdb::Options cfoptions = options_;
-                cfoptions.SetCompactingLevelWithinColumnFamilyGroup(level);
 
                 int child1 = parent_cols/2;
                 std::string cfname1 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2);
-                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(cfoptions)));
+                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(options_)));
                 parents.push(child1);
 
                 int child2 = parent_cols - child1;
                 std::string cfname2 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2+1);
-                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname2, rocksdb::ColumnFamilyOptions(cfoptions)));
+                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname2, rocksdb::ColumnFamilyOptions(options_)));
                 parents.push(child2);
             }
         }

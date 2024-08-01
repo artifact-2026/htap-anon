@@ -71,6 +71,17 @@ inline std::string Trim(const std::string &str) {
       [](int c){ return std::isspace(c); }).base());
 }
 
+inline int StrToInt(std::string str) {
+  int num;
+  try {
+      num = std::stoi(str);
+  } catch (const std::exception& e) {
+      throw e;
+  }
+
+  return num;
+}
+
 } // utils
 
 #endif // YCSB_C_UTILS_H_

@@ -50,15 +50,14 @@ class TestFBCracker : public DB{
         //std::shared_ptr<rocksdb::Cache> cache_;
         //std::shared_ptr<rocksdb::Statistics> dbstats_;
 
-        void SetOptions(utils::Properties &props, bool logging);
+        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
         void KeepOnlyRequestedFields(data::Row &row,
                 const std::set<std::string> *fields, data::Row &selectedColumns);
         void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
                                     std::vector<rocksdb::ColumnFamilyHandle *> handles);
         void BuildQueryHandles(std::set<std::string> fields);
         void GetColumnFamilyDescriptors(const std::string &dbname,
-                                             std::vector<rocksdb::ColumnFamilyDescriptor> &column_families,
-                                             std::string translevel);
+                                             std::vector<rocksdb::ColumnFamilyDescriptor> &column_families);
 };  
 
 }

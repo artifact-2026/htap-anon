@@ -74,23 +74,23 @@ if [ "$LOAD_ONLY" = "true" ]; then
   if [ "$TEST_TYPE" = "baseline" ] || [ "$TEST_TYPE" = "precracking" ]; then
     ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
       -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
-      -load true -run false -throughput false
+      -load true -run false -throughput false -levels 4
   elif [ "$TEST_TYPE" = "cracking" ]; then
     ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
       -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
-      -load true -run false -throughput false -transform true -transform_type 1 -table $TEST_TYPE
+      -load true -run false -throughput false -levels 4 -table $TEST_TYPE
   elif [ "$TEST_TYPE" = "flatbuffers" ]; then
     ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
       -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
-      -load true -run false -throughput false -transform true -transform_type 3 -table $TEST_TYPE
+      -load true -run false -throughput false -levels 4 -table $TEST_TYPE
   elif [ "$TEST_TYPE" = "crackfb" ]; then
     ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
       -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
-      -load true -run false -throughput false -transform true -transform_type 2 -table $TEST_TYPE
+      -load true -run false -throughput false -levels 4 -table $TEST_TYPE
   elif [ "$TEST_TYPE" = "indexing" ]; then
     ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
       -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
-      -load true -run false -throughput false -transform true -transform_type 4 -table $TEST_TYPE
+      -load true -run false -throughput false -levels 4 -table $TEST_TYPE
   fi
 fi
 # ./src/test/ycsb/ycsb_test -db rocksdb -dbpath /holly/test_result/test-rocksdb -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 16 -load false -run false -throughput true -throughputtype 2 -runtime 300 -transform false

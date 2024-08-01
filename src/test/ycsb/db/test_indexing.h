@@ -46,7 +46,7 @@ class Indexing : public DB{
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         int noResults;
 
-        void SetOptions(const char *dbfilename, bool logging);
+        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount);
 	    void KeepOnlyRequestedFields(data::Row &row,
                 const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname,
