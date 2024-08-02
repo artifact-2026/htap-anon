@@ -17,7 +17,7 @@ namespace ycsbc {
         noResults = 0;
         SetOptions(props, bootstrap, levels, fieldcount);
 
-        options_.transformer = std::make_shared<rocksdb::Converter>();
+        options_.transformers.push_back(new rocksdb::Converter());
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);

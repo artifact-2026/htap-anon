@@ -17,7 +17,7 @@ namespace ycsbc {
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         SetOptions(dbfilename, bootstrap, levels, fieldcount);
 
-        options_.transformer = std::make_shared<rocksdb::Augmenter>();
+        options_.transformers.push_back(new rocksdb::Augmenter());
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
