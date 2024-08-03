@@ -17,6 +17,8 @@
 #include "core/core_workload.h"
 #include "proto/columns.pb.h"
 
+#include "transformer/augmenter.h"
+
 namespace ycsbc {
 
 class Indexing : public DB{
@@ -53,6 +55,7 @@ class Indexing : public DB{
                                         std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                                     std::vector<rocksdb::ColumnFamilyHandle*> handles);
+        rocksdb::DeriveFuncData* CreateIndexer(std::vector<int> positions);
 };  
 
 }

@@ -5,7 +5,6 @@
 #include "test_indexing.h"
 #include "lib/coding.h"
 #include "lib/rocksdb/transformer/distributor.h"
-#include "transformer/augmenter.h"
 
 using namespace std;
 
@@ -17,7 +16,9 @@ namespace ycsbc {
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         SetOptions(dbfilename, bootstrap, levels, fieldcount);
 
-        options_.transformers.push_back(new rocksdb::Augmenter());
+        std::vector<rocksdb::DeriveFuncData*> deriveFuncs;
+        deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
+        options_.transformers.push_back(new rocksdb::Augmenter(deriveFuncs));
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
@@ -178,6 +179,23 @@ namespace ycsbc {
         for (size_t i = 0; i < handles.size(); i++) {
             cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
         }
+    }
+
+    rocksdb::DeriveFuncData* Indexing::CreateIndexer(std::vector<int> positions) {
+        std::function<std::string(std::vector<std::string>&)> f = [&](std::vector<std::string> strs) -> std::string {
+            if (strs.size() == 0) {
+                return "";
+            }
+            if (strs.size() == 1) {
+                return strs[0];
+            }
+            std::string ind = strs[0];
+            for (size_t i = 1; i < strs.size(); i++) {
+                ind += strs[i];
+            }
+            return ind;
+        };
+        return new rocksdb::DeriveFuncData(positions, f);
     }
 
 }
