@@ -60,6 +60,21 @@ namespace ycsbc {
     int Indexing::Read(const std::string &table, const std::string &key,
                         const std::set<std::string> *fields, std::string &result) 
     {
+        /**
+         * std::istringstream iss(data);
+    size_t size;
+    iss.read(reinterpret_cast<char*>(&size), sizeof(size));
+
+    std::vector<std::string> vec(size);
+    for (size_t i = 0; i < size; ++i) {
+        size_t length;
+        iss.read(reinterpret_cast<char*>(&length), sizeof(length));
+        vec[i].resize(length);
+        iss.read(&vec[i][0], length);
+    }
+
+    return vec;
+         */
         auto it = cfhandles_.find(table);
         if (it != cfhandles_.end()) {
             rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
@@ -169,7 +184,7 @@ namespace ycsbc {
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname, rocksdb::ColumnFamilyOptions(options_)));
         
-        std::string index_name = dbname + "_index_cf_0";
+        std::string index_name = dbname + "_derived_cf_0";
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(index_name, rocksdb::ColumnFamilyOptions(options_)));
     }
 
