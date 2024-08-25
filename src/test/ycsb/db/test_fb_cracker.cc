@@ -341,11 +341,17 @@ namespace ycsbc {
 
                 int child1 = parent_cols/2;
                 std::string cfname1 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2);
+                if (level == 1) {
+                    cfname1 += "_converted_cf";
+                }
                 column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(options_)));
                 parents.push(child1);
 
                 int child2 = parent_cols - child1;
                 std::string cfname2 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2+1);
+                if (level == 1) {
+                    cfname2 += "_converted_cf";
+                }
                 column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname2, rocksdb::ColumnFamilyOptions(options_)));
                 parents.push(child2);
             }

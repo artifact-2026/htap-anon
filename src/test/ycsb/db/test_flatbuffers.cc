@@ -53,7 +53,9 @@ namespace ycsbc {
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
-                "flatbuffers", rocksdb::ColumnFamilyOptions(options_)));
+            dbname, rocksdb::ColumnFamilyOptions(options_)));
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+            dbname+"_converted_cf", rocksdb::ColumnFamilyOptions(options_)));
     }
 
     /*
@@ -199,8 +201,8 @@ namespace ycsbc {
                                                 std::vector<rocksdb::ColumnFamilyHandle *> handles)
     {
         for (size_t i = 0; i < handles.size(); i++) {
-            if (column_family_descriptors[i].name != rocksdb::kDefaultColumnFamilyName) {
-                std::cout << "column family handle: " << column_family_descriptors[i].name << std::endl;
+            if (column_family_descriptors[i].name != rocksdb::kDefaultColumnFamilyName &&
+                column_family_descriptors[i].name.find("converted_cf") == std::string::npos) {
                 cfhandle_ = handles[i];
             }
         }
