@@ -34,6 +34,11 @@ namespace ycsbc {
             }
 
             s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
+            s = rocksdb_->AddTransformingDestinationCfds(dbname, false, false, true);
+            if (!s.ok()){
+                std::cerr<<"Creating column families ran into error "<<s.ToString()<<std::endl;
+                exit(0);
+            }
         } else {
             column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
                     rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions(options_)));
@@ -48,6 +53,7 @@ namespace ycsbc {
             }
         }
         BuildColumnFamilyHandleMap(column_family_descriptors, cf_handles);
+        rocksdb_->DisplayTransformingDestinationCfds();
     }
 
     /*

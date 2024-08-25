@@ -1,4 +1,5 @@
 #include <queue>
+#include <iostream>
 #include "core/core_workload.h"
 #include "lib/coding.h"
 #include "test_fb_cracker.h"
@@ -10,7 +11,7 @@ using namespace std;
 namespace ycsbc {
     TestFBCracker::TestFBCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        int levels = utils::StrToInt(props.GetProperty("levels", "7"));
+        int levels = utils::StrToInt(props.GetProperty("levels", "4"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         noResults = 0;
         SetOptions(props, bootstrap, levels, fieldcount);
@@ -32,6 +33,11 @@ namespace ycsbc {
             }
 
             s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
+            s = rocksdb_->AddTransformingDestinationCfds(dbname, true, true, false);
+            if (!s.ok()) {
+                std::cerr<<"Creating column families ran into error: "<<s.ToString()<<std::endl;
+                exit(0);
+            }
         } else {
             column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
                     rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions(options_)));
@@ -46,6 +52,7 @@ namespace ycsbc {
             }
         }
         BuildColumnFamilyHandles(column_family_descriptors, cf_handles);
+        rocksdb_->DisplayTransformingDestinationCfds();
     }
 
     /*
@@ -329,7 +336,7 @@ namespace ycsbc {
         std::queue<int> parents;
         parents.push(options_.num_columns);
 
-        for (int level = 1; level < options_.compacting_column_family_num_levels; level++) {
+        for (int level = 1; level < options_.num_levels; level++) {
             int queueLen = parents.size();
 
             for (int j = 0; j < queueLen; j++) {
@@ -341,19 +348,23 @@ namespace ycsbc {
 
                 int child1 = parent_cols/2;
                 std::string cfname1 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2);
-                if (level == 1) {
-                    cfname1 += "_converted_cf";
-                }
                 column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(options_)));
                 parents.push(child1);
 
+                if (level == options_.num_levels - 1) {
+                    cfname1 += "_converted_cf";
+                    column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(options_)));
+                }
+
                 int child2 = parent_cols - child1;
                 std::string cfname2 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2+1);
-                if (level == 1) {
-                    cfname2 += "_converted_cf";
-                }
                 column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname2, rocksdb::ColumnFamilyOptions(options_)));
                 parents.push(child2);
+
+                if (level == options_.num_levels - 1) {
+                    cfname2 += "_converted_cf";
+                    column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname2, rocksdb::ColumnFamilyOptions(options_)));
+                }
             }
         }
     }
