@@ -70,29 +70,29 @@ fi
 
 if [ "$LOAD_ONLY" = "true" ]; then
   echo "Loading $TEST_TYPE in $TEST_RESULT_DIRECTORY ..."
-
-  if [ "$TEST_TYPE" = "baseline" ] || [ "$TEST_TYPE" = "precracking" ]; then
-    ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
-      -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
-      -load true -run false -throughput false -levels 4
-  elif [ "$TEST_TYPE" = "cracking" ]; then
-    ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
-      -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
-      -load true -run false -throughput false -levels 4 -table $TEST_TYPE
-  elif [ "$TEST_TYPE" = "flatbuffers" ]; then
-    ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
-      -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
-      -load true -run false -throughput false -levels 4 -table $TEST_TYPE
-  elif [ "$TEST_TYPE" = "crackfb" ]; then
-    ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
-      -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
-      -load true -run false -throughput false -levels 4 -table $TEST_TYPE
-  elif [ "$TEST_TYPE" = "indexing" ]; then
-    ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
-      -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 2 \
-      -load true -run false -throughput false -levels 4 -table $TEST_TYPE
-  fi
 fi
+
+if [ "$TEST_TYPE" = "baseline" ] || [ "$TEST_TYPE" = "precracking" ]; then
+  ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
+    -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $LOAD_ONLY -threads 2 \
+    -load true -run false -throughput false -levels 4
+elif [ "$TEST_TYPE" = "cracking" ]; then
+  ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
+    -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $LOAD_ONLY -threads 2 \
+    -load true -run false -throughput false -levels 4 -table $TEST_TYPE
+elif [ "$TEST_TYPE" = "flatbuffers" ]; then
+  ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
+    -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $LOAD_ONLY -threads 2 \
+    -load true -run false -throughput false -levels 4 -table $TEST_TYPE
+elif [ "$TEST_TYPE" = "crackfb" ]; then
+  ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
+    -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $LOAD_ONLY -threads 2 \
+    -load true -run false -throughput false -levels 4 -table $TEST_TYPE
+elif [ "$TEST_TYPE" = "indexing" ]; then
+  ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
+    -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $LOAD_ONLY -threads 2 \
+    -load true -run false -throughput false -levels 4 -table $TEST_TYPE
+  fi
 # ./src/test/ycsb/ycsb_test -db rocksdb -dbpath /holly/test_result/test-rocksdb -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 16 -load false -run false -throughput true -throughputtype 2 -runtime 300 -transform false
 # ./src/test/ycsb/ycsb_test -db rocksdb_column_strawman -dbpath /holly/test_result/test-precracking -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 16 -load false -run false -throughput true -throughputtype 2 -runtime 300 -transform false
 # ./src/test/ycsb/ycsb_test -db writetwice -dbpath /holly/test_result/test-writetwice -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 16 -load false -run false -throughput true -throughputtype 2 -runtime 300 -transform true -table writetwice

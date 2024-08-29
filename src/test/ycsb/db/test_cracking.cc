@@ -48,6 +48,7 @@ namespace ycsbc {
                                               column_family_descriptors,
                                               &cf_handles,
                                               &rocksdb_);
+            s = rocksdb_->AddTransformingDestinationCfds(dbname, true, false, false);
             if (!s.ok()){
                 std::cerr<<"Can't open mycelium "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
