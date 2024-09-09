@@ -12,7 +12,7 @@ git submodule update --init --recursive
 
 #### - Prepare the dependencies  
 % sudo apt-get update
-% sudo apt-get install -y cmake libgflags-dev protobuf-compiler ninja-build libsnappy-dev zlib1g-dev libbz2-dev flatbuffers-compiler flatbuffers-compiler-dev libflatbuffers-dev libzstd-dev liblz4-dev libre2-dev
+% sudo apt-get install -y cmake libgflags-dev protobuf-compiler ninja-build libsnappy-dev zlib1g-dev libbz2-dev flatbuffers-compiler flatbuffers-compiler-dev libflatbuffers-dev libzstd-dev liblz4-dev libre2-dev libjsoncpp-dev
 
 % wget https://apache.jfrog.io/artifactory/arrow/ubuntu/apache-arrow-apt-source-latest-focal.deb
 % sudo apt install ./apache-arrow-apt-source-latest-focal.deb
