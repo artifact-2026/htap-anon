@@ -4,7 +4,7 @@
 #include "core/core_workload.h"
 #include "test_indexing.h"
 #include "lib/coding.h"
-#include "lib/rocksdb/transformer/distributor.h"
+#include "transformer/distributor.h"
 
 using namespace std;
 

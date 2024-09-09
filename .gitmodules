@@ -1,0 +1,3 @@
+[submodule "src/mycelium"]
+	path = src/mycelium
+	url = https://github.com/hcasalet/mycelium.git

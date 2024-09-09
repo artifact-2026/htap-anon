@@ -2,7 +2,7 @@
 #include "test_rocks_db.h"
 #include "lib/coding.h"
 #include "test_flatbuffers.h"
-#include "lib/rocksdb/transformer/converter.h"
+#include "transformer/converter.h"
 
 #include <iostream>
 #include <iomanip> // Include for std::setfill and std::setw

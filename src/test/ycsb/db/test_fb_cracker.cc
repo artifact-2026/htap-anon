@@ -3,8 +3,8 @@
 #include "core/core_workload.h"
 #include "lib/coding.h"
 #include "test_fb_cracker.h"
-#include "lib/rocksdb/transformer/converter.h"
-#include "lib/rocksdb/transformer/distributor.h"
+#include "transformer/converter.h"
+#include "transformer/distributor.h"
 
 using namespace std;
 
