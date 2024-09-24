@@ -8,7 +8,7 @@ namespace ycsbc {
     TestRocksDB::TestRocksDB(const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         noResults = 0;
-        int levels = utils::StrToInt(props.GetProperty("levels", "7"));
+        int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         SetOptions(props, bootstrap, levels, fieldcount);
 

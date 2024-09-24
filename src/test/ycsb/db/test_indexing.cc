@@ -12,7 +12,7 @@ namespace ycsbc {
     Indexing::Indexing(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         noResults = 0;
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        int levels = utils::StrToInt(props.GetProperty("levels", "7"));
+        int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         SetOptions(dbfilename, bootstrap, levels, fieldcount);
 
@@ -190,8 +190,11 @@ namespace ycsbc {
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname, rocksdb::ColumnFamilyOptions(options_)));
         
-        std::string index_name = dbname + "_derived_cf_0";
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(index_name, rocksdb::ColumnFamilyOptions(options_)));
+        for (int level = 1; level < options_.num_levels; level++) {
+            std::string index_name = dbname + "_derived_cf_L" + std::to_string(level) + "_0";
+            options_.num_levels -= level;
+            column_families.push_back(rocksdb::ColumnFamilyDescriptor(index_name, rocksdb::ColumnFamilyOptions(options_)));
+        }
     }
 
     void Indexing::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
@@ -203,7 +206,7 @@ namespace ycsbc {
     }
 
     rocksdb::DeriveFuncData* Indexing::CreateIndexer(std::vector<int> positions) {
-        std::function<std::string(std::vector<std::string>&)> f = [&](std::vector<std::string> strs) -> std::string {
+        std::function<std::string(std::vector<std::string>&)> f = [&](std::vector<std::string>& strs) -> std::string {
             if (strs.size() == 0) {
                 return "";
             }
@@ -211,6 +214,12 @@ namespace ycsbc {
                 return strs[0];
             }
             std::string ind = strs[0];
+            size_t total_length = ind.size();
+            for (size_t i = 1; i < strs.size(); ++i) {
+                total_length += strs[i].size();
+            }
+            ind.reserve(total_length);
+
             for (size_t i = 1; i < strs.size(); i++) {
                 ind += strs[i];
             }

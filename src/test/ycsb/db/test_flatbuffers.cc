@@ -12,7 +12,7 @@ using namespace std;
 namespace ycsbc {
     TestFlatBuffers::TestFlatBuffers(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        int levels = utils::StrToInt(props.GetProperty("levels", "7"));
+        int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         noResults = 0;
         SetOptions(props, bootstrap, levels, fieldcount);
@@ -60,6 +60,7 @@ namespace ycsbc {
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname, rocksdb::ColumnFamilyOptions(options_)));
+        options_.num_levels -= 1;
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname+"_converted_cf", rocksdb::ColumnFamilyOptions(options_)));
     }

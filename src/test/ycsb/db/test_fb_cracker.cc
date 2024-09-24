@@ -11,14 +11,14 @@ using namespace std;
 namespace ycsbc {
     TestFBCracker::TestFBCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        int levels = utils::StrToInt(props.GetProperty("levels", "4"));
+        int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         noResults = 0;
         SetOptions(props, bootstrap, levels, fieldcount);
 
-        options_.transformers.push_back(new rocksdb::Distributor());
         options_.transformers.push_back(new rocksdb::Converter());
-
+        options_.transformers.push_back(new rocksdb::Distributor());
+        
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
         std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
@@ -220,8 +220,8 @@ namespace ycsbc {
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
-        options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR | 
-                                    rocksdb::TransformerType::CONVERTER);
+        options_.SetTransformerType(rocksdb::TransformerType::CONVERTER | 
+                                    rocksdb::TransformerType::DISTRIBUTOR);
 
         options_.IncreaseParallelism(16);
         options_.level0_slowdown_writes_trigger = 16;     
@@ -332,13 +332,14 @@ namespace ycsbc {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname, rocksdb::ColumnFamilyOptions(options_)));
       
-        std::string prefix = dbname + "_sys_cf";
+        std::string prefix = dbname + "_converted_cf_sys_cf";
         std::queue<int> parents;
         parents.push(options_.num_columns);
 
-        for (int level = 1; level < options_.num_levels; level++) {
+        for (int level = 1; level < options_.num_levels - 2; level++) {
             int queueLen = parents.size();
 
+            options_.num_levels -= level;
             for (int j = 0; j < queueLen; j++) {
                 int parent_cols = parents.front();
                 parents.pop();
@@ -351,20 +352,10 @@ namespace ycsbc {
                 column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(options_)));
                 parents.push(child1);
 
-                if (level == options_.num_levels - 1) {
-                    cfname1 += "_converted_cf";
-                    column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(options_)));
-                }
-
                 int child2 = parent_cols - child1;
                 std::string cfname2 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2+1);
                 column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname2, rocksdb::ColumnFamilyOptions(options_)));
                 parents.push(child2);
-
-                if (level == options_.num_levels - 1) {
-                    cfname2 += "_converted_cf";
-                    column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname2, rocksdb::ColumnFamilyOptions(options_)));
-                }
             }
         }
     }

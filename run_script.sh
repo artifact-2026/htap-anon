@@ -75,23 +75,23 @@ fi
 if [ "$TEST_TYPE" = "baseline" ] || [ "$TEST_TYPE" = "precracking" ]; then
   ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
     -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $LOAD_ONLY -threads 2 \
-    -load true -run false -throughput false -levels 4
+    -load true -run false -throughput false -levels 6
 elif [ "$TEST_TYPE" = "cracking" ]; then
   ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
     -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $LOAD_ONLY -threads 2 \
-    -load true -run false -throughput false -levels 4 -table $TEST_TYPE
+    -load true -run false -throughput false -levels 6 -table $TEST_TYPE
 elif [ "$TEST_TYPE" = "flatbuffers" ]; then
   ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
     -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $LOAD_ONLY -threads 2 \
-    -load true -run false -throughput false -levels 4 -table $TEST_TYPE
+    -load true -run false -throughput false -levels 6 -table $TEST_TYPE
 elif [ "$TEST_TYPE" = "crackfb" ]; then
   ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
     -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $LOAD_ONLY -threads 2 \
-    -load true -run false -throughput false -levels 4 -table $TEST_TYPE
+    -load true -run false -throughput false -levels 6 -table $TEST_TYPE
 elif [ "$TEST_TYPE" = "indexing" ]; then
   ./src/test/ycsb/ycsb_test -db $TEST_TYPE -dbpath $TEST_RESULT_DIRECTORY \
     -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $LOAD_ONLY -threads 2 \
-    -load true -run false -throughput false -levels 4 -table $TEST_TYPE
+    -load true -run false -throughput false -levels 6 -table $TEST_TYPE
   fi
 # ./src/test/ycsb/ycsb_test -db rocksdb -dbpath /holly/test_result/test-rocksdb -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 16 -load false -run false -throughput true -throughputtype 2 -runtime 300 -transform false
 # ./src/test/ycsb/ycsb_test -db rocksdb_column_strawman -dbpath /holly/test_result/test-precracking -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 16 -load false -run false -throughput true -throughputtype 2 -runtime 300 -transform false

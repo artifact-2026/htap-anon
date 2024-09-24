@@ -15,7 +15,7 @@ using namespace std;
 namespace ycsbc {
     Mycelium::Mycelium(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        int levels = utils::StrToInt(props.GetProperty("levels", "4"));
+        int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         SetOptions(dbfilename, bootstrap, levels, fieldcount);
 
@@ -248,9 +248,11 @@ namespace ycsbc {
         std::queue<int> parents;
         parents.push(options_.num_columns);
 
-        for (int level = 1; level < options_.num_levels; level++) {
+        int total_levels = options_.num_levels;
+        for (int level = 1; level < total_levels - 2; level++) {
             int queueLen = parents.size();
 
+            options_.num_levels = options_.num_levels - level;
             for (int j = 0; j < queueLen; j++) {
                 int parent_cols = parents.front();
                 parents.pop();
