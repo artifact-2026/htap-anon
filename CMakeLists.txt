@@ -21,4 +21,4 @@ set(BUILD_DIR ${CMAKE_BINARY_DIR})
 
 # Copy run_script.sh from the source directory to the build directory
 configure_file(run_script.sh ${BUILD_DIR}/run_script.sh COPYONLY)
-
+configure_file(load_script.sh ${BUILD_DIR}/load_script.sh COPYONLY)

@@ -16,8 +16,8 @@ namespace ycsbc {
         noResults = 0;
         SetOptions(props, bootstrap, levels, fieldcount);
 
-        options_.transformers.push_back(new rocksdb::Converter());
         options_.transformers.push_back(new rocksdb::Distributor());
+        options_.transformers.push_back(new rocksdb::Converter());
         
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
@@ -46,8 +46,15 @@ namespace ycsbc {
                                               column_family_descriptors,
                                               &cf_handles,
                                               &rocksdb_);
+
             if (!s.ok()){
                 std::cerr<<"Can't open flat cracker "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                exit(0);
+            }
+
+            s = rocksdb_->AddTransformingDestinationCfds(dbname, true, true, false);
+            if (!s.ok()){
+                std::cerr<<"Column family creation for crackfb ran into error "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
         }
@@ -220,8 +227,7 @@ namespace ycsbc {
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
-        options_.SetTransformerType(rocksdb::TransformerType::CONVERTER | 
-                                    rocksdb::TransformerType::DISTRIBUTOR);
+        options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
 
         options_.IncreaseParallelism(16);
         options_.level0_slowdown_writes_trigger = 16;     
@@ -272,7 +278,6 @@ namespace ycsbc {
     {
         for (size_t i = 0; i < handles.size(); i++) {
             if (column_family_descriptors[i].name != rocksdb::kDefaultColumnFamilyName) {
-                std::cout << "column family handle: " << column_family_descriptors[i].name << std::endl;
                 cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
                 cfhandlelist_.push_back(handles[i]);
             }
@@ -336,10 +341,16 @@ namespace ycsbc {
         std::queue<int> parents;
         parents.push(options_.num_columns);
 
-        for (int level = 1; level < options_.num_levels - 2; level++) {
+        int total_levels = options_.num_levels;
+        for (int level = 1; level < total_levels - 2; level++) {
             int queueLen = parents.size();
 
             options_.num_levels -= level;
+            if (level == total_levels - 3) {
+                options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+            } else if (level == total_levels - 4) {
+                options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR | rocksdb::TransformerType::CONVERTER);
+            }
             for (int j = 0; j < queueLen; j++) {
                 int parent_cols = parents.front();
                 parents.pop();

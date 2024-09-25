@@ -35,7 +35,7 @@ namespace ycsbc {
             s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
             s = rocksdb_->AddTransformingDestinationCfds(dbname, false, true, false);
             if (!s.ok()){
-                std::cerr<<"Creating column families ran into error "<<s.ToString()<<std::endl;
+                std::cerr<<"Creating column families for flatbuffers db ran into error "<<s.ToString()<<std::endl;
                 exit(0);
             }
         } else {
@@ -50,6 +50,12 @@ namespace ycsbc {
                 std::cerr<<"Can't open flatbuffers "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
+
+            s = rocksdb_->AddTransformingDestinationCfds(dbname, false, true, false);
+            if (!s.ok()){
+                std::cerr<<"Creating column families for flatbuffers db ran into error "<<s.ToString()<<std::endl;
+                exit(0);
+            }
         }
         BuildColumnFamilyHandles(column_family_descriptors, cf_handles);
         rocksdb_->DisplayTransformingDestinationCfds();
@@ -61,6 +67,7 @@ namespace ycsbc {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname, rocksdb::ColumnFamilyOptions(options_)));
         options_.num_levels -= 1;
+        options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname+"_converted_cf", rocksdb::ColumnFamilyOptions(options_)));
     }

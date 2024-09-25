@@ -253,6 +253,9 @@ namespace ycsbc {
             int queueLen = parents.size();
 
             options_.num_levels = options_.num_levels - level;
+            if (level == total_levels - 3) {
+                options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+            }
             for (int j = 0; j < queueLen; j++) {
                 int parent_cols = parents.front();
                 parents.pop();
