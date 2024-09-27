@@ -29,6 +29,9 @@ cmake -DCMAKE_BUILD_TYPE=Debug -S .. -B . -G Ninja
 gdb src/test/ycsb/ycsb_test  
 (gdb) b <functionname>
 
+#### - Git
+% git remote set-url origin https://hcasalet:<personal_access_token>1@github.com/hcasalet/mycelium.git
+
 #### - Run YCSB tests example command:  
 ./src/test/ycsb/ycsb_test -db mycelium -dbpath /holly/test_result/test-mycelium -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 16 -load false -run false -throughput true -throughputtype 2 -runtime 300 -transform true -transform_type 1 -table mycelium
 

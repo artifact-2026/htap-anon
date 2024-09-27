@@ -190,9 +190,10 @@ namespace ycsbc {
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname, rocksdb::ColumnFamilyOptions(options_)));
         
-        for (int level = 1; level < options_.num_levels; level++) {
+        int total_levels = options_.num_levels;
+        for (int level = 1; level < total_levels; level++) {
             std::string index_name = dbname + "_derived_cf_L" + std::to_string(level) + "_0";
-            options_.num_levels -= level;
+            options_.num_levels = 1;
             column_families.push_back(rocksdb::ColumnFamilyDescriptor(index_name, rocksdb::ColumnFamilyOptions(options_)));
         }
     }
