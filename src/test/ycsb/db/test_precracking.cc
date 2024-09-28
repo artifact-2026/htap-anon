@@ -112,18 +112,31 @@ namespace ycsbc {
 
     int RocksdbColumnStrawman::Insert(const std::string &table, const std::string &key, std::string &values)
     {
+        rocksdb::Status s;
         data::Row row;
         row.ParseFromString(values);
+        int grp_size = row.columns_size()/8;
         for (int i = 0; i < row.columns_size()-1; i++) {
-            std::string serializedColumn1, serializedColumn2;
-            row.columns(i).SerializeToString(&serializedColumn1);
-            row.columns(++i).SerializeToString(&serializedColumn2);
-            rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
-                                          cfhandles_[table+"_col_"+std::to_string(i/2)],
-                                          key,
-                                          serializedColumn1+serializedColumn2);
-            if (!s.ok()) {
-                return 1;
+            std::string serializedColumn = "";
+
+            for (int j=0; j < grp_size; j++) {
+                if (i+j >= row.columns_size()) {
+                    break;
+                }
+                std::string scol;
+                serializedColumn += row.columns(i+j).SerializeToString(&scol);
+            }
+
+            i += grp_size - 1;
+            
+            if (!serializedColumn.empty()) {
+                s = rocksdb_->Put(rocksdb::WriteOptions(),
+                                  cfhandles_[table+"_colgrp_"+std::to_string(i/2)],
+                                  key,
+                                  serializedColumn);
+                if (!s.ok()) {
+                    return 1;
+                }
             }
         }
     
@@ -190,13 +203,10 @@ namespace ycsbc {
     void RocksdbColumnStrawman::GetColumnFamilyDescriptors(const std::string& dbname,
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
-        int splits = 1;
-        for (int i = 0; i < options_.num_levels-1; i++) {
-            splits *= 2;
-        }
-
+        int splits = 8;
+        
         for (int i = 0; i < splits; i++) {
-            std::string cf_name = dbname + "_col_" + std::to_string(i);
+            std::string cf_name = dbname + "_colgrp_" + std::to_string(i);
             column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
         }
     }

@@ -5,7 +5,7 @@
 using namespace std;
 
 namespace ycsbc {
-    TestRocksDB::TestRocksDB(const char *dbfilename, utils::Properties &props) {
+    TestRocksDB::TestRocksDB(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         noResults = 0;
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
@@ -13,7 +13,7 @@ namespace ycsbc {
         SetOptions(props, bootstrap, levels, fieldcount);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
-        GetColumnFamilyDescriptors(column_family_descriptors);
+        GetColumnFamilyDescriptors(dbname, column_family_descriptors);
         std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
 
         if (bootstrap) {
@@ -43,10 +43,10 @@ namespace ycsbc {
         BuildColumnFamilyHandles(column_family_descriptors, cf_handles);
     }
 
-    void TestRocksDB::GetColumnFamilyDescriptors(std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
+    void TestRocksDB::GetColumnFamilyDescriptors(const std::string &dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
-                "rocksdb", rocksdb::ColumnFamilyOptions(options_)));
+                dbname, rocksdb::ColumnFamilyOptions(options_)));
     }
 
     /*
@@ -185,7 +185,6 @@ namespace ycsbc {
     {
         for (size_t i = 0; i < handles.size(); i++) {
             if (column_family_descriptors[i].name != rocksdb::kDefaultColumnFamilyName) {
-                std::cout << "column family handle: " << column_family_descriptors[i].name << std::endl;
                 cfhandle_ = handles[i];
             }
         }

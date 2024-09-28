@@ -19,7 +19,7 @@ namespace ycsbc {
 DB* DBFactory::CreateDB(utils::Properties &props) {
   if (props["dbname"] == "baseline") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-baseline");
-    return new TestRocksDB(dbpath.c_str(), props);
+    return new TestRocksDB(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "cracking") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-cracking");
     return new Mycelium(props["dbname"], dbpath.c_str(), props);

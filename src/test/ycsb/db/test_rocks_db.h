@@ -21,7 +21,7 @@ namespace ycsbc {
 
 class TestRocksDB : public DB{
     public :
-        TestRocksDB(const char *dbfilename, utils::Properties &props);
+        TestRocksDB(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::set<std::string> *fields,
                  std::string &result);
@@ -51,7 +51,7 @@ class TestRocksDB : public DB{
         void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
 	    void KeepOnlyRequestedFields(data::Row &row,
                         const std::set<std::string> *fields, data::Row &selectedColumns);
-        void GetColumnFamilyDescriptors(std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+        void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
                                                 std::vector<rocksdb::ColumnFamilyHandle *> handles);        
 };  

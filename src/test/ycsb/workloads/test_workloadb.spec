@@ -9,11 +9,11 @@ keylength=32
 fieldcount=16
 fieldlength=64
 
-recordcount=2000000
-operationcount=10000
+recordcount=20000000
+operationcount=10000000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
-readallfields=false
+readallfields=true
 requestdistribution=zipfian
 
 readproportion=1.0

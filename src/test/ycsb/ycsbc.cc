@@ -144,7 +144,7 @@ int main( const int argc, const char *argv[]) {
   int sum = 0;
   utils::Timer<double> timer;
 
-  PrintInfo(props);
+  //PrintInfo(props);
 
   if( load ) {
     runLoad(props, num_threads, db, print_stats);
