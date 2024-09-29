@@ -9,6 +9,8 @@ set(ycsb_srcs
     db/test_precracking.cc
     db/test_flatbuffers.cc
     db/test_fb_cracker.cc
+    db/test_preconverting.cc
+    db/test_preindexing.cc
     core/core_workload.cc)
 add_executable(ycsb_test ${ycsb_srcs})
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src/test/ycsb)

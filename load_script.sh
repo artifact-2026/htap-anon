@@ -6,7 +6,7 @@ usage() {
     echo "Options:"
     echo "  -h, --help          Show this help message and exit"
     echo "Arguments:"
-    echo "  db_type             values: [baseline|cracking|flatbuffers|fb-cracking|precracking]"
+    echo "  db_type             values: [baseline|cracking|flatbuffers|fb-cracking|precracking|preconverting|preindexing|indexing]"
     echo "  if_bootstrap        values: [true|false]"
     echo "  test_type           values: [load|run|throughput]"
 }
@@ -31,8 +31,10 @@ if [ "$DB_TYPE" != "baseline" ] && \
    [ "$DB_TYPE" != "flatbuffers" ] && \
    [ "$DB_TYPE" != "crackfb" ] && \
    [ "$DB_TYPE" != "precracking" ] && \
+   [ "$DB_TYPE" != "preconverting" ] && \
+   [ "$DB_TYPE" != "preindexing" ] && \
    [ "$DB_TYPE" != "indexing" ]; then
-   echo "DB_TYPE is required with value = [baseline|cracking|flatbuffers|crackfb|precracking|indexing]"
+   echo "DB_TYPE is required with value = [baseline|cracking|flatbuffers|crackfb|precracking|preconverting|preindexing|indexing]"
    exit 1
 fi
 
@@ -85,13 +87,6 @@ if [ "$IF_BOOTSTRAP" = "true" ]; then
   echo "Loading $DB_TYPE in $TEST_RESULT_DIRECTORY ..."
 fi
 
-if [ "$DB_TYPE" = "baseline" ] || [ "$DB_TYPE" = "precracking" ]; then
-  ./src/test/ycsb/ycsb_test -db $DB_TYPE -dbpath $TEST_RESULT_DIRECTORY \
-    -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $IF_BOOTSTRAP -threads 2 \
-    -load $LOAD -run $RUN -throughput $XPUT -levels 6 -table $DB_TYPE
-elif [ "$DB_TYPE" = "cracking" ] || [ "$DB_TYPE" = "flatbuffers" ] ||
-  [ "$DB_TYPE" = "crackfb" ] || [ "$DB_TYPE" = "crackfb" ] || [ "$DB_TYPE" = "indexing" ]; then
-  ./src/test/ycsb/ycsb_test -db $DB_TYPE -dbpath $TEST_RESULT_DIRECTORY \
-    -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $IF_BOOTSTRAP -threads 2 \
-    -load $LOAD -run $RUN -throughput $XPUT -levels 6 -table $DB_TYPE
-fi
+./src/test/ycsb/ycsb_test -db $DB_TYPE -dbpath $TEST_RESULT_DIRECTORY \
+  -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $IF_BOOTSTRAP -threads 2 \
+  -load $LOAD -run $RUN -throughput $XPUT -levels 6 -table $DB_TYPE

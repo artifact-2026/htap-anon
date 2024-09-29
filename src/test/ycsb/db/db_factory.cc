@@ -9,6 +9,8 @@
 #include "db/splitfirst.h"
 #include "db/test_flatbuffers.h"
 #include "db/test_fb_cracker.h"
+#include "db/test_preconverting.h"
+#include "db/test_preindexing.h"
 
 using namespace std;
 
@@ -35,6 +37,12 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
   } else if (props["dbname"] == "crackfb") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-crackfb");
     return new TestFBCracker(props["dbname"], dbpath.c_str(), props);
+  } else if (props["dbname"] == "preconverting") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-preconverting");
+    return new TestPreconverting(props["dbname"], dbpath.c_str(), props);
+  } else if (props["dbname"] == "preindexing") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-preindexing");
+    return new TestPreindexing(props["dbname"], dbpath.c_str(), props);
   } else return nullptr;
 }
 
