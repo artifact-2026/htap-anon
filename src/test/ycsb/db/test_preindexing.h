@@ -4,6 +4,7 @@
 #include "core/db.h"
 
 #include <iostream>
+#include <sstream>
 #include <errno.h>
 #include <string>
 
@@ -27,7 +28,7 @@ class TestPreindexing : public DB{
                  std::string &result);
 
         int Scan(const std::string &table, const std::string &begin_key,
-                 int32_t len, const std::set<std::string> *fields,
+                 const std::string &end_key, const std::set<std::string> *fields,
                  std::vector<std::string> &result);
 
         int Insert(const std::string &table, const std::string &key,
@@ -44,8 +45,7 @@ class TestPreindexing : public DB{
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
         int noResults;
-        rocksdb::ColumnFamilyHandle* cfhandle_;
-        std::vector<rocksdb::ColumnFamilyHandle*> cfhandles_;
+        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
 
         void SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging);
 	    void KeepOnlyRequestedFields(data::Row &row,
@@ -55,6 +55,7 @@ class TestPreindexing : public DB{
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                             std::vector<rocksdb::ColumnFamilyHandle*> handles);
         std::set<int> GetQueryingHandles(std::set<std::string> fields);
+        std::vector<std::string> deserializeIndex(const std::string& serialized);
 };  
 
 }

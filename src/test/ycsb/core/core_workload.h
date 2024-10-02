@@ -213,12 +213,13 @@ inline std::string CoreWorkload::NextTransactionKey() {
 
 inline void CoreWorkload::NextTransactionScanKey(std::string &start_key, std::string &end_key) {
   uint64_t key_num;
+  uint64_t scan_interval_ = 4;
   do {
     key_num = key_chooser_->Next();
   } while (key_num > insert_key_sequence_.Last());
   start_key = BuildKeyName(key_num);
-  //end_key = BuildKeyName(key_num + scan_interval_);
-  end_key = start_key;
+  end_key = BuildKeyName(key_num + scan_interval_);
+  //end_key = start_key;
   int index = log10(record_count_ / max_scan_len_);
   index = (index - 2) > 0 ? index - 2 : 0; //increase the end by 1 bit
   end_key[index]++;

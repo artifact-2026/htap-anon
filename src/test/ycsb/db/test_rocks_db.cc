@@ -55,61 +55,28 @@ namespace ycsbc {
     int TestRocksDB::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
-        std::string value;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, key, &value);
-        size_t fieldsFound = 0;
-        
-        if (s.ok()) {
-            data::Row row;
-            row.ParseFromString(value);
-
-            for (int i = 0; i < row.columns_size(); i++) {
-                if (fields == nullptr || fields->find(row.columns(i).name()) != fields->end()) {
-                    result += row.columns(i).name() + "::" + row.columns(i).value() + ",";
-                    fieldsFound++;
-                    if (fields != nullptr && fieldsFound >= fields->size()) {
-                        break;
-                    }
-                }
-            }
-            
+        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, key, &result);
+        if (s.ok()) {    
             return 0;
         }
-
-        noResults++;
         return 1;
     }
 
     int TestRocksDB::Scan(const std::string &table, const std::string &begin_key,
-                          int32_t len, const std::set<std::string> *fields,
+                          const std::string &end_key, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
         result.clear();
         auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
         it->Seek(begin_key);
-        for (int i = 0; i < len && it->Valid(); i++) {
-            std::string value = it->value().ToString();
-
-            data::Row row;
-            row.ParseFromString(value);
-            std::string res;
-            size_t fieldsFound = 0;
-
-            for (int i = 0; i < row.columns_size(); i++) {
-                if (fields == nullptr || fields->find(row.columns(i).name()) != fields->end()) {
-                    res += row.columns(i).name() + "::" + row.columns(i).value() + ",";
-                    fieldsFound++;
-                    if (fields != nullptr && fieldsFound >= fields->size()) {
-                        break;
-                    }
-                }
+        while (it->Valid()) {
+            if (it->key().ToString() < end_key) {
+                result.push_back(it->value().ToString());
+            } else {
+                break;
             }
-
-            result.push_back(res);
-      
             it->Next();
         }
-        
         return result.size();
     }
 
@@ -165,19 +132,6 @@ namespace ycsbc {
         table_options.block_cache = nullptr;  // Disable the block cache
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(
             rocksdb::NewBlockBasedTableFactory(table_options));
-    }
-
-    void TestRocksDB::KeepOnlyRequestedFields(data::Row &row,
-                    const std::set<std::string> *fields, data::Row &selectedColumns)
-    {
-        for (int i = 0; i < row.columns_size(); i++) {
-            auto it = fields->find(row.columns(i).name());
-            if (it != fields->end()) {
-                data::Column* selectedColumn = selectedColumns.add_columns();
-                selectedColumn->set_name(row.columns(i).name());
-                selectedColumn->set_value(row.columns(i).value());
-            }
-        }
     }
 
     void TestRocksDB::BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,

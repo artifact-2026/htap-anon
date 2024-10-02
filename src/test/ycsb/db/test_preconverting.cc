@@ -50,25 +50,26 @@ namespace ycsbc {
     int TestPreconverting::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
-        std::string value;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, key, &value);
-        
-        if (s.ok()) {
+        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, key, &result);
+        if (s.ok()) {    
             return 0;
         }
         return 1;
     }
 
     int TestPreconverting::Scan(const std::string &table, const std::string &begin_key,
-                          int32_t len, const std::set<std::string> *fields,
+                          const std::string &end_key, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
         result.clear();
         auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
         it->Seek(begin_key);
-
-        for (int i = 0; i < len && it->Valid(); i++) {
-            result.push_back(it->value().ToString());
+        while (it->Valid()) {
+            if (it->key().ToString() < end_key) {
+                result.push_back(it->value().ToString());
+            } else {
+                break;
+            }
             it->Next();
         }
         return result.size();

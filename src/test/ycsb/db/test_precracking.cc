@@ -48,65 +48,48 @@ namespace ycsbc {
     int RocksdbColumnStrawman::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
+        rocksdb::Status s;
         if (fields == nullptr) {
-            for (auto handle : handleList_) {
+            for (int i = 0; i < 8; i++) {
                 std::string value;
-                rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                              handle,
-                                              key,
-                                              &value);
+                s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                           cfhandles_[table+"_colgrp_"+std::to_string(i)],
+                                           key,
+                                           &value);
         
-                if (value == "") {
-                    noResults++;
-                    return 1;
+                if (!s.ok() || value == "") {
+                    break;
                 }
 
                 result += value;
             }
+        } else {
+            s = rocksdb_->Get(rocksdb::ReadOptions(),
+                              cfhandles_[table+"_colgrp_0"],
+                              key,
+                              &result);
+        }
+        if (s.ok()) {
             return 0;
         }
-
-        std::set<int> queryCols;
-        queryCols = GetQueryingHandles(std::set<std::string>(fields->begin(), fields->end()));
-
-        for (auto qc : queryCols) {
-            std::string value;
-            rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                          handleList_[qc],
-                                          key,
-                                          &value);
-        
-            if (!s.ok()) {
-                noResults++;
-                return 1;
-            }
-        }
-        return 0;
+        return 1;
     }
 
     int RocksdbColumnStrawman::Scan(const std::string &table, const std::string &begin_key,
-                          int32_t len, const std::set<std::string> *fields,
+                          const std::string &end_key, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
-        std::set<int> queryCols;
-        if (fields != nullptr) {
-            queryCols = GetQueryingHandles(std::set<std::string>(fields->begin(), fields->end()));
-        }
-
-        int queryPos = 0;
-        if (queryCols.size() > 0) {
-            auto itt = queryCols.begin();
-            queryPos = *itt;
-        }
-
-        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), handleList_[queryPos]);
+        result.clear();
+        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_colgrp_0"]);
         it->Seek(begin_key);
-        for (int i = 0; i < len && it->Valid(); i++) {
-            std::string val = it->value().ToString();
-            result.push_back(val);
+        while (it->Valid()) {
+            if (it->key().ToString() < end_key) {
+                result.push_back(it->value().ToString());
+            } else {
+                break;
+            }
             it->Next();
         }
-
         return result.size();
     }
 
@@ -126,21 +109,21 @@ namespace ycsbc {
                 std::string scol;
                 serializedColumn += row.columns(i+j).SerializeToString(&scol);
             }
-
-            i += grp_size - 1;
             
             if (!serializedColumn.empty()) {
                 s = rocksdb_->Put(rocksdb::WriteOptions(),
                                   cfhandles_[table+"_colgrp_"+std::to_string(i/2)],
                                   key,
                                   serializedColumn);
-                if (!s.ok()) {
-                    return 1;
-                }
             }
+
+            i += grp_size - 1;
         }
     
-        return 0;
+        if (s.ok()) {
+            return 0;
+        }
+        return 1;
     }
 
     int RocksdbColumnStrawman::Update(const std::string &table, const std::string &key, std::string &values)
@@ -150,9 +133,13 @@ namespace ycsbc {
 
     int RocksdbColumnStrawman::Delete(const std::string &table, const std::string &key)
     {
-        rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(),
-                                             cfhandles_[rocksdb::kDefaultColumnFamilyName],
-                                             key);
+        rocksdb::Status s;
+        for (int i = 0; i < 8; i++) {
+            s = rocksdb_->Delete(rocksdb::WriteOptions(),
+                                 cfhandles_[table+"_colgrp_"+std::to_string(i)],
+                                 key);
+        }
+        
         if (s.ok()) {
             return 0;
         }

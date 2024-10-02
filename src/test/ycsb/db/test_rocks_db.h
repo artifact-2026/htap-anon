@@ -27,7 +27,7 @@ class TestRocksDB : public DB{
                  std::string &result);
 
         int Scan(const std::string &table, const std::string &begin_key,
-                 int32_t len, const std::set<std::string> *fields,
+                 const std::string &end_key, const std::set<std::string> *fields,
                  std::vector<std::string> &result);
 
         int Insert(const std::string &table, const std::string &key,
@@ -49,8 +49,6 @@ class TestRocksDB : public DB{
         rocksdb::ColumnFamilyHandle* cfhandle_;
 
         void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
-	    void KeepOnlyRequestedFields(data::Row &row,
-                        const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
                                                 std::vector<rocksdb::ColumnFamilyHandle *> handles);        

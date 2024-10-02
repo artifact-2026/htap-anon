@@ -48,26 +48,67 @@ namespace ycsbc {
     int TestPreindexing::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
-        std::string value;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[0], key, &value);
-        
-        if (s.ok()) {
-            return 0;
+        rocksdb::Status s;
+        if (fields != nullptr && fields->size() > 0 && *fields->begin() == "search_index") {
+            std::string ikeys;
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], key, &ikeys);
+
+            std::vector<std::string> origkeys = deserializeIndex(ikeys);
+            for (auto origkey : origkeys) {
+                std::string value;
+                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], origkey, &value);
+                result += value + " ";
+            }
+            if (s.ok()) {
+                return 0;
+            }
+            return 1;
+        } else {
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+            if (s.ok()) {
+                return 0;
+            }
+            return 1;
         }
-        return 1;
     }
 
     int TestPreindexing::Scan(const std::string &table, const std::string &begin_key,
-                          int32_t len, const std::set<std::string> *fields,
+                          const std::string &end_key, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
         result.clear();
-        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[0]);
-        it->Seek(begin_key);
 
-        for (int i = 0; i < len && it->Valid(); i++) {
-            result.push_back(it->value().ToString());
-            it->Next();
+        rocksdb::Status s;
+
+        if (fields != nullptr && fields->size() > 0 && *fields->begin() == "search_index") {
+            std::set<std::string> foundkeys;
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"]);
+            it->Seek(begin_key);
+            while (it->Valid()) {
+                if (it->key().ToString() < end_key) {
+                    std::vector<std::string> rowkeys = deserializeIndex(it->value().ToString());
+                    for (auto k : rowkeys) {
+                        foundkeys.insert(k);
+                    }
+                } else {
+                    break;
+                }
+                it->Next();
+            }
+
+            for (auto fk : foundkeys) {
+                std::string fvalue;
+                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], fk, &fvalue);
+                result.push_back(fvalue);
+            }
+        } else {
+            auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
+            itt->Seek(begin_key);
+            while (itt->Valid()) {
+                if (itt->key().ToString() < end_key) {
+                    result.push_back(itt->value().ToString());
+                }
+            }
         }
         return result.size();
     }
@@ -79,18 +120,19 @@ namespace ycsbc {
         const std::string ikey = row.columns(2).value();
 
         std::string indvalues;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[1], ikey, &indvalues);
+        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], ikey, &indvalues);
 
-        if (indvalues == "") {
-            indvalues += key;
-        } else {
-            indvalues += "%%";
-            indvalues += key;
-        }
-        s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[1], ikey, indvalues);
+        std::ostringstream oss;
+        size_t key_len = key.size();
+        oss.write(reinterpret_cast<const char*>(&key_len), sizeof(key_len));  // Write string length
+        oss.write(key.c_str(), key_len);
+
+        indvalues += oss.str();
+
+        s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_derived_cf_0"], ikey, indvalues);
                 
         if (s.ok()) {
-            s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[0], key, values);
+            s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
             if (s.ok()) {
                 return 0;
             }
@@ -106,37 +148,37 @@ namespace ycsbc {
     int TestPreindexing::Delete(const std::string &table, const std::string &key)
     {
         std::string values;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[0], key, &values);
+        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &values);
+
+        if (values == "") {
+            return 1;
+        }
 
         data::Row row;
         row.ParseFromString(values);
-        const std::string ikey = row.columns(2).value();
+        const std::string ikey = row.columns(1).value();
 
-        std::string indvalues;
-        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[1], ikey, &indvalues);
+        std::string origkeystrs;
+        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], ikey, &origkeystrs);
 
-        size_t pos = 0, start = 0;
-        std::string newindvalues;
-        while ((pos = indvalues.find("%%", start)) != std::string::npos) {
-            std::string token = indvalues.substr(start, pos - start);
-            if (token != key) {
-                newindvalues += token;
-                start = pos + 2;
-            } else {
-                newindvalues += indvalues.substr(pos+2);
-                break;
+        std::vector<std::string> origkeys = deserializeIndex(origkeystrs);
+        origkeys.erase(std::remove(origkeys.begin(), origkeys.end(), key), origkeys.end());
+
+        if (origkeys.size() > 0) {
+            std::ostringstream oss;
+
+            size_t sz = origkeys.size();
+            oss.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
+
+            for (const auto& k : origkeys) {
+                size_t klen = k.size();
+                oss.write(reinterpret_cast<const char*>(&klen), sizeof(klen));
+                oss.write(k.c_str(), klen);
             }
+            s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_derived_cf_0"], ikey, oss.str());
         }
 
-        if (pos == std::string::npos) {
-            if (indvalues.substr(start) != key) {
-                newindvalues += indvalues.substr(start);
-            }
-        }
-
-        s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[1], ikey, newindvalues);
-
-        s = rocksdb_->Delete(rocksdb::WriteOptions(), cfhandles_[0], key);
+        s = rocksdb_->Delete(rocksdb::WriteOptions(), cfhandles_[table], key);
 
         if (s.ok()) {
             return 0;
@@ -199,9 +241,30 @@ namespace ycsbc {
     {
         for (size_t i = 0; i < handles.size(); i++) {
             if (column_family_descriptors[i].name != rocksdb::kDefaultColumnFamilyName) {
-                cfhandles_.push_back(handles[i]);
+                cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
             }
         }
+    }
+
+    std::vector<std::string> TestPreindexing::deserializeIndex(const std::string& serialized)
+    {
+        std::istringstream iss(serialized);
+        std::vector<std::string> result;
+
+        size_t num_strings;
+        iss.read(reinterpret_cast<char*>(&num_strings), sizeof(num_strings));
+
+        for (size_t i = 0; i < num_strings; i++) {
+            size_t str_len;
+            iss.read(reinterpret_cast<char*>(&str_len), sizeof(str_len));
+
+            std::string str(str_len, '\0');
+            iss.read(&str[0], str_len);
+
+            result.push_back(str);
+        }
+
+        return result;
     }
 
     std::set<int> TestPreindexing::GetQueryingHandles(std::set<std::string> fields) {

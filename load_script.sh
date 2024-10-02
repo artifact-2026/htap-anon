@@ -8,7 +8,8 @@ usage() {
     echo "Arguments:"
     echo "  db_type             values: [baseline|cracking|flatbuffers|fb-cracking|precracking|preconverting|preindexing|indexing]"
     echo "  if_bootstrap        values: [true|false]"
-    echo "  test_type           values: [load|run|throughput]"
+    echo "  test_type           values: [run|throughput]"
+    echo "  workload_type       values: [a|b|c|d|e|f]"
 }
 
 # Check for help option or missing arguments
@@ -18,7 +19,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 # Check for the correct number of arguments
-if [ $# -ne 3 ]; then
+if [ $# -ne 4 ]; then
     echo "Error: Invalid number of arguments"
     usage
     exit 1
@@ -44,18 +45,19 @@ if [ "$IF_BOOTSTRAP" != "true" ] && [ "$IF_BOOTSTRAP" != "false" ]; then
   echo "if_bootstrap (3rd argument) needs to be boolean, but it is: $IF_BOOTSTRAP"
   exit 1
 fi
+LOAD=$IF_BOOTSTRAP
 
 TEST_TYPE=$3
-LOAD=false
 RUN=false
 XPUT=false
-if [ "$TEST_TYPE" = "load" ]; then
-  LOAD=true
-elif [ "$TEST_TYPE" = "run" ]; then
+if [ "$TEST_TYPE" = "run" ]; then
   RUN=true
 elif [ "$TEST_TYPE" = "throughput" ]; then
   XPUT=true
 fi
+
+WORKLOAD_TYPE=$4
+WORKLOAD="../src/test/ycsb/workloads/test_workload$WORKLOAD_TYPE.spec"
 
 # Get the current directory
 CURRENT_DIR=$(pwd)
@@ -88,5 +90,5 @@ if [ "$IF_BOOTSTRAP" = "true" ]; then
 fi
 
 ./src/test/ycsb/ycsb_test -db $DB_TYPE -dbpath $TEST_RESULT_DIRECTORY \
-  -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap $IF_BOOTSTRAP -threads 2 \
+  -P $WORKLOAD -bootstrap $IF_BOOTSTRAP -threads 2 \
   -load $LOAD -run $RUN -throughput $XPUT -levels 6 -table $DB_TYPE

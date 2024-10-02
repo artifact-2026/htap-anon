@@ -78,74 +78,53 @@ namespace ycsbc {
     int TestFlatBuffers::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
-        std::string value;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, key, &value);
-        size_t fieldsFound = 0;
+        result = "";
 
-        if (s.ok()) {
-            std::vector<uint8_t> vec(value.begin(), value.end());
-            flatbuffers::Verifier verifier(vec.data(), vec.size());
-            const FbRow* fbRow = GetFbRow(vec.data());
-
-            if (fbRow != nullptr && fbRow->Verify(verifier)) {
-                const flatbuffers::Vector<flatbuffers::Offset<NumericColumn>>* numcols = fbRow->numcols();
-                if (numcols != nullptr) {
-                    for (size_t i = 0; i < numcols->size(); i++) {
-                        if (fields == nullptr || fields->find(numcols->Get(i)->name()->str()) != fields->end()) {
-                            result += numcols->Get(i)->name()->str() + "::" + std::to_string(numcols->Get(i)->value());
-                            fieldsFound++;
-                            if (fields != nullptr && fieldsFound >= fields->size()) {
-                                break;
-                            }
-                        }
-                    }    
-                }
-            }
+        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+        if (s.ok() && result != "") {
             return 0;
         }
-    
-        noResults++;
+
+        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"], key, &result);
+        if (s.ok() && result != "") {
+            return 0;
+        }
         return 1;
     }
 
     int TestFlatBuffers::Scan(const std::string &table, const std::string &begin_key,
-                          int32_t len, const std::set<std::string> *fields,
+                          const std::string &end_key, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
-        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
+        std::set<std::string> resultset;
+        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
         it->Seek(begin_key);
-        for (int i = 0; i < len && it->Valid(); i++) {
-            std::string value = it->value().ToString();
-            std::vector<uint8_t> vec(value.begin(), value.end());
-            flatbuffers::Verifier verifier(vec.data(), vec.size());
-
-            const FbRow* fbRow = GetFbRow(vec.data());
-            std::string rowResult;
-            size_t fieldsFound = 0;
-            
-            if (fbRow != nullptr && fbRow->Verify(verifier)) {
-                const flatbuffers::Vector<flatbuffers::Offset<NumericColumn>>* numcols = fbRow->numcols();
-                if (numcols != nullptr) {
-                    for (size_t i = 0; i < numcols->size(); i++) {
-                        if (fields == nullptr || fields->find(numcols->Get(i)->name()->str()) != fields->end()) {
-                            rowResult += numcols->Get(i)->name()->str() + "::" + std::to_string(numcols->Get(i)->value());
-                            fieldsFound++;
-                            if (fields != nullptr && fieldsFound >= fields->size()) {
-                                break;
-                            }
-                        }
-                    }    
-                }
+        while (it->Valid()) {
+            if (it->key().ToString() < end_key) {
+                resultset.insert(it->value().ToString());
+            } else {
+                break;
             }
-            result.push_back(rowResult);
             it->Next();
         }
-        return result.size();
+
+        auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
+        itt->Seek(begin_key);
+        while (itt->Valid()) {
+            if (itt->key().ToString() < end_key) {
+                resultset.insert(it->value().ToString());
+            } else {
+                break;
+            }
+            itt->Next();
+        }
+
+        return resultset.size();
     }
 
     int TestFlatBuffers::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandle_, key, values);
+        rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
         if (s.ok()) {
             return 0;
         }
@@ -159,7 +138,7 @@ namespace ycsbc {
 
     int TestFlatBuffers::Delete(const std::string &table, const std::string &key)
     {
-        rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(), cfhandle_, key);
+        rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(), cfhandles_[table], key);
         if (s.ok()) {
             return 0;
         }
@@ -215,9 +194,8 @@ namespace ycsbc {
                                                 std::vector<rocksdb::ColumnFamilyHandle *> handles)
     {
         for (size_t i = 0; i < handles.size(); i++) {
-            if (column_family_descriptors[i].name != rocksdb::kDefaultColumnFamilyName &&
-                column_family_descriptors[i].name.find("converted_cf") == std::string::npos) {
-                cfhandle_ = handles[i];
+            if (column_family_descriptors[i].name != rocksdb::kDefaultColumnFamilyName) {
+                cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
             }
         }
     }

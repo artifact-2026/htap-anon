@@ -4,6 +4,7 @@
 #include "core/db.h"
 
 #include <iostream>
+#include <sstream>
 #include <errno.h>
 #include <string>
 
@@ -29,7 +30,7 @@ class Indexing : public DB{
                  std::string &result);
 
         int Scan(const std::string &table, const std::string &begin_key,
-                 int32_t len, const std::set<std::string> *fields,
+                 const std::string &end_key, const std::set<std::string> *fields,
                  std::vector<std::string> &result);
 
         int Insert(const std::string &table, const std::string &key,
@@ -51,6 +52,7 @@ class Indexing : public DB{
         void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount);
 	    void KeepOnlyRequestedFields(data::Row &row,
                 const std::set<std::string> *fields, data::Row &selectedColumns);
+        std::vector<std::string> deserializeIndex(const std::string& serialized);
         void GetColumnFamilyDescriptors(const std::string& dbname,
                                         std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,

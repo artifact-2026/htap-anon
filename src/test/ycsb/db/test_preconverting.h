@@ -27,7 +27,7 @@ class TestPreconverting : public DB{
                  std::string &result);
 
         int Scan(const std::string &table, const std::string &begin_key,
-                 int32_t len, const std::set<std::string> *fields,
+                 const std::string &end_key, const std::set<std::string> *fields,
                  std::vector<std::string> &result);
 
         int Insert(const std::string &table, const std::string &key,

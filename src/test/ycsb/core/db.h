@@ -54,7 +54,7 @@ class DB {
   /// @return Zero on success, or a non-zero error code on error.
   ///
   virtual int Scan(const std::string &table, const std::string &begin_key,
-                   int32_t len, const std::set<std::string> *fields,
+                   const std::string &end_key, const std::set<std::string> *fields,
                    std::vector<std::string> &result) = 0;
   ///
   /// Updates a record in the database.

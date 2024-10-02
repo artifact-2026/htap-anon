@@ -68,130 +68,84 @@ namespace ycsbc {
     int TestFBCracker::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       std::string &result) 
     {
-        if (cached_cfhandles_.size() == 0) {
-            if (fields != nullptr) {
-                BuildQueryHandles(std::set<std::string>(fields->begin(), fields->end()));
-            } else {
-                int index = 0;
-                int sz = 1;
-                for (int level = 0; level < 4; level++) {
-                    std::vector<rocksdb::ColumnFamilyHandle *> levelhdls;
+        result = "";
 
-                    for (int i = 0; i < sz; i++) {
-                        levelhdls.push_back(cfhandlelist_[index+i]);
-                    }
-                    index += sz;
-                    sz *= 2;
-                    cached_cfhandles_.insert({level, levelhdls});
-                }
-            }
+        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                          cfhandles_[table], key, &result);
+        if (s.ok() && result != "") {
+            return 0;
         }
 
-        std::string rawResult; 
-        for (int level = 0; level < 4; level++) {
-            auto it = cached_cfhandles_.find(level);
-            if (it != cached_cfhandles_.end()) {
-                for (auto hdl : it->second) {
-                    std::string value;
-                    rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                              hdl,
-                                              key,
-                                              &value);
-                    if (value.empty()) {
+        if (fields == nullptr) {
+            int group = 1;
+            for (int i = 1; i < 4; i++) {
+                group *= 2;
+                for (int j = 0; j < group; j++) {
+                    std::string foundvalue;
+                    s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                  cfhandles_[table+"_converted_cf_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
+                                  key, &foundvalue);
+                    if (s.ok() && foundvalue != "") {
+                        result += foundvalue;
+                    } else {
                         break;
                     }
-                    rawResult += value;
+                }
+                
+                if (result != "") {
+                    return 0;
                 }
             }
-            if (!rawResult.empty()) {
-                if (level < 3) {
-                    data::Row row;
-                    row.ParseFromString(rawResult);
-                    size_t fieldsFound = 0;
-                    for (int i = 0; i < row.columns_size(); i++) {
-                        if (fields == nullptr || fields->find(row.columns(i).name()) != fields->end()) {
-                            result += row.columns(i).name() + "::" + row.columns(i).value() + ",";
-                            fieldsFound++;
-                            if (fields != nullptr && fieldsFound >= fields->size()) {
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    std::vector<uint8_t> vec(rawResult.begin(), rawResult.end());
-                    flatbuffers::Verifier verifier(vec.data(), vec.size());
-                    const FbRow* fbRow = GetFbRow(vec.data());
-                    size_t fieldsFound = 0;
-
-                    if (fbRow != nullptr && fbRow->Verify(verifier)) {
-                        const flatbuffers::Vector<flatbuffers::Offset<NumericColumn>>* numcols = fbRow->numcols();
-                        if (numcols != nullptr) {
-                            for (size_t i = 0; i < numcols->size(); i++) {
-                                if (fields == nullptr || fields->find(numcols->Get(i)->name()->str()) != fields->end()) {
-                                    result += numcols->Get(i)->name()->str() + "::" + std::to_string(numcols->Get(i)->value());
-                                    fieldsFound++;
-                                    if (fields != nullptr && fieldsFound >= fields->size()) {
-                                        break;
-                                    }
-                                }
-                            }    
-                        }
-                    }
+        } else {
+            for (int i = 1; i < 4; i++) {
+                s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                  cfhandles_[table+"_converted_cf_sys_cf_L"+std::to_string(i)+"_G0"],
+                                  key, &result);
+                if (result != "") {
+                    return 0;
                 }
-                break;
             }
         }
-
-        return 0;
+        return 1;
     }
 
     int TestFBCracker::Scan(const std::string &table, const std::string &begin_key,
-                          int32_t len, const std::set<std::string> *fields,
+                          const std::string &end_key, const std::set<std::string> *fields,
                           std::vector<std::string> &result) 
     {
-        if (cached_cfhandles_.size() == 0) {
-            BuildQueryHandles(std::set<std::string>(fields->begin(), fields->end()));
-        }
+        std::set<std::string> values;
 
-        int32_t remaining_len = len;
-        int32_t level_len = 0;
-        for (int level = 0; level < 4; level++) {
-            level_len = remaining_len/(4 - level);
-            remaining_len -= level_len;
-            if (level_len < 1) {
-                continue;
+        for (int i = 3; i >= 0; i--) {
+            std::string tablename;
+            if (i > 0) {
+                tablename = table + "_converted_cf_sys_cf_L" + std::to_string(i) + "_G0";
+            } else {
+                tablename = table;
             }
 
-            auto it = cached_cfhandles_.find(level);
-            if (it != cached_cfhandles_.end()) {
-                if (it->second.size() > 0) {
-                    auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), it->second[0]);
-                    itt->Seek(begin_key);
-                    for (int i = 0; i < level_len && itt->Valid(); i++) {
-                        std::string value = itt->value().ToString();
-                        result.push_back(value);
-                        itt->Next();
-                    }
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[tablename]);
+            it->Seek(begin_key);
+
+            while (it->Valid()) {
+                if (it->key().ToString() < end_key) {
+                    values.insert(it->value().ToString());
+                } else {
+                    break;
                 }
+                it->Next();
             }
         }
-
-        return result.size();
+        return values.size();
     }
 
     int TestFBCracker::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        auto it = cfhandles_.find(table);
-        if (it != cfhandles_.end())
-        {
-            rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
-                                              it->second,
-                                              key,
-                                              values);
-            if (s.ok())
-            {
-                return 0;
-            }
+        rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
+                                          cfhandles_[table],
+                                          key,
+                                          values);
+        if (s.ok()) {
+            return 0;
         }
         return 1;
     }
@@ -203,16 +157,11 @@ namespace ycsbc {
 
     int TestFBCracker::Delete(const std::string &table, const std::string &key)
     {
-        auto it = cfhandles_.find(table);
-        if (it != cfhandles_.end())
-        {
-            rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(),
-                                                 it->second,
-                                                 key);
-            if (s.ok())
-            {
-                return 0;
-            }
+        rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(),
+                                             cfhandles_[table],
+                                             key);
+        if (s.ok()) {
+            return 0;
         }
         return 1;
     }
@@ -245,17 +194,6 @@ namespace ycsbc {
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = nullptr;  // Disable the block cache
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
-        
-        /*
-        uint64_t nums = stoi(props.GetProperty(CoreWorkload::RECORD_COUNT_PROPERTY));
-        uint32_t key_len = stoi(props.GetProperty(CoreWorkload::KEY_LENGTH));
-        uint32_t value_len = stoi(props.GetProperty(CoreWorkload::FIELD_LENGTH_PROPERTY));
-        uint32_t cache_size = nums * (key_len + value_len) / 10;
-        if(cache_size < 8 << 20) {
-            cache_size = 8 << 20;
-        }
-        cache_ = rocksdb::NewLRUCache(cache_size);
-        */
     }
 
     void TestFBCracker::KeepOnlyRequestedFields(data::Row &row,

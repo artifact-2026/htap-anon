@@ -27,7 +27,7 @@ class TestFlatBuffers : public DB{
                  std::string &result);
 
         int Scan(const std::string &table, const std::string &begin_key,
-                 int32_t len, const std::set<std::string> *fields,
+                 const std::string &end_key, const std::set<std::string> *fields,
                  std::vector<std::string> &result);
 
         int Insert(const std::string &table, const std::string &key,
@@ -46,7 +46,7 @@ class TestFlatBuffers : public DB{
         int noResults;
         std::shared_ptr<rocksdb::Cache> cache_;
         std::shared_ptr<rocksdb::Statistics> dbstats_;
-        rocksdb::ColumnFamilyHandle* cfhandle_;
+        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
 
         void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
         // serialize for inserts

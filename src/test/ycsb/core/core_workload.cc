@@ -10,6 +10,7 @@
 #include "zipfian_generator.h"
 #include "scrambled_zipfian_generator.h"
 #include "skewed_latest_generator.h"
+#include "skewed_earliest_generator.h"
 #include "const_generator.h"
 #include "core_workload.h"
 
@@ -159,6 +160,8 @@ void CoreWorkload::Init(const utils::Properties &p) {
   } else if (request_dist == "latest") {
     key_chooser_ = new SkewedLatestGenerator(insert_key_sequence_);
     
+  } else if (request_dist == "earliest") {
+    key_chooser_ = new SkewedEarliestGenerator(insert_key_sequence_);
   } else {
     throw utils::Exception("Unknown request distribution: " + request_dist);
   }
