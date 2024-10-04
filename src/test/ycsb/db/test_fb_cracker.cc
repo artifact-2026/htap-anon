@@ -66,17 +66,16 @@ namespace ycsbc {
     * Read is for point query over all columns
     */
     int TestFBCracker::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
-                      std::string &result) 
+                      const std::string &req_dist, std::string &result) 
     {
-        result = "";
-
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                          cfhandles_[table], key, &result);
-        if (s.ok() && result != "") {
-            return 0;
-        }
+        rocksdb::Status s;
 
         if (fields == nullptr) {
+             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+            if (result != "") {
+                return 0;
+            }
+            
             int group = 1;
             for (int i = 1; i < 4; i++) {
                 group *= 2;
@@ -97,12 +96,21 @@ namespace ycsbc {
                 }
             }
         } else {
-            for (int i = 1; i < 4; i++) {
+            if (req_dist == "earliest") {
                 s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                  cfhandles_[table+"_converted_cf_sys_cf_L"+std::to_string(i)+"_G0"],
+                                  cfhandles_[table+"_converted_cf_sys_cf_L3_G0"],
                                   key, &result);
                 if (result != "") {
                     return 0;
+                }
+            } else {
+                for (int i = 1; i < 4; i++) {
+                    s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                      cfhandles_[table+"_converted_cf_sys_cf_L"+std::to_string(i)+"_G0"],
+                                      key, &result);
+                    if (result != "") {
+                        return 0;
+                    }
                 }
             }
         }

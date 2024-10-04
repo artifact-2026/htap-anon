@@ -101,13 +101,14 @@ inline int Client::TransactionRead() {
   const std::string &key = workload_.NextTransactionKey();
   //std::vector<DB::KVPair> result;
   std::string result;
+  std::string req_dist = workload_.request_distribution();
   if (!workload_.read_all_fields()) {
     std::set<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
     fields.insert("field0");
-    return db_.Read(table, key, &fields, result);
+    return db_.Read(table, key, &fields, req_dist, result);
   } else {
-    return db_.Read(table, key, NULL, result);
+    return db_.Read(table, key, NULL, req_dist, result);
   }
 }
 
@@ -116,14 +117,13 @@ inline int Client::TransactionReadModifyWrite() {
   const std::string &key = workload_.NextTransactionKey();
   //std::vector<DB::KVPair> result;
   std::string result;
-
   if (!workload_.read_all_fields()) {
     std::set<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
     fields.insert("field1");
-    db_.Read(table, key, &fields, result);
+    db_.Read(table, key, &fields, workload_.request_distribution(), result);
   } else {
-    db_.Read(table, key, NULL, result);
+    db_.Read(table, key, NULL, workload_.request_distribution(), result);
   }
 
   data::Row columns;

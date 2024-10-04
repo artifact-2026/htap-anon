@@ -64,7 +64,8 @@ namespace ycsbc {
     * table with the key passed in being the result from the previous read.
     */
     int Indexing::Read(const std::string &table, const std::string &key,
-                        const std::set<std::string> *fields, std::string &result) 
+                        const std::set<std::string> *fields, const std::string &req_dist,
+                        std::string &result) 
     {
         rocksdb::Status s;
         if (fields != nullptr && fields->size() > 0 && *fields->begin() == "index_search") {

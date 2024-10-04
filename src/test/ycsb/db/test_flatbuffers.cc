@@ -76,17 +76,19 @@ namespace ycsbc {
     * Read is for point query over all columns
     */
     int TestFlatBuffers::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
-                      std::string &result) 
+                      const std::string &req_dist, std::string &result) 
     {
-        result = "";
+        rocksdb::Status s;
 
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-        if (s.ok() && result != "") {
-            return 0;
+        if (req_dist != "earliest") {
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+            if (s.ok() && result != "") {
+                return 0;
+            }
         }
-
+        
         s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"], key, &result);
-        if (s.ok() && result != "") {
+        if (result != "") {
             return 0;
         }
         return 1;

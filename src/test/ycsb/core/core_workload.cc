@@ -103,7 +103,7 @@ void CoreWorkload::Init(const utils::Properties &p) {
       READMODIFYWRITE_PROPORTION_PROPERTY, READMODIFYWRITE_PROPORTION_DEFAULT));
   
   record_count_ = std::stoi(p.GetProperty(RECORD_COUNT_PROPERTY));
-  std::string request_dist = p.GetProperty(REQUEST_DISTRIBUTION_PROPERTY,
+  request_distribution_ = p.GetProperty(REQUEST_DISTRIBUTION_PROPERTY,
                                            REQUEST_DISTRIBUTION_DEFAULT);
   max_scan_len_ = std::stoi(p.GetProperty(MAX_SCAN_LENGTH_PROPERTY,
                                              MAX_SCAN_LENGTH_DEFAULT));
@@ -144,10 +144,9 @@ void CoreWorkload::Init(const utils::Properties &p) {
   
   insert_key_sequence_.Set(record_count_);
   
-  if (request_dist == "uniform") {
+  if (request_distribution_ == "uniform") {
     key_chooser_ = new UniformGenerator(0, record_count_ - 1);
-    
-  } else if (request_dist == "zipfian") {
+  } else if (request_distribution_ == "zipfian") {
     // If the number of keys changes, we don't want to change popular keys.
     // So we construct the scrambled zipfian generator with a keyspace
     // that is larger than what exists at the beginning of the test.
@@ -156,14 +155,12 @@ void CoreWorkload::Init(const utils::Properties &p) {
     int op_count = std::stoi(p.GetProperty(OPERATION_COUNT_PROPERTY));
     int new_keys = (int)(op_count * insert_proportion * 2); // a fudge factor
     key_chooser_ = new ScrambledZipfianGenerator(record_count_ + new_keys);
-    
-  } else if (request_dist == "latest") {
+  } else if (request_distribution_ == "latest") {
     key_chooser_ = new SkewedLatestGenerator(insert_key_sequence_);
-    
-  } else if (request_dist == "earliest") {
+  } else if (request_distribution_ == "earliest") {
     key_chooser_ = new SkewedEarliestGenerator(insert_key_sequence_);
   } else {
-    throw utils::Exception("Unknown request distribution: " + request_dist);
+    throw utils::Exception("Unknown request distribution: " + request_distribution_);
   }
   
   field_chooser_ = new UniformGenerator(0, field_count_ - 1);

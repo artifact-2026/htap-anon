@@ -46,7 +46,7 @@ namespace ycsbc {
     * Read is for point query over all columns
     */
     int RocksdbColumnStrawman::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
-                      std::string &result) 
+                      const std::string &req_dist, std::string &result) 
     {
         rocksdb::Status s;
         if (fields == nullptr) {

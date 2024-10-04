@@ -34,11 +34,13 @@ class DB {
   /// @param table The name of the table.
   /// @param key The key of the record to read.
   /// @param fields The list of fields to read, or NULL for all of them.
+  /// @param req_dist The workload request distribution.
   /// @param result A vector of field/value pairs for the result.
   /// @return Zero on success, or a non-zero error code on error/record-miss.
   ///
   virtual int Read(const std::string &table, const std::string &key,
                    const std::set<std::string> *fields,
+                   const std::string &req_dist,
 		               std::string &result) = 0;
   ///
   /// Performs a range scan for a set of records in the database.
