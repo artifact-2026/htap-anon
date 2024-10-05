@@ -69,7 +69,7 @@ namespace ycsbc {
                               key,
                               &result);
         }
-        if (s.ok()) {
+        if (result != "") {
             return 0;
         }
         return 1;
@@ -91,7 +91,10 @@ namespace ycsbc {
             }
             it->Next();
         }
-        return result.size();
+        if (result.size() > 0) {
+            return 0;
+        }
+        return 1;
     }
 
     int RocksdbColumnStrawman::Insert(const std::string &table, const std::string &key, std::string &values)

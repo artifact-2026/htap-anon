@@ -104,30 +104,49 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        std::set<std::string> resultset;
-        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
-        it->Seek(begin_key);
-        while (it->Valid()) {
-            if (it->key().ToString() < end_key) {
-                resultset.insert(it->value().ToString());
-            } else {
-                break;
+        if (req_dist == "ealiest") {
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
+            it->Seek(begin_key);
+            while (it->Valid()) {
+                if (it->key().ToString() < end_key) {
+                    result.push_back(it->value().ToString());
+                } else {
+                    break;
+                }
+                it->Next();
             }
-            it->Next();
-        }
-
-        auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
-        itt->Seek(begin_key);
-        while (itt->Valid()) {
-            if (itt->key().ToString() < end_key) {
-                resultset.insert(it->value().ToString());
-            } else {
-                break;
+        } else {
+            std::set<std::string> keyset;
+            auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
+            itt->Seek(begin_key);
+            while (itt->Valid()) {
+                if (itt->key().ToString() < end_key) {
+                    result.push_back(itt->value().ToString());
+                    keyset.insert(itt->key().ToString());
+                } else {
+                    break;
+                }
+                itt->Next();
             }
-            itt->Next();
-        }
 
-        return resultset.size();
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
+            it->Seek(begin_key);
+            while (it->Valid()) {
+                if (it->key().ToString() < end_key) {
+                    if (keyset.find(it->key().ToString()) != keyset.end()) {
+                        result.push_back(it->value().ToString());
+                    }
+                } else {
+                    break;
+                }
+                it->Next();
+            }
+        }
+        
+        if (result.size() > 0) {
+            return 0;
+        }
+        return 1;
     }
 
     int TestFlatBuffers::Insert(const std::string &table, const std::string &key, std::string &values)

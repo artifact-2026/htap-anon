@@ -49,27 +49,24 @@ namespace ycsbc {
                       const std::string &req_dist, bool index_access, std::string &result) 
     {
         rocksdb::Status s;
-        if (fields != nullptr && fields->size() > 0 && *fields->begin() == "search_index") {
-            std::string ikeys;
-            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], key, &ikeys);
+        if (index_access) {
+            std::string valuekeysstr;
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], key, &valuekeysstr);
 
-            std::vector<std::string> origkeys = deserializeIndex(ikeys);
-            for (auto origkey : origkeys) {
-                std::string value;
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], origkey, &value);
-                result += value + " ";
+            std::vector<std::string> valuekeys = deserializeIndex(valuekeysstr);
+            for (auto valuekey : valuekeys) {
+                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], valuekey, &result);
+                if (s.ok()) {
+                    return 0;
+                }
             }
-            if (s.ok()) {
-                return 0;
-            }
-            return 1;
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
             if (s.ok()) {
                 return 0;
             }
-            return 1;
         }
+        return 1;
     }
 
     int TestPreindexing::Scan(const std::string &table, const std::string &begin_key,
@@ -78,10 +75,9 @@ namespace ycsbc {
                           std::vector<std::string> &result) 
     {
         result.clear();
-
         rocksdb::Status s;
 
-        if (fields != nullptr && fields->size() > 0 && *fields->begin() == "search_index") {
+        if (index_access) {
             std::set<std::string> foundkeys;
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"]);
             it->Seek(begin_key);
@@ -111,7 +107,11 @@ namespace ycsbc {
                 }
             }
         }
-        return result.size();
+
+        if (result.size() > 0) {
+            return 0;
+        }
+        return 1;
     }
 
     int TestPreindexing::Insert(const std::string &table, const std::string &key, std::string &values)

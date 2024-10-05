@@ -139,29 +139,49 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        std::set<std::string> values;
-
-        for (int i = 3; i >= 0; i--) {
-            std::string tablename;
-            if (i > 0) {
-                tablename = table + "_converted_cf_sys_cf_L" + std::to_string(i) + "_G0";
-            } else {
-                tablename = table;
-            }
-
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[tablename]);
+        if (req_dist == "earliest") {
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf_sys_cf_L3_G0"]);
             it->Seek(begin_key);
 
             while (it->Valid()) {
                 if (it->key().ToString() < end_key) {
-                    values.insert(it->value().ToString());
+                    result.push_back(it->value().ToString());
                 } else {
                     break;
                 }
                 it->Next();
             }
+        } else {
+            std::set<std::string> keyset;
+            for (int i = 0; i < 4; i++) {
+                std::string tablename;
+                if (i > 0) {
+                    tablename = table + "_converted_cf_sys_cf_L" + std::to_string(i) + "_G0";
+                } else {
+                    tablename = table;
+                }
+
+                auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[tablename]);
+                it->Seek(begin_key);
+
+                while (it->Valid()) {
+                    if (it->key().ToString() < end_key) {
+                        if (keyset.find(it->key().ToString()) != keyset.end()) {
+                            result.push_back(it->value().ToString());
+                            keyset.insert(it->key().ToString());
+                        }    
+                    } else {
+                        break;
+                    }
+                    it->Next();
+                }
+            }
         }
-        return values.size();
+        
+        if (result.size() > 0) {
+            return 0;
+        }
+        return 1;
     }
 
     int TestFBCracker::Insert(const std::string &table, const std::string &key, std::string &values)

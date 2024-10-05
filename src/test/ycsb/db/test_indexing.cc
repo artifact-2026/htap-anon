@@ -94,54 +94,26 @@ namespace ycsbc {
                        const std::string &req_dist, bool index_access,
                        std::vector<std::string> &result) 
     {
-        /*rocksdb::Status s;
+        rocksdb::Status s;
         if (index_access) {
             std::set<std::string> origkeys;
             for (int i = 6; i > 0; i--) {
-                std::string valuekeysstr;
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_L"+std::to_string(i)+"_0"], key, &valuekeysstr);
-                if (ikey != "") {
-                    std::vector<std::string> valuekeys = deserializeIndex(valuekeysstr);
-                    for (auto vkey : valuekeys) {
-                        origkeys.insert(vkey);
+                auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_L"+std::to_string(i)+"_0"]);
+                it->Seek(begin_key);
+                while (it->Valid()) {
+                    if (it->key().ToString() < end_key) {
+                        std::vector<std::string> valuekeys = deserializeIndex(it->value().ToString());
+                        for (auto vkey : valuekeys) {
+                            origkeys.insert(vkey);
+                        }
                     }
                 }
             }
 
             for (auto origkey : origkeys) {
+                std::string vvalue;
                 s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], origkey, &vvalue);
-            }
-        } else {
-            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-        }*/
-
-        result.clear();
-        rocksdb::Status s;
-        if (fields != nullptr && fields->size() > 0 && *fields->begin() == "index_search") {
-            std::set<std::string> allkeys;
-            for (int level = 6; level > 0; level--) {
-                auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_L"+std::to_string(level)+"_0"]);
-                it->Seek(begin_key);
-                while (it->Valid()) {
-                    if (it->key().ToString() < end_key) {
-                        std::vector<std::string> keys = deserializeIndex(it->value().ToString());
-                        for (auto k : keys) {
-                            allkeys.insert(k);
-                        }
-                    } else {
-                        break;
-                    }
-                    it->Next();
-                }
-            }
-            
-            for (auto k : allkeys) {
-                std::string res;
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], k, &res);
-                if (!s.ok()) {
-                    break;
-                }
-                result.push_back(res);
+                result.push_back(vvalue);
             }
         } else {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
@@ -155,7 +127,11 @@ namespace ycsbc {
                 it->Next();
             }
         }
-        return result.size();
+
+        if (result.size() > 0) {
+            return 0;
+        }
+        return 1;
     }
 
     int Indexing::Insert(const std::string &table, const std::string &key, std::string &values)

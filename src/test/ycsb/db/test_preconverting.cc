@@ -181,8 +181,8 @@ namespace ycsbc {
     void TestPreconverting::GetColumnFamilyDescriptors(const std::string& dbname,
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_converted_cf",
-                                                                  rocksdb::ColumnFamilyOptions(options_)));
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+                dbname, rocksdb::ColumnFamilyOptions(options_)));
     }
 
     void TestPreconverting::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,

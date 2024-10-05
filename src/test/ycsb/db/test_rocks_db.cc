@@ -90,7 +90,7 @@ namespace ycsbc {
             while (it->Valid()) {
                 data::Row row;
                 row.ParseFromString(it->value().ToString());
-                if (row.columns(1).value() >= begin_key && row.columns(1).value() <= end_key) {
+                if (row.columns(1).value() >= begin_key && row.columns(1).value() < end_key) {
                     result.push_back(it->value().ToString());
                 }
                 it->Next();
