@@ -58,41 +58,34 @@ namespace ycsbc {
 
     /*
     * Read is for point query over all columns
-    * "Indexing" db supports queries reading with value of a field in the row, in which case 
-    * it will first issue a read with "table" being the index column family, get the result, 
-    * which is the "key" to the original table; and then issue another read to the original 
-    * table with the key passed in being the result from the previous read.
+    * Here Read will find the first key/value pair that the index is pointing to and return.
     */
     int Indexing::Read(const std::string &table, const std::string &key,
                         const std::set<std::string> *fields, const std::string &req_dist,
-                        std::string &result) 
+                        bool index_access, std::string &result) 
     {
         rocksdb::Status s;
-        if (fields != nullptr && fields->size() > 0 && *fields->begin() == "index_search") {
-            std::string ikey;
+        if (index_access) {
             for (int i = 1; i < 6; i++) {
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_L"+std::to_string(i)+"_0"], key, &ikey);
-                if (ikey != "") {
-                    break;
+                std::string valuekeysstr;
+                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_L"+std::to_string(i)+"_0"], key, &valuekeysstr);
+                if (valuekeysstr != "") {
+                    std::vector<std::string> valuekeys = deserializeIndex(valuekeysstr);
+                    for (auto vkey : valuekeys) {
+                        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], vkey, &result);
+                        if (s.ok()) {
+                            return 0;
+                        }
+                    }
                 }
-            }
-
-            if (ikey != "") {
-                std::vector<std::string> valuekeys = deserializeIndex(ikey);
-                for (auto vkey : valuekeys) {
-                    std::string vvalue;
-                    s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], vkey, &vvalue);
-                    result += vvalue + " ";
-                }
-                
             }
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+            if (s.ok()) {
+                return 0;
+            }
         }
 
-        if (s.ok()) {
-            return 0;
-        }
         return 1;
     }
 
@@ -100,6 +93,27 @@ namespace ycsbc {
                        const std::string &end_key, const std::set<std::string> *fields,
                        std::vector<std::string> &result) 
     {
+        /*rocksdb::Status s;
+        if (index_access) {
+            std::set<std::string> origkeys;
+            for (int i = 6; i > 0; i--) {
+                std::string valuekeysstr;
+                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_L"+std::to_string(i)+"_0"], key, &valuekeysstr);
+                if (ikey != "") {
+                    std::vector<std::string> valuekeys = deserializeIndex(valuekeysstr);
+                    for (auto vkey : valuekeys) {
+                        origkeys.insert(vkey);
+                    }
+                }
+            }
+
+            for (auto origkey : origkeys) {
+                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], origkey, &vvalue);
+            }
+        } else {
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+        }*/
+
         result.clear();
         rocksdb::Status s;
         if (fields != nullptr && fields->size() > 0 && *fields->begin() == "index_search") {

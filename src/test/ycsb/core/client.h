@@ -106,9 +106,9 @@ inline int Client::TransactionRead() {
     std::set<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
     fields.insert("field0");
-    return db_.Read(table, key, &fields, req_dist, result);
+    return db_.Read(table, key, &fields, req_dist, workload_.index_access(), result);
   } else {
-    return db_.Read(table, key, NULL, req_dist, result);
+    return db_.Read(table, key, NULL, req_dist, workload_.index_access(), result);
   }
 }
 
@@ -121,9 +121,9 @@ inline int Client::TransactionReadModifyWrite() {
     std::set<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
     fields.insert("field1");
-    db_.Read(table, key, &fields, workload_.request_distribution(), result);
+    db_.Read(table, key, &fields, workload_.request_distribution(), workload_.index_access(), result);
   } else {
-    db_.Read(table, key, NULL, workload_.request_distribution(), result);
+    db_.Read(table, key, NULL, workload_.request_distribution(), workload_.index_access(), result);
   }
 
   data::Row columns;

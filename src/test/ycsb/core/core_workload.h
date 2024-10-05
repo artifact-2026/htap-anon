@@ -59,6 +59,12 @@ class CoreWorkload {
   ///
   static const std::string FIELD_LENGTH_PROPERTY;
   static const std::string FIELD_LENGTH_DEFAULT;
+
+  ///
+  /// Whether this is an index read or scan
+  ///
+  static const std::string INDEX_ACCESS_PROPERTY;
+  static const std::string INDEX_ACCESS_DEFAULT;
   
   /// 
   /// The name of the property for deciding whether to read one field (false)
@@ -160,10 +166,11 @@ class CoreWorkload {
   
   bool read_all_fields() const { return read_all_fields_; }
   bool write_all_fields() const { return write_all_fields_; }
+  bool index_access() const { return index_access_; }
   std::string request_distribution() const { return request_distribution_; }
 
   CoreWorkload() :
-      key_length_(16), field_count_(0), read_all_fields_(false), write_all_fields_(false),
+      key_length_(16), field_count_(0), read_all_fields_(false), write_all_fields_(false), index_access_(false),
       request_distribution_(""), field_len_generator_(NULL), key_generator_(NULL), key_chooser_(NULL),
       field_chooser_(NULL), scan_len_chooser_(NULL), insert_key_sequence_(3),
       ordered_inserts_(true), record_count_(0), max_scan_len_(0) {
@@ -187,6 +194,7 @@ class CoreWorkload {
   int field_count_;
   bool read_all_fields_;
   bool write_all_fields_;
+  bool index_access_;
   std::string request_distribution_;
   Generator<uint64_t> *field_len_generator_;
   Generator<uint64_t> *key_generator_;

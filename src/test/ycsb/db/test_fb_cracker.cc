@@ -66,7 +66,7 @@ namespace ycsbc {
     * Read is for point query over all columns
     */
     int TestFBCracker::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
-                      const std::string &req_dist, std::string &result) 
+                      const std::string &req_dist, bool index_access, std::string &result) 
     {
         rocksdb::Status s;
 

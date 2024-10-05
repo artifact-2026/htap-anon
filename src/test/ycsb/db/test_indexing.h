@@ -27,7 +27,7 @@ class Indexing : public DB{
         Indexing(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::set<std::string> *fields,
-                 const std::string &req_dist,
+                 const std::string &req_dist, bool index_access,
                  std::string &result);
 
         int Scan(const std::string &table, const std::string &begin_key,

@@ -48,7 +48,7 @@ namespace ycsbc {
     * Read is for point query over all columns
     */
     int TestPreconverting::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
-                      const std::string &req_dist, std::string &result) 
+                      const std::string &req_dist, bool index_access, std::string &result) 
     {
         rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, key, &result);
         if (s.ok()) {    

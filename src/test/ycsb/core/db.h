@@ -40,7 +40,7 @@ class DB {
   ///
   virtual int Read(const std::string &table, const std::string &key,
                    const std::set<std::string> *fields,
-                   const std::string &req_dist,
+                   const std::string &req_dist, bool index_access,
 		               std::string &result) = 0;
   ///
   /// Performs a range scan for a set of records in the database.
