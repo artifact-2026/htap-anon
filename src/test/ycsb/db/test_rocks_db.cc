@@ -55,29 +55,66 @@ namespace ycsbc {
     int TestRocksDB::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       const std::string &req_dist, bool index_access, std::string &result) 
     {
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, key, &result);
-        if (s.ok()) {    
-            return 0;
+        if (index_access) {
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
+            it->SeekToFirst();
+            while (it->Valid()) {
+                data::Row row;
+                row.ParseFromString(it->value().ToString());
+                if (row.columns(1).value() == key) {
+                    result = it->value().ToString();
+                    return 0;
+                }
+                it->Next();
+            }
+        } else {
+            rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, key, &result);
+            if (s.ok()) {    
+                return 0;
+            }
         }
+        
         return 1;
     }
 
     int TestRocksDB::Scan(const std::string &table, const std::string &begin_key,
                           const std::string &end_key, const std::set<std::string> *fields,
+                          const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
         result.clear();
-        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
-        it->Seek(begin_key);
-        while (it->Valid()) {
-            if (it->key().ToString() < end_key) {
-                result.push_back(it->value().ToString());
-            } else {
-                break;
+
+        if (index_access) {
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
+            it->SeekToFirst();
+            while (it->Valid()) {
+                data::Row row;
+                row.ParseFromString(it->value().ToString());
+                if (row.columns(1).value() >= begin_key && row.columns(1).value() <= end_key) {
+                    result.push_back(it->value().ToString());
+                }
+                it->Next();
             }
-            it->Next();
+            if (result.size() > 0) {
+                return 0;
+            }
+        } else {
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
+            it->Seek(begin_key);
+            while (it->Valid()) {
+                if (it->key().ToString() < end_key) {
+                    result.push_back(it->value().ToString());
+                } else {
+                    break;
+                }
+                it->Next();
+            }
+            if (result.size() > 0) {
+                return 0;
+            }
         }
-        return result.size();
+        
+        return 1;
     }
 
     int TestRocksDB::Insert(const std::string &table, const std::string &key, std::string &values)

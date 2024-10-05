@@ -91,6 +91,7 @@ namespace ycsbc {
 
     int Indexing::Scan(const std::string &table, const std::string &begin_key,
                        const std::string &end_key, const std::set<std::string> *fields,
+                       const std::string &req_dist, bool index_access,
                        std::vector<std::string> &result) 
     {
         /*rocksdb::Status s;

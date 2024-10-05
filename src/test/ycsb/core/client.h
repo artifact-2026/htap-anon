@@ -98,7 +98,9 @@ inline bool Client::DoTransaction() {
 
 inline int Client::TransactionRead() {
   const std::string &table = workload_.NextTable();
-  const std::string &key = workload_.NextTransactionKey();
+  const std::string &key = workload_.index_access()
+                           ? workload_.NextIndexKey()
+                           : workload_.NextTransactionKey();
   //std::vector<DB::KVPair> result;
   std::string result;
   std::string req_dist = workload_.request_distribution();
@@ -140,20 +142,24 @@ inline int Client::TransactionReadModifyWrite() {
 
 inline int Client::TransactionScan() {
   const std::string &table = workload_.NextTable();
-  //const std::string &key = workload_.NextTransactionKey();
-  //const std::string &max_key = workload_.BuildMaxKey();
+
   std::string key;
-  std::string max_key;
-  workload_.NextTransactionScanKey(key, max_key);
+  std::string end_key;
+  if (workload_.index_access()) {
+    workload_.NextIndexScanKey(key, end_key);
+  } else {
+    workload_.NextTransactionScanKey(key, end_key);
+  }
+  
   //int len = workload_.NextScanLength();
   std::vector<std::string> result;
   if (!workload_.read_all_fields()) {
     std::set<std::string> fields;
     //fields.push_back("field" + workload_.NextFieldName());
     fields.insert("field0");
-    return db_.Scan(table, key, max_key, &fields, result);
+    return db_.Scan(table, key, end_key, &fields, workload_.request_distribution(), workload_.index_access(), result);
   } else {
-    return db_.Scan(table, key, max_key, NULL, result);
+    return db_.Scan(table, key, end_key, NULL, workload_.request_distribution(), workload_.index_access(), result);
   }
 }
 

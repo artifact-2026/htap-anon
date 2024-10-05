@@ -101,6 +101,7 @@ namespace ycsbc {
 
     int TestFlatBuffers::Scan(const std::string &table, const std::string &begin_key,
                           const std::string &end_key, const std::set<std::string> *fields,
+                          const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
         std::set<std::string> resultset;

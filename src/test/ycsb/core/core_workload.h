@@ -159,7 +159,9 @@ class CoreWorkload {
   virtual std::string NextTable() { return table_name_; }
   virtual std::string NextSequenceKey(); /// Used for loading data
   virtual std::string NextTransactionKey(); /// Used for transactions
+  virtual std::string NextIndexKey();   /// used for index read/scan
   virtual void NextTransactionScanKey(std::string &start_key, std::string &end_key);
+  virtual void NextIndexScanKey(std::string &start_key, std::string &end_key);
   virtual Operation NextOperation() { return op_chooser_.Next(); }
   virtual std::string NextFieldName();
   virtual size_t NextScanLength() { return scan_len_chooser_->Next(); }
@@ -219,6 +221,17 @@ inline std::string CoreWorkload::NextTransactionKey() {
     key_num = key_chooser_->Next();
   } while (key_num > insert_key_sequence_.Last());
   return BuildKeyName(key_num);
+}
+
+inline std::string CoreWorkload::NextIndexKey() {
+  return std::to_string(utils::RandomPrintInt());
+}
+
+inline void CoreWorkload::NextIndexScanKey(std::string &start_key, std::string &end_key) {
+  int skey = utils::RandomPrintInt();
+  int ekey = skey + 4;
+  start_key = std::to_string(skey);
+  end_key = std::to_string(ekey);
 }
 
 inline void CoreWorkload::NextTransactionScanKey(std::string &start_key, std::string &end_key) {
