@@ -80,17 +80,22 @@ namespace ycsbc {
     {
         rocksdb::Status s;
 
-        if (req_dist != "earliest") {
+        if (req_dist == "earliest") {
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"], key, &result);
+            if (result != "") {
+                return 0;
+            }
+        } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-            if (s.ok() && result != "") {
+            if (result != "") {
+                return 0;
+            }
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"], key, &result);
+            if (result != "") {
                 return 0;
             }
         }
-        
-        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"], key, &result);
-        if (result != "") {
-            return 0;
-        }
+
         return 1;
     }
 

@@ -115,28 +115,64 @@ namespace ycsbc {
 
     int TestPreindexing::Insert(const std::string &table, const std::string &key, std::string &values)
     {
+        rocksdb::Status s;
+
         data::Row row;
         row.ParseFromString(values);
-        const std::string ikey = row.columns(2).value();
+        const std::string ikey = row.columns(1).value();
 
-        std::string indvalues;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], ikey, &indvalues);
+        // find out if this key was indexed before
+        std::string indexed;
+        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0-helper"], key, &indexed);
+        if (indexed != "" && indexed != ikey) {
+            // remove the old indexed value
+            std::string removekeysstr;
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], indexed, &removekeysstr);
 
-        std::ostringstream oss;
-        size_t key_len = key.size();
-        oss.write(reinterpret_cast<const char*>(&key_len), sizeof(key_len));  // Write string length
-        oss.write(key.c_str(), key_len);
+            std::vector<std::string> removekeys = deserializeIndex(removekeysstr);
+            removekeys.erase(std::remove(removekeys.begin(), removekeys.end(), key), removekeys.end());
 
-        indvalues += oss.str();
+            // write back the remaining keys after the removal
+            if (removekeys.size() > 0) {
+                std::ostringstream oss;
 
-        s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_derived_cf_0"], ikey, indvalues);
-                
-        if (s.ok()) {
-            s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
+                size_t sz = removekeys.size();
+                oss.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
+
+                for (const auto& k : removekeys) {
+                    size_t klen = k.size();
+                    oss.write(reinterpret_cast<const char*>(&klen), sizeof(klen));
+                    oss.write(k.c_str(), klen);
+                }
+                s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_derived_cf_0"], indexed, oss.str());
+            }
+        } else if (indexed == "") {
+            // key was never indexed before so we add it
+            std::string indvalues;
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], ikey, &indvalues);
+
+            std::ostringstream oss;
+            size_t key_len = key.size();
+            oss.write(reinterpret_cast<const char*>(&key_len), sizeof(key_len));  // Write string length
+            oss.write(key.c_str(), key_len);
+
+            indvalues += oss.str();
+
+            s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_derived_cf_0"], ikey, indvalues);
             if (s.ok()) {
-                return 0;
+                s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
+                if (s.ok()) {
+                    return 0;
+                }
             }
         }
+
+        // index was taken care of, now insert the data
+        s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
+        if (s.ok()) {
+            return 0;
+        }
+
         return 1;
     }
 
@@ -234,6 +270,8 @@ namespace ycsbc {
                                                                   rocksdb::ColumnFamilyOptions(options_)));
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_derived_cf_0",
                                                                   rocksdb::ColumnFamilyOptions(options_)));
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_derived_cf_0-helper",
+                                                                  rocksdb::ColumnFamilyOptions(options_)));                   
     }
 
     void TestPreindexing::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,

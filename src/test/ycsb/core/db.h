@@ -34,7 +34,7 @@ class DB {
   /// @param table The name of the table.
   /// @param key The key of the record to read.
   /// @param fields The list of fields to read, or NULL for all of them.
-  /// @param req_dist The workload request distribution.
+  /// @param req_dist The workload request
   /// @param result A vector of field/value pairs for the result.
   /// @return Zero on success, or a non-zero error code on error/record-miss.
   ///

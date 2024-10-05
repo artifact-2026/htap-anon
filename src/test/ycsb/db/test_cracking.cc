@@ -67,28 +67,45 @@ namespace ycsbc {
         rocksdb::Status s;
         
         if (fields == nullptr) {
-            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-            if (result != "") {
-                return 0;
-            }
-
-            int group = 1;
-            for (int i = 1; i < 4; i++) {
-                group *= 2;
-                for (int j = 0; j < group; j++) {
+            if (req_dist == "earliest") {
+                for (int j = 0; j < 8; j++) {
                     std::string foundvalue;
                     s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                  cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
+                                  cfhandles_[table+"_sys_cf_L3_G"+std::to_string(j)],
                                   key, &foundvalue);
-                    if (s.ok() && foundvalue != "") {
+                    if (foundvalue != "") {
                         result += foundvalue;
                     } else {
                         break;
                     }
                 }
-                
                 if (result != "") {
                     return 0;
+                }
+            } else {
+                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+                if (result != "") {
+                    return 0;
+                }
+
+                int group = 1;
+                for (int i = 1; i < 4; i++) {
+                    group *= 2;
+                    for (int j = 0; j < group; j++) {
+                        std::string foundvalue;
+                        s = rocksdb_->Get(rocksdb::ReadOptions(),
+                                          cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
+                                          key, &foundvalue);
+                        if (s.ok() && foundvalue != "") {
+                            result += foundvalue;
+                        } else {
+                            break;
+                        }
+                    }
+                
+                    if (result != "") {
+                        return 0;
+                    }
                 }
             }
         } else {
