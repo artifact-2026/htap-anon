@@ -71,7 +71,7 @@ namespace ycsbc {
         rocksdb::Status s;
 
         if (fields == nullptr) {
-            if (req_dist == "earliest") {
+            if (req_dist == "leastrecent") {
                 for (int j = 0; j < 8; j++) {
                     std::string foundvalue;
                     s = rocksdb_->Get(rocksdb::ReadOptions(),
@@ -113,7 +113,7 @@ namespace ycsbc {
                 }
             }
         } else {
-            if (req_dist == "earliest") {
+            if (req_dist == "leastrecent") {
                 s = rocksdb_->Get(rocksdb::ReadOptions(),
                                   cfhandles_[table+"_converted_cf_sys_cf_L3_G0"],
                                   key, &result);
@@ -139,7 +139,7 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        if (req_dist == "earliest") {
+        if (req_dist == "leastrecent") {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf_sys_cf_L3_G0"]);
             it->Seek(begin_key);
 

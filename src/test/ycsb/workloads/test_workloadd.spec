@@ -10,22 +10,21 @@
 # scattered around the keyspace if they are keyed by userid.timestamp. A workload
 # which orders items purely by time, and demands the latest, is very different than 
 # workload here (which we believe is more typical of how people build systems.)
-keylength=16
-fieldcount=10
-fieldlength=100
-poolname=cephlsm
-table=cephlsm4
+keylength=32
+fieldcount=16
+fieldlength=64
 
-recordcount=100000
-operationcount=100000
+recordcount=20000000
+operationcount=2000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
-readallfields=true
+readallfields=false
+requestdistribution=leastrecent
 
-readproportion=0.95
+readproportion=0
 updateproportion=0
-scanproportion=0
-insertproportion=0.05
+scanproportion=1.0
+insertproportion=0
 
 requestdistribution=latest
 

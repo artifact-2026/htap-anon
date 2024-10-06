@@ -14,13 +14,12 @@ operationcount=100000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readallfields=false
+indexaccess=true
 
-readproportion=0.2
+readproportion=0
 updateproportion=0
-scanproportion=0.3
-insertproportion=0.5
+scanproportion=1.0
+insertproportion=0
 readmodifywriteproportion=0
 
-requestdistribution=latest
-maxscanlength=100
-scanlengthdistribution=uniform
+requestdistribution=leastrecent

@@ -1,5 +1,5 @@
-#ifndef YCSB_C_SKEWED_EARLIEST_GENERATOR_H_
-#define YCSB_C_SKEWED_EARLIEST_GENERATOR_H_
+#ifndef YCSB_C_SKEWED_LEASTRECEMT_GENERATOR_H_
+#define YCSB_C_SKEWED_LEASTRECENT_GENERATOR_H_
 
 #include "generator.h"
 
@@ -10,9 +10,9 @@
 
 namespace ycsbc {
 
-class SkewedEarliestGenerator : public Generator<uint64_t> {
+class SkewedLeastRecentGenerator : public Generator<uint64_t> {
  public:
-  SkewedEarliestGenerator(CounterGenerator &counter) :
+  SkewedLeastRecentGenerator(CounterGenerator &counter) :
       basis_(counter), zipfian_(basis_.Last()) {
     Next();
   }
@@ -25,11 +25,11 @@ class SkewedEarliestGenerator : public Generator<uint64_t> {
   std::atomic<uint64_t> last_;
 };
 
-inline uint64_t SkewedEarliestGenerator::Next() {
+inline uint64_t SkewedLeastRecentGenerator::Next() {
   uint64_t max = basis_.Last()/4;
   return last_ = max - zipfian_.Next(max) % max;
 }
 
 } // ycsbc
 
-#endif // YCSB_C_SKEWED_EARLIEST_GENERATOR_H_
+#endif // YCSB_C_SKEWED_LEASTRECENT_GENERATOR_H_

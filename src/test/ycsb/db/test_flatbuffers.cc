@@ -80,7 +80,7 @@ namespace ycsbc {
     {
         rocksdb::Status s;
 
-        if (req_dist == "earliest") {
+        if (req_dist == "leastrecent") {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"], key, &result);
             if (result != "") {
                 return 0;
