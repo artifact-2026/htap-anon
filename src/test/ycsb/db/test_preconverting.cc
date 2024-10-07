@@ -64,14 +64,12 @@ namespace ycsbc {
     {
         result.clear();
         auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
+        int searched = 0;
         it->Seek(begin_key);
-        while (it->Valid()) {
-            if (it->key().ToString() < end_key) {
-                result.push_back(it->value().ToString());
-            } else {
-                break;
-            }
+        while (it->Valid() && searched < 25) {
+            result.push_back(it->value().ToString());
             it->Next();
+            searched++;
         }
         return result.size();
     }
@@ -182,7 +180,8 @@ namespace ycsbc {
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
-                dbname, rocksdb::ColumnFamilyOptions(options_)));
+                dbname+"_converted_cf", rocksdb::ColumnFamilyOptions(options_)));
+        
     }
 
     void TestPreconverting::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,

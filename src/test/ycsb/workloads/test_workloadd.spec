@@ -26,5 +26,4 @@ updateproportion=0
 scanproportion=1.0
 insertproportion=0
 
-requestdistribution=latest
 

@@ -98,15 +98,17 @@ namespace ycsbc {
         if (index_access) {
             std::set<std::string> origkeys;
             for (int i = 6; i > 0; i--) {
+                int searched = 0;
                 auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_L"+std::to_string(i)+"_0"]);
                 it->Seek(begin_key);
-                while (it->Valid()) {
-                    if (it->key().ToString() < end_key) {
-                        std::vector<std::string> valuekeys = deserializeIndex(it->value().ToString());
-                        for (auto vkey : valuekeys) {
-                            origkeys.insert(vkey);
-                        }
+                while (it->Valid() && searched < 25) {
+                    std::vector<std::string> valuekeys = deserializeIndex(it->value().ToString());
+                    for (auto vkey : valuekeys) {
+                        origkeys.insert(vkey);
                     }
+                    
+                    it->Next();
+                    searched++;
                 }
             }
 
@@ -116,15 +118,14 @@ namespace ycsbc {
                 result.push_back(vvalue);
             }
         } else {
+            int searched = 0;
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
             it->Seek(begin_key);
-            while (it->Valid()) {
-                if (it->key().ToString() < end_key) {
-                    result.push_back(it->value().ToString());
-                } else {
-                    break;
-                }
+            while (it->Valid() && searched < 25) {
+                result.push_back(it->value().ToString());
+                
                 it->Next();
+                searched++;
             }
         }
 

@@ -104,29 +104,26 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        if (req_dist == "ealiest") {
+        int searched = 0;
+        if (req_dist == "leastrecent") {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
             it->Seek(begin_key);
-            while (it->Valid()) {
-                if (it->key().ToString() < end_key) {
-                    result.push_back(it->value().ToString());
-                } else {
-                    break;
-                }
+            while (it->Valid() && searched < 25) {
+                result.push_back(it->value().ToString());
+                
                 it->Next();
+                searched++;
             }
         } else {
             std::set<std::string> keyset;
             auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
             itt->Seek(begin_key);
-            while (itt->Valid()) {
-                if (itt->key().ToString() < end_key) {
-                    result.push_back(itt->value().ToString());
-                    keyset.insert(itt->key().ToString());
-                } else {
-                    break;
-                }
+            while (itt->Valid() && searched < 25) {
+                result.push_back(itt->value().ToString());
+                keyset.insert(itt->key().ToString());
+                
                 itt->Next();
+                searched++;
             }
 
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);

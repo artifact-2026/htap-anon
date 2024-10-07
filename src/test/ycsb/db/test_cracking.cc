@@ -136,17 +136,16 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
+        int searched = 0;
+
         if (req_dist == "leastrecent") {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_sys_cf_L3_G0"]);
             it->Seek(begin_key);
 
-            while (it->Valid()) {
-                if (it->key().ToString() < end_key) {
-                    result.push_back(it->value().ToString());
-                } else {
-                    break;
-                }
+            while (it->Valid() && searched < 25) {
+                result.push_back(it->value().ToString());
                 it->Next();
+                searched++;
             }
         } else {
             std::set<std::string> keyset;
@@ -161,16 +160,14 @@ namespace ycsbc {
                 auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[tablename]);
                 it->Seek(begin_key);
 
-                while (it->Valid()) {
-                    if (it->key().ToString() < end_key) {
-                        if (keyset.find(it->key().ToString()) != keyset.end()) {
-                            result.push_back(it->value().ToString());
-                            keyset.insert(it->key().ToString());
-                        }    
-                    } else {
-                        break;
-                    }
+                while (it->Valid() && searched < 25) {
+                    if (keyset.find(it->key().ToString()) != keyset.end()) {
+                        result.push_back(it->value().ToString());
+                        keyset.insert(it->key().ToString());
+                    }    
+                    
                     it->Next();
+                    searched++;
                 }
             }
         }

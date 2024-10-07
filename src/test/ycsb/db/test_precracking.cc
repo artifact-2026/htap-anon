@@ -81,15 +81,14 @@ namespace ycsbc {
                           std::vector<std::string> &result) 
     {
         result.clear();
+        int searched = 0;
         auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_colgrp_0"]);
         it->Seek(begin_key);
-        while (it->Valid()) {
-            if (it->key().ToString() < end_key) {
-                result.push_back(it->value().ToString());
-            } else {
-                break;
-            }
+        while (it->Valid() && searched < 25) {
+            result.push_back(it->value().ToString());
+            
             it->Next();
+            searched++;
         }
         if (result.size() > 0) {
             return 0;

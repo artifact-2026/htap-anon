@@ -78,19 +78,18 @@ namespace ycsbc {
         rocksdb::Status s;
 
         if (index_access) {
+            int searched = 0;
             std::set<std::string> foundkeys;
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"]);
             it->Seek(begin_key);
-            while (it->Valid()) {
-                if (it->key().ToString() < end_key) {
-                    std::vector<std::string> rowkeys = deserializeIndex(it->value().ToString());
-                    for (auto k : rowkeys) {
-                        foundkeys.insert(k);
-                    }
-                } else {
-                    break;
+            while (it->Valid() && searched < 25) {
+                std::vector<std::string> rowkeys = deserializeIndex(it->value().ToString());
+                for (auto k : rowkeys) {
+                    foundkeys.insert(k);
                 }
+                
                 it->Next();
+                searched++;
             }
 
             for (auto fk : foundkeys) {
@@ -100,11 +99,13 @@ namespace ycsbc {
             }
         } else {
             auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
+            int searched = 0;
             itt->Seek(begin_key);
-            while (itt->Valid()) {
-                if (itt->key().ToString() < end_key) {
-                    result.push_back(itt->value().ToString());
-                }
+            while (itt->Valid() && searched < 25) {
+                result.push_back(itt->value().ToString());
+
+                itt->Next();
+                searched++;
             }
         }
 
@@ -123,9 +124,9 @@ namespace ycsbc {
         const std::string ikey = row.columns(1).value();
 
         // find out if this key was indexed before
-        std::string indexed;
-        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0-helper"], key, &indexed);
-        if (indexed != "" && indexed != ikey) {
+        //std::string indexed;
+        //s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0-helper"], key, &indexed);
+        /*if (indexed != "" && indexed != ikey) {
             // remove the old indexed value
             std::string removekeysstr;
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], indexed, &removekeysstr);
@@ -147,7 +148,7 @@ namespace ycsbc {
                 }
                 s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_derived_cf_0"], indexed, oss.str());
             }
-        } else if (indexed == "") {
+        } else if (indexed == "") {*/
             // key was never indexed before so we add it
             std::string indvalues;
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], ikey, &indvalues);
@@ -166,7 +167,7 @@ namespace ycsbc {
                     return 0;
                 }
             }
-        }
+        //}
 
         // index was taken care of, now insert the data
         s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
@@ -271,8 +272,8 @@ namespace ycsbc {
                                                                   rocksdb::ColumnFamilyOptions(options_)));
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_derived_cf_0",
                                                                   rocksdb::ColumnFamilyOptions(options_)));
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_derived_cf_0-helper",
-                                                                  rocksdb::ColumnFamilyOptions(options_)));                   
+        //column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_derived_cf_0-helper",
+        //                                                          rocksdb::ColumnFamilyOptions(options_)));                   
     }
 
     void TestPreindexing::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
