@@ -68,6 +68,9 @@ namespace ycsbc {
             dbname, rocksdb::ColumnFamilyOptions(options_)));
         options_.num_levels -= 1;
         options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+        options_.level0_slowdown_writes_trigger = 32;     
+        options_.level0_stop_writes_trigger = 48;
+        options_.level0_file_num_compaction_trigger = 16;
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname+"_converted_cf", rocksdb::ColumnFamilyOptions(options_)));
     }

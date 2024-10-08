@@ -41,7 +41,11 @@ inline char RandomPrintChar() {
 }
 
 inline int RandomPrintInt() {
-  return rand() % 50000;
+  return (rand() + 2123456789) % 4000000000;
+}
+
+inline uint64_t RandomPrintUint64() {
+  return uint64_t(rand()) * 12345678;
 }
 
 class Exception : public std::exception {
