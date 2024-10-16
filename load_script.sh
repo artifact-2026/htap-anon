@@ -8,7 +8,7 @@ usage() {
     echo "Arguments:"
     echo "  db_type             values: [baseline|cracking|flatbuffers|fb-cracking|precracking|preconverting|preindexing|indexing]"
     echo "  if_bootstrap        values: [true|false]"
-    echo "  test_type           values: [run|throughput]"
+    echo "  test_type           values: [run|xputr|xputl]"
     echo "  workload_type       values: [a|b|c|d|e|f]"
 }
 
@@ -52,8 +52,12 @@ RUN=false
 XPUT=false
 if [ "$TEST_TYPE" = "run" ]; then
   RUN=true
-elif [ "$TEST_TYPE" = "throughput" ]; then
+elif [ "$TEST_TYPE" = "xputr" ]; then
   XPUT=true
+  XPUT_TYPE=1
+elif [ "$TEST_TYPE" = "xputl" ]; then
+  XPUT=true
+  XPUT_TYPE=2
 fi
 
 WORKLOAD_TYPE=$4
@@ -91,4 +95,5 @@ fi
 
 ./src/test/ycsb/ycsb_test -db $DB_TYPE -dbpath $TEST_RESULT_DIRECTORY \
   -P $WORKLOAD -bootstrap $IF_BOOTSTRAP -threads 2 \
-  -load $LOAD -run $RUN -throughput $XPUT -levels 6 -table $DB_TYPE
+  -load $LOAD -run $RUN -throughput $XPUT -levels 6 -table $DB_TYPE \
+  -throughputtype $XPUT_TYPE

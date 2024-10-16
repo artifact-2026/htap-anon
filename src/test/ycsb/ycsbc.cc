@@ -27,8 +27,8 @@ atomic<uint64_t> ops_time[ycsbc::Operation::READMODIFYWRITE + 1];
 
 struct throughput_data
 {
-  uint64_t xput[320];
-  uint64_t exec_time[320];
+  std::vector<uint64_t> xput;
+  std::vector<uint64_t> exec_time;
 };
 
 void UsageMessage(const char *command);
@@ -72,45 +72,34 @@ struct throughput_data DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload 
   db->Init();
   ycsbc::Client client(*db, *wl);
   struct throughput_data td_oks;
-  for (int i = 0; i < 60; i++) {
-    td_oks.xput[i] = 0;
-  }
 
   int oks = 0;
   int i = 0;
-  int64_t exec_time = 0; 
   std::chrono::time_point start = std::chrono::steady_clock::now();
   std::chrono::time_point step = start;
   std::chrono::time_point exec_start = start;
 
   while (true) {
     if (std::chrono::steady_clock::now() - start > std::chrono::seconds(runTime+1)) {
-      td_oks.xput[i] = oks;
+      td_oks.xput.push_back(oks);
       break;
     }
 
     if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(1)) {
-      td_oks.xput[i] = oks;
-      td_oks.exec_time[i] = exec_time;
+      td_oks.xput.push_back(oks);
       i += 1;
       oks = 0;
-      exec_time = 0;
       step = std::chrono::steady_clock::now();
     }
 
+    exec_start = std::chrono::steady_clock::now();
     if (throughputType == 1) {
       oks += client.DoRead();
     } else if (throughputType == 2) {
       oks += client.DoInsert();
-    } else if (throughputType == 3) {
-      oks += client.DoRead();
-      exec_time += int64_t((std::chrono::steady_clock::now() - exec_start).count());
-      exec_start = std::chrono::steady_clock::now();
-    } else if (throughputType == 4) {
-      oks += client.DoInsert();
-      exec_time += int64_t((std::chrono::steady_clock::now() - exec_start).count());
-      exec_start = std::chrono::steady_clock::now();
     }
+    auto exec_time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - exec_start);
+    td_oks.exec_time.push_back(exec_time.count());
   }
   db->Close();
   return td_oks;
@@ -343,28 +332,41 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
 
     // run_time is given in number of seconds
     int run_time_in_units = run_time;
-    uint64_t sum[run_time_in_units] = {};
-    int64_t sum_time[run_time_in_units] = {};
+    std::vector<uint64_t> xputs(run_time_in_units);
+    std::vector<uint64_t> exec_times;
     //uint64_t total = 0;
     for (auto &n : throughput_ops) {
       assert(n.valid());
       struct throughput_data th_work = n.get();
       for (int k=0; k < run_time_in_units; k++) {
-        sum[k] += th_work.xput[k];
-        sum_time[k] += th_work.exec_time[k];
+        xputs[k] += th_work.xput[k];
       }
+      exec_times.insert(exec_times.end(), th_work.exec_time.begin(), th_work.exec_time.end());
     }
 
-    //for (int k=4; k < run_time_in_units; k++) {
-    //  total += sum[k];
-    //}
-    
+    double mean = std::accumulate(exec_times.begin(), exec_times.end(), 0.0) / exec_times.size();
+    double sum_of_squares = std::accumulate(exec_times.begin(), exec_times.end(), 0.0, 
+        [mean](double acc, int value) {
+            return acc + std::pow(value - mean, 2);
+        });
+    double stddev = std::sqrt(sum_of_squares / exec_times.size());
+
+    double mean_xput = std::accumulate(xputs.begin(), xputs.end(), 0.0) / xputs.size();
+    double sum_of_squares_xput = std::accumulate(xputs.begin(), xputs.end(), 0.0, 
+        [mean_xput](double acc, int value) {
+            return acc + std::pow(value - mean_xput, 2);
+        });
+    double stddev_xput = std::sqrt(sum_of_squares_xput / xputs.size());
+
     printf("********** throughput result **********\n");
-    for (int k=0; k < run_time_in_units; k++) {
-      printf("throughput records:%ld  use time: 100 - %d s  TPS:%.2f tps\n", 
-        sum[k], k, 1.0 * sum[k]);
-        //total, run_time, 1.0 * total / (1.0 * (run_time - 100)));
-    }  
+
+    printf("latency raw data: \n");
+    printf("latency size: %ld \n", exec_times.size());
+    //for (auto th : xputs) {
+    //  printf("throughtput: %ld\n", th);
+    //}
+    printf("throughput mean:%lf  stddev: %lf, read latency: %lf, stddev: %lf\n", 
+        mean_xput, stddev_xput, mean, stddev);
     printf("*********************************\n");
 
     if ( print_stats ) {
@@ -612,7 +614,7 @@ void Init(utils::Properties &props){
   props.SetProperty("transform","false");
   props.SetProperty("transform_type", "0");
   props.SetProperty("translevel", "all");
-  props.SetProperty("runtime", "15");
+  props.SetProperty("runtime", "60");
   props.SetProperty("threadcount","1");
   props.SetProperty("throughput","false");
   props.SetProperty("throughputtype", "1");

@@ -99,19 +99,23 @@ namespace ycsbc {
                 return 0;
             }
         } else {
+            int sum = 0;
             int searched = 0;
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->Seek(begin_key);
             while (it->Valid() && searched < 25) {
                 if (it->key().ToString() < end_key) {
-                    result.push_back(it->value().ToString());
+                    data::Row row;
+                    row.ParseFromString(it->value().ToString());
+                    uint32_t num = std::stoi(row.columns(0).value());
+                    sum += num;
                 } else {
                     break;
                 }
                 it->Next();
                 searched++;
             }
-            if (result.size() > 0) {
+            if (sum > 0) {
                 return 0;
             }
         }
