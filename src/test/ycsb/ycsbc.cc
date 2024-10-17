@@ -25,10 +25,14 @@ atomic<uint64_t> ops_cnt[ycsbc::Operation::READMODIFYWRITE + 1];
 atomic<uint64_t> ops_time[ycsbc::Operation::READMODIFYWRITE + 1]; 
 ////
 
-struct throughput_data
+struct run_result
 {
+  int oks;
   std::vector<uint64_t> xput;
-  std::vector<uint64_t> exec_time;
+  std::vector<double> exec_time;
+
+  run_result(int o, int xput_size, int exec_time_size) 
+  : oks(o), xput(xput_size, 0), exec_time(exec_time_size, 0) {}
 };
 
 void UsageMessage(const char *command);
@@ -39,11 +43,11 @@ void PrintInfo(utils::Properties &props);
 void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats);
 void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats);
 
-int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
+struct run_result DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
     bool is_loading) {
   db->Init();
   ycsbc::Client client(*db, *wl);
-  int oks = 0;
+  struct run_result rr(0, 0, num_ops);
   int next_report_ = 0;
   for (int i = 0; i < num_ops; ++i) {
 
@@ -58,48 +62,47 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
         fprintf(stderr, "... finished %d ops%30s\r", i, "");
         fflush(stderr);
     }
+    uint64_t exec_start = get_now_micros();
     if (is_loading) {
-      oks += client.DoInsert();
+      rr.oks += client.DoInsert();
     } else {
-      oks += client.DoTransaction();
+      rr.oks += client.DoTransaction();
     }
+    rr.exec_time[i] = get_now_micros()-exec_start;
   }
   db->Close();
-  return oks;
+  return rr;
 }
 
-struct throughput_data DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int throughputType, int runTime) {
+struct run_result DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int throughputType, int runTime) {
   db->Init();
   ycsbc::Client client(*db, *wl);
-  struct throughput_data td_oks;
+  struct run_result td_oks(0, runTime, runTime);
 
   int oks = 0;
+  uint64_t exectime = 0.0;
   int i = 0;
   std::chrono::time_point start = std::chrono::steady_clock::now();
   std::chrono::time_point step = start;
-  std::chrono::time_point exec_start = start;
+  uint64_t exec_start = 0;
 
-  while (true) {
-    if (std::chrono::steady_clock::now() - start > std::chrono::seconds(runTime+1)) {
-      td_oks.xput.push_back(oks);
-      break;
-    }
-
+  while (i < runTime) {
     if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(1)) {
-      td_oks.xput.push_back(oks);
+      td_oks.xput[i] = oks;
+      td_oks.exec_time[i] = double(exectime)/double(oks);
       i += 1;
       oks = 0;
+      exectime = 0;
       step = std::chrono::steady_clock::now();
     }
 
-    exec_start = std::chrono::steady_clock::now();
+    exec_start = get_now_micros();
     if (throughputType == 1) {
       oks += client.DoRead();
     } else if (throughputType == 2) {
       oks += client.DoInsert();
     }
-    auto exec_time = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - exec_start);
-    td_oks.exec_time.push_back(exec_time.count());
+    exectime += (get_now_micros() - exec_start);
   }
   db->Close();
   return td_oks;
@@ -128,7 +131,7 @@ int main( const int argc, const char *argv[]) {
 
   string morerun = props["morerun"];
 
-  vector<future<int>> actual_ops;
+  vector<future<struct run_result>> actual_ops;
   int total_ops = 0;
   int sum = 0;
   utils::Timer<double> timer;
@@ -162,9 +165,12 @@ int main( const int argc, const char *argv[]) {
     }
     assert((int)actual_ops.size() == num_threads);
     sum = 0;
+    std::vector<uint64_t> txn_latencies;
     for (auto &n : actual_ops) {
       assert(n.valid());
-      sum += n.get();
+      struct run_result rres = n.get();
+      sum += rres.oks;
+      txn_latencies.insert(txn_latencies.end(), rres.exec_time.begin(), rres.exec_time.end());
     }
     uint64_t run_end = get_now_micros();
     uint64_t use_time = run_end - run_start;
@@ -177,6 +183,21 @@ int main( const int argc, const char *argv[]) {
       temp_time[j] = ops_time[j].load(std::memory_order_relaxed);
     }
 
+    double latency_mean = std::accumulate(txn_latencies.begin(), txn_latencies.end(), 0.0) / txn_latencies.size();
+    double latency_sq_sum = std::accumulate(txn_latencies.begin(), txn_latencies.end(), 0.0, 
+        [latency_mean](double acc, uint64_t value) {
+            return acc + (value - latency_mean) * (value - latency_mean);
+        });
+    double latency_stddev = std::sqrt(latency_sq_sum / txn_latencies.size());
+
+    std::sort(txn_latencies.begin(), txn_latencies.end());
+    size_t n = txn_latencies.size();
+    auto p50 = txn_latencies[n/2];
+    auto p99 = txn_latencies[n*0.99];
+    auto min = txn_latencies[0];
+    auto p25 = txn_latencies[n*0.25];
+    auto p75 = txn_latencies[n*0.75];
+
     printf("********** run result **********\n");
     printf("all operation records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
     if ( temp_cnt[ycsbc::INSERT] )          printf("insert ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT]*1e-6, 1.0 * temp_cnt[ycsbc::INSERT] * 1e6 / temp_time[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT] / temp_cnt[ycsbc::INSERT]);
@@ -184,6 +205,8 @@ int main( const int argc, const char *argv[]) {
     if ( temp_cnt[ycsbc::UPDATE] )          printf("update ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::UPDATE], 1.0 * temp_time[ycsbc::UPDATE]*1e-6, 1.0 * temp_cnt[ycsbc::UPDATE] * 1e6 / temp_time[ycsbc::UPDATE], 1.0 * temp_time[ycsbc::UPDATE] / temp_cnt[ycsbc::UPDATE]);
     if ( temp_cnt[ycsbc::SCAN] )            printf("scan ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::SCAN], 1.0 * temp_time[ycsbc::SCAN]*1e-6, 1.0 * temp_cnt[ycsbc::SCAN] * 1e6 / temp_time[ycsbc::SCAN], 1.0 * temp_time[ycsbc::SCAN] / temp_cnt[ycsbc::SCAN]);
     if ( temp_cnt[ycsbc::READMODIFYWRITE] ) printf("rmw ops   :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::READMODIFYWRITE], 1.0 * temp_time[ycsbc::READMODIFYWRITE]*1e-6, 1.0 * temp_cnt[ycsbc::READMODIFYWRITE] * 1e6 / temp_time[ycsbc::READMODIFYWRITE], 1.0 * temp_time[ycsbc::READMODIFYWRITE] / temp_cnt[ycsbc::READMODIFYWRITE]);
+    printf("total requests: %ld, latency mean: %lf, latency stddev: %lf\n", txn_latencies.size(), latency_mean, latency_stddev);
+    printf("Min: %ld, P25: %ld, P50: %ld, P75: %ld, P99: %ld\n", min, p25, p50, p75, p99);
     printf("********************************\n");
 
     if ( print_stats ) {
@@ -237,7 +260,8 @@ int main( const int argc, const char *argv[]) {
       sum = 0;
       for (auto &n : actual_ops) {
         assert(n.valid());
-        sum += n.get();
+        struct run_result runres = n.get();
+        sum += runres.oks;
       }
       uint64_t run_end = get_now_micros();
       uint64_t use_time = run_end - run_start;
@@ -289,7 +313,7 @@ int main( const int argc, const char *argv[]) {
 }
 
 void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats) {
-  vector<future<int>> actual_ops;
+  vector<future<struct run_result>> actual_ops;
   ycsbc::CoreWorkload wl;
   wl.Init(props);
 
@@ -304,7 +328,8 @@ void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool prin
   int sum = 0;
   for (auto &n : actual_ops) {
     assert(n.valid());
-    sum += n.get();
+    struct run_result loadres = n.get();
+    sum += loadres.oks;
   }
   uint64_t load_end = get_now_micros();
   uint64_t use_time = load_end - load_start;
@@ -320,7 +345,7 @@ void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool prin
 }
 
 void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats) {
-    vector<future<struct throughput_data>> throughput_ops;
+    vector<future<struct run_result>> throughput_ops;
     ycsbc::CoreWorkload wl;
     wl.Init(props);
 
@@ -333,15 +358,19 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
     // run_time is given in number of seconds
     int run_time_in_units = run_time;
     std::vector<uint64_t> xputs(run_time_in_units);
-    std::vector<uint64_t> exec_times;
+    std::vector<double> exec_times(run_time_in_units);
     //uint64_t total = 0;
     for (auto &n : throughput_ops) {
       assert(n.valid());
-      struct throughput_data th_work = n.get();
+      struct run_result th_work = n.get();
       for (int k=0; k < run_time_in_units; k++) {
         xputs[k] += th_work.xput[k];
+        exec_times[k] += th_work.exec_time[k];
       }
-      exec_times.insert(exec_times.end(), th_work.exec_time.begin(), th_work.exec_time.end());
+    }
+
+    for (int k=0; k < run_time_in_units; k++) {
+      exec_times[k] /= throughput_ops.size();
     }
 
     double mean = std::accumulate(exec_times.begin(), exec_times.end(), 0.0) / exec_times.size();
@@ -365,7 +394,7 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
     //for (auto th : xputs) {
     //  printf("throughtput: %ld\n", th);
     //}
-    printf("throughput mean:%lf  stddev: %lf, read latency: %lf, stddev: %lf\n", 
+    printf("throughput mean:%lf  stddev: %lf, average latency: %lf, stddev: %lf\n", 
         mean_xput, stddev_xput, mean, stddev);
     printf("*********************************\n");
 

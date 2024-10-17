@@ -2,9 +2,10 @@
 //  core_workload.cc
 //  YCSB-C
 //
-//  Created by Jinglei Ren on 12/9/14.
-//  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
 //
+
+#include <nlohmann/json.hpp>
+#include <string>
 
 #include "uniform_generator.h"
 #include "zipfian_generator.h"
@@ -13,8 +14,6 @@
 #include "skewed_leastrecent_generator.h"
 #include "const_generator.h"
 #include "core_workload.h"
-
-#include <string>
 
 using ycsbc::CoreWorkload;
 using std::string;
@@ -206,6 +205,16 @@ void CoreWorkload::BuildRecord(data::Row &value) {
     //column->set_value(val.append(field_len_generator_->Next(), utils::RandomPrintChar()));
     column->set_value(std::to_string(utils::RandomPrintInt()));
   }
+}
+
+std::string CoreWorkload::BuildJsonRecord() {
+  nlohmann::json jsonData;
+  for (int i = 0; i < field_count_; ++i) {
+    std::string col_name = "field"+std::to_string(i);
+    jsonData[col_name] = std::to_string(utils::RandomPrintInt());
+  }
+  std::string jsonString = jsonData.dump();
+  return jsonString;
 }
 
 void CoreWorkload::BuildColumn(data::Row &value) {

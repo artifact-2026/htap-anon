@@ -53,7 +53,6 @@ namespace ycsbc {
             }
         }
         BuildColumnFamilyHandleMap(column_family_descriptors, cf_handles);
-        rocksdb_->DisplayTransformingDestinationCfds();
     }
 
     /*

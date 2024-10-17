@@ -58,7 +58,6 @@ namespace ycsbc {
             }
         }
         BuildColumnFamilyHandles(column_family_descriptors, cf_handles);
-        rocksdb_->DisplayTransformingDestinationCfds();
     }
         
     void TestFlatBuffers::GetColumnFamilyDescriptors(const std::string& dbname,
