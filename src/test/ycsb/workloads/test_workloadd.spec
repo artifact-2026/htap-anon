@@ -25,5 +25,3 @@ readproportion=0
 updateproportion=0
 scanproportion=1.0
 insertproportion=0
-
-
