@@ -121,12 +121,15 @@ namespace ycsbc {
 
         data::Row row;
         row.ParseFromString(values);
-        const std::string ikey = row.columns(1).value();
+        std::string ikey = "";
+        if (row.columns_size() > 0) {
+            ikey = row.columns(0).value();
+        }
 
         // find out if this key was indexed before
-        //std::string indexed;
-        //s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0-helper"], key, &indexed);
-        /*if (indexed != "" && indexed != ikey) {
+        std::string indexed;
+        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0-helper"], key, &indexed);
+        if (indexed != "" && indexed != ikey) {
             // remove the old indexed value
             std::string removekeysstr;
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], indexed, &removekeysstr);
@@ -148,7 +151,7 @@ namespace ycsbc {
                 }
                 s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_derived_cf_0"], indexed, oss.str());
             }
-        } else if (indexed == "") {*/
+        } else if (indexed == "") {
             // key was never indexed before so we add it
             std::string indvalues;
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"], ikey, &indvalues);
@@ -167,7 +170,7 @@ namespace ycsbc {
                     return 0;
                 }
             }
-        //}
+        }
 
         // index was taken care of, now insert the data
         s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
@@ -272,8 +275,8 @@ namespace ycsbc {
                                                                   rocksdb::ColumnFamilyOptions(options_)));
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_index_cf",
                                                                   rocksdb::ColumnFamilyOptions(options_)));
-        //column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_derived_cf_0-helper",
-        //                                                          rocksdb::ColumnFamilyOptions(options_)));                   
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_derived_cf_0-helper",
+                                                                  rocksdb::ColumnFamilyOptions(options_)));                   
     }
 
     void TestPreindexing::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,

@@ -127,7 +127,7 @@ int main( const int argc, const char *argv[]) {
   const bool print_stats = utils::StrToBool(props["dbstatistics"]);
   const bool wait_for_balance = utils::StrToBool(props["dbwaitforbalance"]);
   const int throughput_type = stoi(props.GetProperty("throughputtype", "1"));
-  const int run_time = stoi(props.GetProperty("runtime", "15"));
+  const int run_time = stoi(props.GetProperty("runtime", "150"));
 
   string morerun = props["morerun"];
 
@@ -643,7 +643,7 @@ void Init(utils::Properties &props){
   props.SetProperty("transform","false");
   props.SetProperty("transform_type", "0");
   props.SetProperty("translevel", "all");
-  props.SetProperty("runtime", "60");
+  props.SetProperty("runtime", "150");
   props.SetProperty("threadcount","1");
   props.SetProperty("throughput","false");
   props.SetProperty("throughputtype", "1");

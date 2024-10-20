@@ -46,11 +46,11 @@ if [ "$IF_BOOTSTRAP" != "true" ] && [ "$IF_BOOTSTRAP" != "false" ]; then
   echo "if_bootstrap (3rd argument) needs to be boolean, but it is: $IF_BOOTSTRAP"
   exit 1
 fi
-LOAD=$IF_BOOTSTRAP
 
 TEST_TYPE=$3
 RUN=false
 XPUT=false
+LOAD=false
 XPUT_TYPE=1
 if [ "$TEST_TYPE" = "run" ]; then
   RUN=true
@@ -60,6 +60,8 @@ elif [ "$TEST_TYPE" = "xputr" ]; then
 elif [ "$TEST_TYPE" = "xputl" ]; then
   XPUT=true
   XPUT_TYPE=2
+elif [ "$TEST_TYPE" = "load" ]; then
+  LOAD=true
 fi
 
 WORKLOAD_TYPE=$4
@@ -79,7 +81,7 @@ TEST_RESULT_DIRECTORY="$CURRENT_DIR/src/test/ycsb/output/$OUTPUT_DIRECTORY"
 if [ -d "$TEST_RESULT_DIRECTORY" ]; then
   if [ "$IF_BOOTSTRAP" = "true" ]; then
     if [ "$(ls -A $TEST_RESULT_DIRECTORY)" ]; then
-      echo "Clearing $TEST_RESULT_DIRECTORY since we are doing loading only" 
+      echo "Clearing $TEST_RESULT_DIRECTORY since we are starting from scratch..." 
       rm $TEST_RESULT_DIRECTORY/*
     fi
   fi

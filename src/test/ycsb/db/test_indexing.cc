@@ -34,7 +34,6 @@ namespace ycsbc {
             }
 
             s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
-            s = rocksdb_->AddTransformingDestinationCfds(dbname, false, false, true);
             if (!s.ok()){
                 std::cerr<<"Creating column families ran into error "<<s.ToString()<<std::endl;
                 exit(0);
@@ -213,7 +212,6 @@ namespace ycsbc {
         int total_levels = options_.num_levels;
         for (int level = 1; level < total_levels; level++) {
             std::string index_name = dbname + "_derived_cf_L" + std::to_string(level) + "_0";
-            options_.num_levels = 1;
             column_families.push_back(rocksdb::ColumnFamilyDescriptor(index_name, rocksdb::ColumnFamilyOptions(options_)));
         }
     }
