@@ -112,7 +112,9 @@ namespace ycsbc {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
             it->Seek(begin_key);
             while (it->Valid() && searched < 25) {
-                sum += it->value();
+                const uint8_t* buf = reinterpret_cast<const uint8_t*>(it->value().data());
+                auto fbRowData = flatbuffers::GetRoot<rocksdb::FbRow>(buf);
+                sum += fbRowData->field0();
                 it->Next();
                 searched++;
             }

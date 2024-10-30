@@ -213,8 +213,8 @@ std::string CoreWorkload::BuildJsonRecord() {
   nlohmann::json jsonData;
   for (int i = 0; i < field_count_; ++i) {
     std::string col_name = "field"+std::to_string(i);
-    if (i < 2) {
-      jsonData[col_name] = std::to_string(utils::RandomPrintInt());
+    if (i < field_count_/2) {
+      jsonData[col_name] = utils::RandomPrintInt();
     } else {
       jsonData[col_name] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
     }
@@ -229,7 +229,7 @@ void CoreWorkload::BuildColumn(data::Row &value) {
   column->set_name(colname);
 
   int valueType = std::stoi(colname.substr(5));
-  if (valueType < 2) {
+  if (valueType < field_count_/2) {
     column->set_value(std::to_string(utils::RandomPrintInt()));
   } else {
     column->set_value(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));

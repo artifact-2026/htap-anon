@@ -89,15 +89,12 @@ namespace ycsbc {
                           std::vector<std::string> &result) 
     {
         result.clear();
-
-        int begin_key_val = std::stoi(begin_key);
-        int end_key_val = std::stoi(end_key);
         if (index_access) {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->SeekToFirst();
             while (it->Valid()) {
                 nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
-                if (parsedJson["field0"].get<int>() >= begin_key && parsedJson["field0"].get<int>() < end_key) {
+                if (parsedJson["field0"].get<std::string>() >= begin_key && parsedJson["field0"].get<std::string>() < end_key) {
                     result.push_back(it->value().ToString());
                 }
                 /*data::Row row;

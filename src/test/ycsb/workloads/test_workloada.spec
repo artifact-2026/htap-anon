@@ -10,7 +10,7 @@ keylength=32
 fieldcount=16
 fieldlength=32
 recordcount=20000000
-operationcount=1000000
+operationcount=200000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readproportion=0

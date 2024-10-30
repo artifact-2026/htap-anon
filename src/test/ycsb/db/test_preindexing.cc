@@ -123,7 +123,7 @@ namespace ycsbc {
         nlohmann::json parsedJson = nlohmann::json::parse(values);
         std::string ikey = "";
         if (parsedJson.size() > 0) {
-            ikey = parsedJson["field0"];
+            ikey = std::to_string(parsedJson["field0"].get<int>());
         }
         /*data::Row row;
         row.ParseFromString(values);

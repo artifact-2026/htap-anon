@@ -106,7 +106,8 @@ namespace ycsbc {
         row.ParseFromString(values);
         int grp_size = row.columns_size()/8;*/
         for (int i = 0; i < int(parsedJson.size())-1; i++) {
-            std::string serializedColumn = "";
+            //std::string serializedColumn = "";
+            nlohmann::json jsonData;
 
             for (int j=0; j < grp_size; j++) {
                 if (i+j >= int(parsedJson.size())) {
@@ -114,9 +115,10 @@ namespace ycsbc {
                 }
                 //std::string scol;
                 //serializedColumn += row.columns(i+j).SerializeToString(&scol);
-                serializedColumn += parsedJson["field"+std::to_string(i+j)];
+                jsonData["field"+std::to_string(i+j)] = parsedJson["field"+std::to_string(i+j)];
             }
             
+            std::string serializedColumn = jsonData.dump();
             if (!serializedColumn.empty()) {
                 s = rocksdb_->Put(rocksdb::WriteOptions(),
                                   cfhandles_[table+"_colgrp_"+std::to_string(i/2)],
