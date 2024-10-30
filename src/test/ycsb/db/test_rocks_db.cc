@@ -1,3 +1,4 @@
+#include <nlohmann/json.hpp>
 #include "core/core_workload.h"
 #include "test_rocks_db.h"
 #include "lib/coding.h"
@@ -59,12 +60,17 @@ namespace ycsbc {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->SeekToFirst();
             while (it->Valid()) {
-                data::Row row;
+                nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
+                if (parsedJson["field0"] == key) {
+                    result = it->value().ToString();
+                    return 0;
+                }
+                /*data::Row row;
                 row.ParseFromString(it->value().ToString());
                 if (row.columns(1).value() == key) {
                     result = it->value().ToString();
                     return 0;
-                }
+                }*/
                 it->Next();
             }
         } else {
@@ -84,19 +90,37 @@ namespace ycsbc {
     {
         result.clear();
 
+        int begin_key_val = std::stoi(begin_key);
+        int end_key_val = std::stoi(end_key);
         if (index_access) {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->SeekToFirst();
             while (it->Valid()) {
-                data::Row row;
+                nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
+                if (parsedJson["field0"].get<int>() >= begin_key && parsedJson["field0"].get<int>() < end_key) {
+                    result.push_back(it->value().ToString());
+                }
+                /*data::Row row;
                 row.ParseFromString(it->value().ToString());
                 if (row.columns(1).value() >= begin_key && row.columns(1).value() < end_key) {
                     result.push_back(it->value().ToString());
-                }
+                }*/
                 it->Next();
             }
             if (result.size() > 0) {
-                return 0;
+                std::vector<std::string> rowvals;
+                for (auto res : result) {
+                    std::string rowval;
+                    rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, res, &rowval);
+
+                    if (s.ok() && rowval != "") {
+                        rowvals.push_back(rowval);
+                    }
+                }
+
+                if (rowvals.size() > 0) {
+                    return 0;
+                }
             }
         } else {
             int sum = 0;
@@ -104,14 +128,12 @@ namespace ycsbc {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->Seek(begin_key);
             while (it->Valid() && searched < 25) {
-                if (it->key().ToString() < end_key) {
-                    data::Row row;
+                nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
+                uint32_t num = parsedJson["field0"].get<int>();
+                    /*data::Row row;
                     row.ParseFromString(it->value().ToString());
-                    uint32_t num = std::stoi(row.columns(0).value());
-                    sum += num;
-                } else {
-                    break;
-                }
+                    uint32_t num = std::stoi(row.columns(0).value());*/
+                sum += num;
                 it->Next();
                 searched++;
             }

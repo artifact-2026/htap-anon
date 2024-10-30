@@ -107,20 +107,23 @@ namespace ycsbc {
                           std::vector<std::string> &result) 
     {
         int searched = 0;
+        int sum = 0;
         if (req_dist == "leastrecent") {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
             it->Seek(begin_key);
             while (it->Valid() && searched < 25) {
-                result.push_back(it->value().ToString());
-                
+                sum += it->value();
                 it->Next();
                 searched++;
+            }
+            if (sum > 0) {
+                return 0;
             }
         } else {
             std::set<std::string> keyset;
             auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
             itt->Seek(begin_key);
-            while (itt->Valid() && searched < 25) {
+            while (itt->Valid() && searched < 15) {
                 result.push_back(itt->value().ToString());
                 keyset.insert(itt->key().ToString());
                 
@@ -130,15 +133,13 @@ namespace ycsbc {
 
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
             it->Seek(begin_key);
-            while (it->Valid()) {
-                if (it->key().ToString() < end_key) {
-                    if (keyset.find(it->key().ToString()) != keyset.end()) {
-                        result.push_back(it->value().ToString());
-                    }
-                } else {
-                    break;
+            searched = 0;
+            while (it->Valid() && searched < 10) {
+                if (keyset.find(it->key().ToString()) != keyset.end()) {
+                    result.push_back(it->value().ToString());
                 }
                 it->Next();
+                searched++;
             }
         }
         

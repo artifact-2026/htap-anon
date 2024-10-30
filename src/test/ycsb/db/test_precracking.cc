@@ -1,3 +1,4 @@
+#include <nlohmann/json.hpp>
 #include "core/core_workload.h"
 #include "test_precracking.h"
 #include "lib/coding.h"
@@ -99,18 +100,21 @@ namespace ycsbc {
     int RocksdbColumnStrawman::Insert(const std::string &table, const std::string &key, std::string &values)
     {
         rocksdb::Status s;
-        data::Row row;
+        nlohmann::json parsedJson = nlohmann::json::parse(values);
+        int grp_size = parsedJson.size()/8;
+        /*data::Row row;
         row.ParseFromString(values);
-        int grp_size = row.columns_size()/8;
-        for (int i = 0; i < row.columns_size()-1; i++) {
+        int grp_size = row.columns_size()/8;*/
+        for (int i = 0; i < int(parsedJson.size())-1; i++) {
             std::string serializedColumn = "";
 
             for (int j=0; j < grp_size; j++) {
-                if (i+j >= row.columns_size()) {
+                if (i+j >= int(parsedJson.size())) {
                     break;
                 }
-                std::string scol;
-                serializedColumn += row.columns(i+j).SerializeToString(&scol);
+                //std::string scol;
+                //serializedColumn += row.columns(i+j).SerializeToString(&scol);
+                serializedColumn += parsedJson["field"+std::to_string(i+j)];
             }
             
             if (!serializedColumn.empty()) {

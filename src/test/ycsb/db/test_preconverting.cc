@@ -1,3 +1,4 @@
+#include <nlohmann/json.hpp>
 #include "core/core_workload.h"
 #include "test_preconverting.h"
 #include "lib/coding.h"
@@ -76,34 +77,33 @@ namespace ycsbc {
 
     int TestPreconverting::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        data::Row row;
-        row.ParseFromString(values);
+        //data::Row row;
+        //row.ParseFromString(values);
+        nlohmann::json parsedJson = nlohmann::json::parse(values);
 
         flatbuffers::FlatBufferBuilder builder;
 
-        // Add the columns as uint64s
-        std::vector<flatbuffers::Offset<NumericColumn>> numericCols;
-        for (int i = 0; i < row.columns_size(); ++i) {
-            try {
-                const std::string& col_name_str = row.columns(i).name();
-                const std::string& value_str = row.columns(i).value();
-                auto col_name = builder.CreateString(col_name_str);
-                auto col = CreateNumericColumn(builder, col_name, std::stoull(value_str));
-                numericCols.push_back(col);
-            } catch (const std::invalid_argument& ia) {
-                std::cerr << "Catching invalid argument exception: " << ia.what() << std::endl;
-                continue;
-            } catch (const std::out_of_range& orr) {
-                std::cerr << "Catching out of range exception: " << orr.what() << std::endl;
-                continue;
-            }
-        }
+        auto field8 = builder.CreateString(parsedJson["field8"].get<std::string>());
+        auto field9 = builder.CreateString(parsedJson["field9"].get<std::string>());
+        auto field10 = builder.CreateString(parsedJson["field10"].get<std::string>());
+        auto field11 = builder.CreateString(parsedJson["field11"].get<std::string>());
+        auto field12 = builder.CreateString(parsedJson["field12"].get<std::string>());
+        auto field13 = builder.CreateString(parsedJson["field13"].get<std::string>());
+        auto field14 = builder.CreateString(parsedJson["field14"].get<std::string>());
+        auto field15 = builder.CreateString(parsedJson["field15"].get<std::string>());
 
-        // Add vectors to the builder
-        auto numericVec = builder.CreateVector(numericCols);
-
-        // Create the FbRow object
-        auto fbRow = CreateFbRow(builder, numericVec);
+        auto fbRow = rocksdb::CreateFbRow(
+            builder,
+            parsedJson["field0"].get<int>(),
+            parsedJson["field1"].get<int>(),
+            parsedJson["field2"].get<int>(),
+            parsedJson["field3"].get<int>(),
+            parsedJson["field4"].get<int>(),
+            parsedJson["field5"].get<int>(),
+            parsedJson["field6"].get<int>(),
+            parsedJson["field7"].get<int>(),
+            field8, field9, field10, field11, field12, field13, field14, field15
+        );
 
         builder.Finish(fbRow);
 

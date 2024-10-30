@@ -1,3 +1,4 @@
+#include <nlohmann/json.hpp>
 #include "core/core_workload.h"
 #include "test_preindexing.h"
 #include "lib/coding.h"
@@ -119,12 +120,17 @@ namespace ycsbc {
     {
         rocksdb::Status s;
 
-        data::Row row;
+        nlohmann::json parsedJson = nlohmann::json::parse(values);
+        std::string ikey = "";
+        if (parsedJson.size() > 0) {
+            ikey = parsedJson["field0"];
+        }
+        /*data::Row row;
         row.ParseFromString(values);
         std::string ikey = "";
         if (row.columns_size() > 0) {
             ikey = row.columns(0).value();
-        }
+        }*/
 
         // find out if this key was indexed before
         std::string indexed;
@@ -195,9 +201,11 @@ namespace ycsbc {
             return 1;
         }
 
-        data::Row row;
+        nlohmann::json parsedJson = nlohmann::json::parse(values);
+        const std::string ikey = parsedJson["field0"];
+        /*data::Row row;
         row.ParseFromString(values);
-        const std::string ikey = row.columns(1).value();
+        const std::string ikey = row.columns(1).value();*/
 
         std::string origkeystrs;
         s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"], ikey, &origkeystrs);

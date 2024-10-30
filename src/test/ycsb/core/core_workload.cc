@@ -201,9 +201,11 @@ void CoreWorkload::BuildRecord(data::Row &value) {
   for (int i = 0; i < field_count_; ++i) {
     data::Column* column = value.add_columns();
     column->set_name("field"+std::to_string(i));
-    //std::string val;
-    //column->set_value(val.append(field_len_generator_->Next(), utils::RandomPrintChar()));
-    column->set_value(std::to_string(utils::RandomPrintInt()));
+    if (i < 2) {
+      column->set_value(std::to_string(utils::RandomPrintInt()));
+    } else {
+      column->set_value(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
+    }
   }
 }
 
@@ -211,7 +213,11 @@ std::string CoreWorkload::BuildJsonRecord() {
   nlohmann::json jsonData;
   for (int i = 0; i < field_count_; ++i) {
     std::string col_name = "field"+std::to_string(i);
-    jsonData[col_name] = std::to_string(utils::RandomPrintInt());
+    if (i < 2) {
+      jsonData[col_name] = std::to_string(utils::RandomPrintInt());
+    } else {
+      jsonData[col_name] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
+    }
   }
   std::string jsonString = jsonData.dump();
   return jsonString;
@@ -219,10 +225,30 @@ std::string CoreWorkload::BuildJsonRecord() {
 
 void CoreWorkload::BuildColumn(data::Row &value) {
   data::Column* column = value.add_columns();
-  column->set_name(NextFieldName());
-  //std::string val;
-  //column->set_value(val.append(field_len_generator_->Next(), utils::RandomPrintChar()));
-  column->set_value(std::to_string(utils::RandomPrintInt()));
+  std::string colname = NextFieldName();
+  column->set_name(colname);
+
+  int valueType = std::stoi(colname.substr(5));
+  if (valueType < 2) {
+    column->set_value(std::to_string(utils::RandomPrintInt()));
+  } else {
+    column->set_value(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
+  }
+}
+
+std::string CoreWorkload::BuildJsonColumn() {
+  nlohmann::json jsonData;
+  std::string colname = NextFieldName();
+  int valueType = std::stoi(colname.substr(5));
+
+  if (valueType < 2) {
+    jsonData[colname] = std::to_string(utils::RandomPrintInt());
+  } else {
+    jsonData[colname] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
+  }
+  
+  std::string jsonString = jsonData.dump();
+  return jsonString;
 }
 
 size_t CoreWorkload::GetRecordLength() {

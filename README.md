@@ -5,6 +5,12 @@ Directory lib/rocksdb contains the source code of the Mycelium storage engine bu
 Directory src/test contains benchmark files used to generate and test workloads.
 
 ### Setup
+#### - Set up ssh key
+ssh-keygen -t ed25519 -C "your_email@example.com"
+cat ~/.ssh/id_ed25519.pub
+Create a new ssh/gpg key at Github.com settings
+git remote set-url origin git@github.com:<username>/<repo-name>.git
+
 #### - Get the source code  
 git clone https://github.com/hcasalet/htap.git  
 cd htap  
