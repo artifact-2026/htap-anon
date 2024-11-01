@@ -6,7 +6,6 @@
 #include "db/test_cracking.h"
 #include "db/test_indexing.h"
 #include "db/test_precracking.h"
-#include "db/splitfirst.h"
 #include "db/test_flatbuffers.h"
 #include "db/test_fb_cracker.h"
 #include "db/test_preconverting.h"

@@ -17,6 +17,8 @@
 #include "core/core_workload.h"
 #include "proto/columns.pb.h"
 
+#include "db/db_helper.h"
+
 namespace ycsbc {
 
 class TestFBCracker : public DB{
@@ -52,7 +54,9 @@ class TestFBCracker : public DB{
         //std::shared_ptr<rocksdb::Cache> cache_;
         //std::shared_ptr<rocksdb::Statistics> dbstats_;
 
-        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
+        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
+                        rocksdb::InputOutputDataType inputType,
+                        rocksdb::InputOutputDataType outputType);
         void KeepOnlyRequestedFields(data::Row &row,
                 const std::set<std::string> *fields, data::Row &selectedColumns);
         void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,

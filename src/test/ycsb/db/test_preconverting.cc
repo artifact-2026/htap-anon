@@ -13,7 +13,9 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "16"));
-        SetOptions(dbfilename, levels, fieldcount, bootstrap);
+        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
+        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "FLATBUFFERS"));
+        SetOptions(dbfilename, levels, fieldcount, bootstrap, inputType, outputType);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
@@ -135,7 +137,8 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestPreconverting::SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging)
+    void TestPreconverting::SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging,
+                rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
@@ -146,6 +149,7 @@ namespace ycsbc {
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+        options_.SetInputOutputDataType(inputDataType, outputDataType);
 
         options_.IncreaseParallelism(16);
         options_.level0_slowdown_writes_trigger = 16;     

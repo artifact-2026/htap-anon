@@ -18,6 +18,8 @@
 #include "core/core_workload.h"
 #include "proto/columns.pb.h"
 
+#include "db/db_helper.h"
+
 namespace ycsbc {
 
 class Mycelium : public DB{
@@ -51,7 +53,9 @@ class Mycelium : public DB{
         std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
         int noResults;
 
-        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount);
+        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount,
+                        rocksdb::InputOutputDataType inputType,
+                        rocksdb::InputOutputDataType outputType);
 	    void KeepOnlyRequestedFields(data::Row &row,
                 const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname,

@@ -20,6 +20,8 @@
 
 #include "transformer/augmenter.h"
 
+#include "db/db_helper.h"
+
 namespace ycsbc {
 
 class Indexing : public DB{
@@ -51,7 +53,9 @@ class Indexing : public DB{
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         int noResults;
 
-        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount);
+        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount,
+                        rocksdb::InputOutputDataType inputType,
+                        rocksdb::InputOutputDataType outputType);
 	    void KeepOnlyRequestedFields(data::Row &row,
                 const std::set<std::string> *fields, data::Row &selectedColumns);
         std::vector<std::string> deserializeIndex(const std::string& serialized);

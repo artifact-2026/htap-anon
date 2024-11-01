@@ -45,14 +45,17 @@ class Client {
 
 inline bool Client::DoInsert() {
   std::string key = workload_.NextSequenceKey();
-  std::string val = workload_.BuildJsonRecord();
-  return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
-
-  /*data::Row value;
-  workload_.BuildRecord(value);
-  std::string serializedValue;
-  value.SerializeToString(&serializedValue);
-  return (db_.Insert(workload_.NextTable(), key, serializedValue) == DB::kOK);*/
+  std::string val;
+  if (workload_.input_data_type() == "JSON") {
+    std::string val = workload_.BuildJsonRecord();
+    return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
+  } else {
+    data::Row value;
+    workload_.BuildRecord(value);
+    std::string serializedValue;
+    value.SerializeToString(&serializedValue);
+    return (db_.Insert(workload_.NextTable(), key, serializedValue) == DB::kOK);
+  } 
 }
 
 inline bool Client::DoRead() {
@@ -129,25 +132,26 @@ inline int Client::TransactionReadModifyWrite() {
   } else {
     db_.Read(table, key, NULL, workload_.request_distribution(), workload_.index_access(), result);
   }
-
-  std::string val;
-  if (workload_.write_all_fields()) {
-    val = workload_.BuildJsonRecord();
+  
+  if (workload_.input_data_type() == "JSON") {
+    std::string val;
+    if (workload_.write_all_fields()) {
+      val = workload_.BuildJsonRecord();
+    } else {
+      val = workload_.BuildJsonColumn();
+    }
+    return db_.Update(table, key, val);
   } else {
-    val = workload_.BuildJsonColumn();
+    data::Row columns;
+    if (workload_.write_all_fields()) {
+      workload_.BuildRecord(columns);
+    } else {
+      workload_.BuildColumn(columns);
+    }
+    std::string serializedColumns;
+    columns.SerializeToString(&serializedColumns);
+    return db_.Update(table, key, serializedColumns);
   }
-  return db_.Update(table, key, val);
-
-  /*data::Row columns;
-  if (workload_.write_all_fields()) {
-    workload_.BuildRecord(columns);
-  } else {
-    workload_.BuildColumn(columns);
-  }
-  std::string serializedColumns;
-  columns.SerializeToString(&serializedColumns);
-
-  return db_.Update(table, key, serializedColumns);*/
 }
 
 inline int Client::TransactionScan() {
@@ -177,36 +181,40 @@ inline int Client::TransactionUpdate() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
 
-  std::string val;
-  if (workload_.write_all_fields()) {
-    val = workload_.BuildJsonRecord();
+  if (workload_.input_data_type() == "JSON") {
+    std::string val;
+    if (workload_.write_all_fields()) {
+      val = workload_.BuildJsonRecord();
+    } else {
+      val = workload_.BuildJsonColumn();
+    }
+    return db_.Update(table, key, val);
   } else {
-    val = workload_.BuildJsonColumn();
+    data::Row columns;
+    if (workload_.write_all_fields()) {
+      workload_.BuildRecord(columns);
+    } else {
+      workload_.BuildColumn(columns);
+    }
+    std::string serializedColumns;
+    columns.SerializeToString(&serializedColumns);
+    return db_.Update(table, key, serializedColumns);
   }
-  return db_.Update(table, key, val);
-
-  /*data::Row columns;
-  if (workload_.write_all_fields()) {
-    workload_.BuildRecord(columns);
-  } else {
-    workload_.BuildColumn(columns);
-  }
-  std::string serializedColumns;
-  columns.SerializeToString(&serializedColumns);
-  return db_.Update(table, key, serializedColumns);*/
 }
 
 inline int Client::TransactionInsert() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextSequenceKey();
-  std::string val = workload_.BuildJsonRecord();
-  return db_.Insert(table, key, val);
-
-  /*data::Row columns;
-  workload_.BuildRecord(columns);
-  std::string serializedColumns;
-  columns.SerializeToString(&serializedColumns);
-  return db_.Insert(table, key, serializedColumns);*/
+  if (workload_.input_data_type() == "JSON") {
+    std::string val = workload_.BuildJsonRecord();
+    return db_.Insert(table, key, val);
+  } else {
+    data::Row columns;
+    workload_.BuildRecord(columns);
+    std::string serializedColumns;
+    columns.SerializeToString(&serializedColumns);
+    return db_.Insert(table, key, serializedColumns);
+  }
 } 
 
 } // ycsbc

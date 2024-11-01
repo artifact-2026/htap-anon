@@ -3,6 +3,7 @@ add_definitions(-DROCKSDB_PLATFORM_POSIX -DROCKSDB_LIB_IO_POSIX -DFLATBUFF_INCLU
 set(ycsb_srcs
     ycsbc.cc
     db/db_factory.cc
+    db/db_helper.cc
     db/test_rocks_db.cc
     db/test_cracking.cc
     db/test_indexing.cc

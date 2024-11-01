@@ -18,6 +18,8 @@
 #include "core/core_workload.h"
 #include "proto/columns.pb.h"
 
+#include "db/db_helper.h"
+
 namespace ycsbc {
 
 class TestPreindexing : public DB{
@@ -49,7 +51,9 @@ class TestPreindexing : public DB{
         int noResults;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
 
-        void SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging);
+        void SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging,
+                        rocksdb::InputOutputDataType inputType,
+                        rocksdb::InputOutputDataType outputType);
 	    void KeepOnlyRequestedFields(data::Row &row,
                     const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname,

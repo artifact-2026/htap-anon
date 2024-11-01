@@ -66,6 +66,12 @@ const string CoreWorkload::REQUEST_DISTRIBUTION_PROPERTY =
     "requestdistribution";
 const string CoreWorkload::REQUEST_DISTRIBUTION_DEFAULT = "uniform";
 
+const string CoreWorkload::INPUT_DATA_TYPE_PROPERTY = "inputdatatype";
+const string CoreWorkload::INPUT_DATA_TYPE_DEFAULT = "protobuf";
+
+const string CoreWorkload::OUTPUT_DATA_TYPE_PROPERTY = "outputdatatype";
+const string CoreWorkload::OUTPUT_DATA_TYPE_DEFAULT = "flatbuffers";
+
 const string CoreWorkload::MAX_SCAN_LENGTH_PROPERTY = "maxscanlength";
 const string CoreWorkload::MAX_SCAN_LENGTH_DEFAULT = "1000";
 
@@ -121,6 +127,10 @@ void CoreWorkload::Init(const utils::Properties &p) {
                                                      WRITE_ALL_FIELDS_DEFAULT));
   index_access_ = utils::StrToBool(p.GetProperty(INDEX_ACCESS_PROPERTY,
                                                  INDEX_ACCESS_DEFAULT));
+  input_data_type_ = p.GetProperty(INPUT_DATA_TYPE_PROPERTY,
+                                  INPUT_DATA_TYPE_DEFAULT);
+  output_data_type_ = p.GetProperty(OUTPUT_DATA_TYPE_PROPERTY,
+                                    OUTPUT_DATA_TYPE_DEFAULT);
   
   if (p.GetProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_DEFAULT) == "hashed") {
     ordered_inserts_ = false;

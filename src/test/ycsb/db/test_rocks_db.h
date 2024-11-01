@@ -17,6 +17,8 @@
 #include "core/core_workload.h"
 #include "proto/columns.pb.h"
 
+#include "db/db_helper.h"
+
 namespace ycsbc {
 
 class TestRocksDB : public DB{
@@ -50,7 +52,9 @@ class TestRocksDB : public DB{
         std::shared_ptr<rocksdb::Statistics> dbstats_;
         rocksdb::ColumnFamilyHandle* cfhandle_;
 
-        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
+        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
+                        rocksdb::InputOutputDataType inputType,
+                        rocksdb::InputOutputDataType outputType);
         void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
                                                 std::vector<rocksdb::ColumnFamilyHandle *> handles);        

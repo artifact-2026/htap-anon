@@ -17,6 +17,8 @@
 #include "core/core_workload.h"
 #include "proto/columns.pb.h"
 
+#include "db/db_helper.h"
+
 namespace ycsbc {
 
 class TestPreconverting : public DB{
@@ -48,7 +50,9 @@ class TestPreconverting : public DB{
         int noResults;
         rocksdb::ColumnFamilyHandle* cfhandle_;
 
-        void SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging);
+        void SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging,
+                        rocksdb::InputOutputDataType inputType,
+                        rocksdb::InputOutputDataType outputType);
 	    void KeepOnlyRequestedFields(data::Row &row,
                     const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname,

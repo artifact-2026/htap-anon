@@ -13,8 +13,10 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
+        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
+        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
         noResults = 0;
-        SetOptions(props, bootstrap, levels, fieldcount);
+        SetOptions(props, bootstrap, levels, fieldcount, inputType, outputType);
 
         options_.transformers.push_back(new rocksdb::Distributor());
         options_.transformers.push_back(new rocksdb::Converter());
@@ -208,7 +210,8 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestFBCracker::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount)
+    void TestFBCracker::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
+                    rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
@@ -219,6 +222,7 @@ namespace ycsbc {
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
+        options_.SetInputOutputDataType(inputDataType, outputDataType);
 
         options_.IncreaseParallelism(16);
         options_.level0_slowdown_writes_trigger = 16;     

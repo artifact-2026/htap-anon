@@ -37,10 +37,7 @@ inline double RandomDouble(double min = 0.0, double max = 1.0) {
 /// Returns an ASCII code that can be printed to desplay
 ///
 inline char RandomPrintChar() {
-    const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-                           "abcdefghijklmnopqrstuvwxyz"
-                           "0123456789";
-    return charset[rand() % (sizeof(charset) - 1)];
+  return rand() % 94 + 33;
 }
 
 inline int RandomPrintInt() {
