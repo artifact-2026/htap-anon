@@ -3,7 +3,9 @@
 #include "test_preconverting.h"
 #include "lib/coding.h"
 #include "flatbuffers/flatbuffers.h"
-#include "flat/data_generated.h"
+#include "flat/row_generated.h"
+#include "flat/column_num_generated.h"
+#include "flat/column_str_generated.h"
 
 using namespace std;
 
