@@ -41,7 +41,7 @@ inline char RandomPrintChar() {
 }
 
 inline int RandomPrintInt() {
-  return (rand() + 2123456789) % 4000000000;
+  return rand() % 50000000 + 50000000;
 }
 
 inline uint64_t RandomPrintUint64() {

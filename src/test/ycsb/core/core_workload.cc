@@ -208,10 +208,11 @@ ycsbc::Generator<uint64_t> *CoreWorkload::GetFieldLenGenerator(
 }
 
 void CoreWorkload::BuildRecord(data::Row &value) {
+  int half = field_count_/2;
   for (int i = 0; i < field_count_; ++i) {
     data::Column* column = value.add_columns();
     column->set_name("field"+std::to_string(i));
-    if (i < 2) {
+    if (i < half) {
       column->set_value(std::to_string(utils::RandomPrintInt()));
     } else {
       column->set_value(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
@@ -220,10 +221,11 @@ void CoreWorkload::BuildRecord(data::Row &value) {
 }
 
 std::string CoreWorkload::BuildJsonRecord() {
+  int half = field_count_/2;
   nlohmann::json jsonData;
   for (int i = 0; i < field_count_; ++i) {
     std::string col_name = "field"+std::to_string(i);
-    if (i < field_count_/2) {
+    if (i < half) {
       jsonData[col_name] = utils::RandomPrintInt();
     } else {
       jsonData[col_name] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
@@ -251,7 +253,7 @@ std::string CoreWorkload::BuildJsonColumn() {
   std::string colname = NextFieldName();
   int valueType = std::stoi(colname.substr(5));
 
-  if (valueType < 2) {
+  if (valueType < field_count_/2) {
     jsonData[colname] = std::to_string(utils::RandomPrintInt());
   } else {
     jsonData[colname] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
