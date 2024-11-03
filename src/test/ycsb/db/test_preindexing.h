@@ -11,6 +11,7 @@
 #include <rocksdb/options.h>
 #include <rocksdb/db.h>
 #include <rocksdb/cache.h>
+#include <rocksdb/merge_operator.h>
 #include <rocksdb/table.h>
 #include <rocksdb/filter_policy.h>
 
@@ -21,6 +22,35 @@
 #include "db/db_helper.h"
 
 namespace ycsbc {
+
+class SecondaryPreindexMergeOperator : public rocksdb::AssociativeMergeOperator {
+public:
+    bool Merge(const rocksdb::Slice& key, 
+               const rocksdb::Slice* existing_value,
+               const rocksdb::Slice& value,
+               std::string* new_value,
+               rocksdb::Logger* logger) const override {
+        // If there's an existing value, start with it; otherwise, initialize as empty
+        std::string merged_value = existing_value ? existing_value->ToString() : "";
+
+        // Convert the new primary key to a string
+        std::string new_primary_key = value.ToString();
+
+        // If deduplication is needed
+        if (merged_value.find(new_primary_key) == std::string::npos) {
+            if (!merged_value.empty()) {
+                merged_value += ",";  // Add a separator before appending
+            }
+            merged_value += new_primary_key;  // Append the new primary key
+        }
+
+        // Return the merged result
+        *new_value = merged_value;
+        return true;
+    }
+
+    const char* Name() const override { return "SecondaryIndexMergeOperator"; }
+};
 
 class TestPreindexing : public DB{
     public :
@@ -62,6 +92,8 @@ class TestPreindexing : public DB{
                             std::vector<rocksdb::ColumnFamilyHandle*> handles);
         std::set<int> GetQueryingHandles(std::set<std::string> fields);
         std::vector<std::string> deserializeIndex(const std::string& serialized);
+        std::vector<std::string> parsePrimaryKeys(const std::string& value);
+        void removePrimaryKeyFromList(std::string& value, const std::string& pkey);
 };  
 
 }

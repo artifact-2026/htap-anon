@@ -56,18 +56,16 @@ namespace ycsbc {
             std::string valuekeysstr;
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"], key, &valuekeysstr);
 
-            std::vector<std::string> valuekeys = deserializeIndex(valuekeysstr);
+            std::vector<std::string> valuekeys = parsePrimaryKeys(valuekeysstr);
             for (auto valuekey : valuekeys) {
                 s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], valuekey, &result);
-                if (s.ok()) {
-                    return 0;
-                }
             }
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-            if (s.ok()) {
-                return 0;
-            }
+        }
+
+        if (s.ok()) {
+            return 0;
         }
         return 1;
     }
@@ -86,7 +84,7 @@ namespace ycsbc {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"]);
             it->Seek(begin_key);
             while (it->Valid() && searched < 25) {
-                std::vector<std::string> rowkeys = deserializeIndex(it->value().ToString());
+                std::vector<std::string> rowkeys = parsePrimaryKeys(it->value().ToString());
                 for (auto k : rowkeys) {
                     foundkeys.insert(k);
                 }
@@ -120,22 +118,29 @@ namespace ycsbc {
 
     int TestPreindexing::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        rocksdb::Status s;
-
-        nlohmann::json parsedJson = nlohmann::json::parse(values);
-        std::string ikey = "";
-        if (parsedJson.size() > 0) {
-            ikey = std::to_string(parsedJson["field0"].get<int>());
-        }
-        /*data::Row row;
+        data::Row row;
         row.ParseFromString(values);
         std::string ikey = "";
         if (row.columns_size() > 0) {
             ikey = row.columns(0).value();
-        }*/
+        } else {
+            return 1;
+        }
+
+        rocksdb::Status s = rocksdb_->Merge(rocksdb::WriteOptions(), cfhandles_[table+"_index_cf"], ikey, key);
+        if (!s.ok()) {
+            return 1;
+        }
+
+        s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
+        if (!s.ok()) {
+            return 1;
+        }
+
+        return 0;
 
         // find out if this key was indexed before
-        std::string indexed;
+        /*std::string indexed;
         s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0-helper"], key, &indexed);
         if (indexed != "" && indexed != ikey) {
             // remove the old indexed value
@@ -186,7 +191,7 @@ namespace ycsbc {
             return 0;
         }
 
-        return 1;
+        return 1;*/
     }
 
     int TestPreindexing::Update(const std::string &table, const std::string &key, std::string &values)
@@ -196,41 +201,35 @@ namespace ycsbc {
 
     int TestPreindexing::Delete(const std::string &table, const std::string &key)
     {
-        std::string values;
-        rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &values);
-
-        if (values == "") {
+        rocksdb::Status s;
+        // Get the value pointed by the primary key
+        std::string value;
+        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &value);
+        if (!s.ok()) {
             return 1;
         }
 
-        nlohmann::json parsedJson = nlohmann::json::parse(values);
-        const std::string ikey = parsedJson["field0"];
-        /*data::Row row;
-        row.ParseFromString(values);
-        const std::string ikey = row.columns(1).value();*/
+        // parse the value to get the key in the secondary index
+        data::Row row;
+        row.ParseFromString(value);
+        const std::string ikey = row.columns(0).value();
 
-        std::string origkeystrs;
-        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"], ikey, &origkeystrs);
+        // remove primary key from the secondary index
+        std::string pkeys;
+        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"], ikey, &pkeys);
+        if (!s.ok()) {
+            return 1;
+        }
+        removePrimaryKeyFromList(pkeys, key);
 
-        std::vector<std::string> origkeys = deserializeIndex(origkeystrs);
-        origkeys.erase(std::remove(origkeys.begin(), origkeys.end(), key), origkeys.end());
-
-        if (origkeys.size() > 0) {
-            std::ostringstream oss;
-
-            size_t sz = origkeys.size();
-            oss.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
-
-            for (const auto& k : origkeys) {
-                size_t klen = k.size();
-                oss.write(reinterpret_cast<const char*>(&klen), sizeof(klen));
-                oss.write(k.c_str(), klen);
-            }
-            s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_index_cf"], ikey, oss.str());
+        // write back the remaining pkey list to the secondary index
+        s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_index_cf"], ikey, pkeys);
+        if (!s.ok()) {
+            return 1;
         }
 
+        // finally delete the key from primary data
         s = rocksdb_->Delete(rocksdb::WriteOptions(), cfhandles_[table], key);
-
         if (s.ok()) {
             return 0;
         }
@@ -245,6 +244,7 @@ namespace ycsbc {
         }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
+        options_.merge_operator = std::make_shared<SecondaryPreindexMergeOperator>();
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
@@ -287,8 +287,8 @@ namespace ycsbc {
                                                                   rocksdb::ColumnFamilyOptions(options_)));
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_index_cf",
                                                                   rocksdb::ColumnFamilyOptions(options_)));
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_derived_cf_0-helper",
-                                                                  rocksdb::ColumnFamilyOptions(options_)));                   
+        //column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_derived_cf_0-helper",
+        //                                                          rocksdb::ColumnFamilyOptions(options_)));                   
     }
 
     void TestPreindexing::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
@@ -298,6 +298,39 @@ namespace ycsbc {
             if (column_family_descriptors[i].name != rocksdb::kDefaultColumnFamilyName) {
                 cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
             }
+        }
+    }
+
+    std::vector<std::string> TestPreindexing::parsePrimaryKeys(const std::string& value) {
+        std::vector<std::string> primary_keys;
+        std::istringstream stream(value);
+        std::string key;
+    
+        while (std::getline(stream, key, ',')) {
+            primary_keys.push_back(key);
+        }
+
+        return primary_keys;
+    }
+
+    void TestPreindexing::removePrimaryKeyFromList(std::string& value, const std::string& pkey) {
+        size_t start_index = value.find(pkey);
+        if (start_index == std::string::npos) {
+            return;  // pkey not found, so no modification needed
+        }
+
+        // Find the comma immediately after pkey
+        size_t end_index = value.find_first_of(',', start_index + pkey.length());
+
+        if (end_index == std::string::npos) {
+            // pkey is the last item in the list, remove it including the preceding comma if any
+            if (start_index > 0 && value[start_index - 1] == ',') {
+                start_index -= 1;  // Include the comma before pkey
+            }
+            value = value.substr(0, start_index);
+        } else {
+            // pkey is followed by other items, remove it including the following comma
+            value = value.substr(0, start_index) + value.substr(end_index + 1);
         }
     }
 

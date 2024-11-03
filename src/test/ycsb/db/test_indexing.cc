@@ -68,24 +68,21 @@ namespace ycsbc {
         if (index_access) {
             for (int i = 1; i < 6; i++) {
                 std::string valuekeysstr;
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_L"+std::to_string(i)+"_0"], key, &valuekeysstr);
+                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"], key, &valuekeysstr);
                 if (valuekeysstr != "") {
-                    std::vector<std::string> valuekeys = deserializeIndex(valuekeysstr);
+                    std::vector<std::string> valuekeys = parsePrimaryKeys(valuekeysstr);
                     for (auto vkey : valuekeys) {
                         s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], vkey, &result);
-                        if (s.ok()) {
-                            return 0;
-                        }
                     }
                 }
             }
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-            if (s.ok()) {
-                return 0;
-            }
         }
 
+        if (s.ok()) {
+            return 0;
+        }
         return 1;
     }
 
@@ -97,19 +94,17 @@ namespace ycsbc {
         rocksdb::Status s;
         if (index_access) {
             std::set<std::string> origkeys;
-            for (int i = 6; i > 0; i--) {
-                int searched = 0;
-                auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_L"+std::to_string(i)+"_0"]);
-                it->Seek(begin_key);
-                while (it->Valid() && searched < 25) {
-                    std::vector<std::string> valuekeys = deserializeIndex(it->value().ToString());
-                    for (auto vkey : valuekeys) {
-                        origkeys.insert(vkey);
-                    }
-                    
-                    it->Next();
-                    searched++;
+            int searched = 0;
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"]);
+            it->Seek(begin_key);
+            while (it->Valid() && searched < 25) {
+                std::vector<std::string> valuekeys = parsePrimaryKeys(it->value().ToString());
+                for (auto vkey : valuekeys) {
+                    origkeys.insert(vkey);
                 }
+                    
+                it->Next();
+                searched++;
             }
 
             for (auto origkey : origkeys) {
@@ -137,15 +132,12 @@ namespace ycsbc {
 
     int Indexing::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        auto it = cfhandles_.find(table);
-        if (it != cfhandles_.end()) {
-            rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
-                                          cfhandles_[table],
-                                          key,
-                                          values);
-            if (s.ok()) {
-                return 0;
-            }
+        rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
+                                      cfhandles_[table],
+                                      key,
+                                      values);
+        if (s.ok()) {
+            return 0;
         }
         return 1;
     }
@@ -174,6 +166,7 @@ namespace ycsbc {
         }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
+        options_.merge_operator = std::make_shared<SecondaryIndexMergeOperator>();
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
@@ -211,13 +204,10 @@ namespace ycsbc {
 
     void Indexing::GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname, rocksdb::ColumnFamilyOptions(options_)));
-        
-        int total_levels = options_.num_levels;
-        for (int level = 1; level < total_levels; level++) {
-            std::string index_name = dbname + "_derived_cf_L" + std::to_string(level) + "_0";
-            column_families.push_back(rocksdb::ColumnFamilyDescriptor(index_name, rocksdb::ColumnFamilyOptions(options_)));
-        }
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname,
+                                                                  rocksdb::ColumnFamilyOptions(options_)));
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_index_cf",
+                                                                  rocksdb::ColumnFamilyOptions(options_)));
     }
 
     void Indexing::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
@@ -249,6 +239,18 @@ namespace ycsbc {
         return result;
     }
 
+    std::vector<std::string> Indexing::parsePrimaryKeys(const std::string& value) {
+        std::vector<std::string> primary_keys;
+        std::istringstream stream(value);
+        std::string key;
+    
+        while (std::getline(stream, key, ',')) {
+            primary_keys.push_back(key);
+        }
+
+        return primary_keys;
+    }
+
     rocksdb::DeriveFuncData* Indexing::CreateIndexer(std::vector<int> positions) {
         std::function<std::string(std::vector<std::string>&)> f = [&](std::vector<std::string>& strs) -> std::string {
             if (strs.size() == 0) {
@@ -260,12 +262,12 @@ namespace ycsbc {
             std::string ind = strs[0];
             size_t total_length = ind.size();
             for (size_t i = 1; i < strs.size(); ++i) {
-                total_length += strs[i].size();
+                total_length += (1 + strs[i].size());       // need to add a delimiter ","
             }
             ind.reserve(total_length);
 
             for (size_t i = 1; i < strs.size(); i++) {
-                ind += strs[i];
+                ind += "," + strs[i];
             }
             return ind;
         };
