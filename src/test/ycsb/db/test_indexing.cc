@@ -36,6 +36,7 @@ namespace ycsbc {
             }
 
             s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
+            s = rocksdb_->AddTransformingDestinationCfds(dbname, false, false, true);
             if (!s.ok()){
                 std::cerr<<"Creating column families ran into error "<<s.ToString()<<std::endl;
                 exit(0);
@@ -52,6 +53,13 @@ namespace ycsbc {
                 std::cerr<<"Can't open db "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
+
+            s = rocksdb_->AddTransformingDestinationCfds(dbname, false, false, true);
+            if (!s.ok()){
+                std::cerr<<"Column family creation for indexing ran into error "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                exit(0);
+            }
+
         }
         BuildColumnFamilyHandleMap(column_family_descriptors, cf_handles);
     }

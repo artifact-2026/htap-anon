@@ -49,7 +49,7 @@ public:
         return true;
     }
 
-    const char* Name() const override { return "SecondaryIndexMergeOperator"; }
+    const char* Name() const override { return "SecondaryPreindexMergeOperator"; }
 };
 
 class TestPreindexing : public DB{
