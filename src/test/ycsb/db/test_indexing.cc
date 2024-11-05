@@ -62,6 +62,7 @@ namespace ycsbc {
 
         }
         BuildColumnFamilyHandleMap(column_family_descriptors, cf_handles);
+        rocksdb_->DisplayTransformingDestinationCfds();
     }
 
     /*
@@ -174,7 +175,6 @@ namespace ycsbc {
         }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
-        options_.merge_operator = std::make_shared<SecondaryIndexMergeOperator>();
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
@@ -214,7 +214,13 @@ namespace ycsbc {
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname,
                                                                   rocksdb::ColumnFamilyOptions(options_)));
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_index_cf",
+
+        options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_indexed_data_cf",
+                                                                  rocksdb::ColumnFamilyOptions(options_)));
+
+        options_.merge_operator = std::make_shared<SecondaryIndexMergeOperator>();
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_secondary_index_cf",
                                                                   rocksdb::ColumnFamilyOptions(options_)));
     }
 

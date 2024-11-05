@@ -102,25 +102,21 @@ namespace ycsbc {
     int RocksdbColumnStrawman::Insert(const std::string &table, const std::string &key, std::string &values)
     {
         rocksdb::Status s;
-        nlohmann::json parsedJson = nlohmann::json::parse(values);
-        int grp_size = parsedJson.size()/8;
-        /*data::Row row;
+        
+        data::Row row;
         row.ParseFromString(values);
-        int grp_size = row.columns_size()/8;*/
-        for (int i = 0; i < int(parsedJson.size())-1; i++) {
-            //std::string serializedColumn = "";
-            nlohmann::json jsonData;
+        int grp_size = row.columns_size()/8;
+        for (int i = 0; i < row.columns_size()-1; i++) {
+            std::string serializedColumn = "";
 
             for (int j=0; j < grp_size; j++) {
-                if (i+j >= int(parsedJson.size())) {
+                if (i+j >= row.columns_size()) {
                     break;
                 }
-                //std::string scol;
-                //serializedColumn += row.columns(i+j).SerializeToString(&scol);
-                jsonData["field"+std::to_string(i+j)] = parsedJson["field"+std::to_string(i+j)];
+                std::string scol;
+                serializedColumn += row.columns(i+j).SerializeToString(&scol);
             }
             
-            std::string serializedColumn = jsonData.dump();
             if (!serializedColumn.empty()) {
                 s = rocksdb_->Put(rocksdb::WriteOptions(),
                                   cfhandles_[table+"_colgrp_"+std::to_string(i/2)],

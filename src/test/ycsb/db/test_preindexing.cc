@@ -244,7 +244,6 @@ namespace ycsbc {
         }
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
-        options_.merge_operator = std::make_shared<SecondaryPreindexMergeOperator>();
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
@@ -285,6 +284,7 @@ namespace ycsbc {
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname,
                                                                   rocksdb::ColumnFamilyOptions(options_)));
+        options_.merge_operator = std::make_shared<SecondaryPreindexMergeOperator>();
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_index_cf",
                                                                   rocksdb::ColumnFamilyOptions(options_)));
         //column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_derived_cf_0-helper",

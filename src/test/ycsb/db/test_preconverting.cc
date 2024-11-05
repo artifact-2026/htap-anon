@@ -81,13 +81,13 @@ namespace ycsbc {
 
     int TestPreconverting::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        //data::Row row;
-        //row.ParseFromString(values);
-        nlohmann::json parsedJson = nlohmann::json::parse(values);
+        data::Row row;
+        row.ParseFromString(values);
+        //nlohmann::json parsedJson = nlohmann::json::parse(values);
 
         flatbuffers::FlatBufferBuilder builder;
 
-        auto field8 = builder.CreateString(parsedJson["field8"].get<std::string>());
+        /*auto field8 = builder.CreateString(parsedJson["field8"].get<std::string>());
         auto field9 = builder.CreateString(parsedJson["field9"].get<std::string>());
         auto field10 = builder.CreateString(parsedJson["field10"].get<std::string>());
         auto field11 = builder.CreateString(parsedJson["field11"].get<std::string>());
@@ -106,6 +106,28 @@ namespace ycsbc {
             parsedJson["field5"].get<int>(),
             parsedJson["field6"].get<int>(),
             parsedJson["field7"].get<int>(),
+            field8, field9, field10, field11, field12, field13, field14, field15
+        );*/
+
+        auto field8 = builder.CreateString(row.columns(8).value());
+        auto field9 = builder.CreateString(row.columns(9).value());
+        auto field10 = builder.CreateString(row.columns(10).value());
+        auto field11 = builder.CreateString(row.columns(11).value());
+        auto field12 = builder.CreateString(row.columns(12).value());
+        auto field13 = builder.CreateString(row.columns(13).value());
+        auto field14 = builder.CreateString(row.columns(14).value());
+        auto field15 = builder.CreateString(row.columns(15).value());
+
+        auto fbRow = rocksdb::CreateFbRow(
+            builder,
+            stoi(row.columns(0).value()),
+            stoi(row.columns(1).value()),
+            stoi(row.columns(2).value()),
+            stoi(row.columns(3).value()),
+            stoi(row.columns(4).value()),
+            stoi(row.columns(5).value()),
+            stoi(row.columns(6).value()),
+            stoi(row.columns(7).value()),
             field8, field9, field10, field11, field12, field13, field14, field15
         );
 
