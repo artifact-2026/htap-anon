@@ -17,7 +17,7 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
+        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTO64"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
         SetOptions(dbfilename, bootstrap, levels, fieldcount, inputType, outputType);
 
@@ -279,15 +279,24 @@ namespace ycsbc {
                     continue;
                 }
 
-                int child1 = parent_cols/2;
-                std::string cfname1 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2);
-                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(options_)));
-                parents.push(child1);
+                int child1 = parent_cols/3;
+                if (child1 > 0) {
+                    std::string cfname1 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*3);
+                    column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(options_)));
+                    parents.push(child1);
+                    parent_cols -= child1;
+                }
 
-                int child2 = parent_cols - child1;
-                std::string cfname2 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*2+1);
+                int child2 = parent_cols/2;
+                std::string cfname2 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*3+1);
                 column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname2, rocksdb::ColumnFamilyOptions(options_)));
                 parents.push(child2);
+                parent_cols -= child2;
+
+                int child3 = parent_cols;
+                std::string cfname3 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*3+2);
+                column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname3, rocksdb::ColumnFamilyOptions(options_)));
+                parents.push(child3);
             }
         }
     }
@@ -304,8 +313,6 @@ namespace ycsbc {
             cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
             cfhandlelist_.push_back(handles[i]);
         }
-
-        
     }
 
     void Mycelium::BuildQueryHandles(std::set<std::string> fields) {

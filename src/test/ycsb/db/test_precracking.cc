@@ -196,7 +196,7 @@ namespace ycsbc {
     void RocksdbColumnStrawman::GetColumnFamilyDescriptors(const std::string& dbname,
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
-        int splits = 8;
+        int splits = 27;
         
         for (int i = 0; i < splits; i++) {
             std::string cf_name = dbname + "_colgrp_" + std::to_string(i);

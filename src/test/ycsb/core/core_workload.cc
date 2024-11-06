@@ -67,10 +67,10 @@ const string CoreWorkload::REQUEST_DISTRIBUTION_PROPERTY =
 const string CoreWorkload::REQUEST_DISTRIBUTION_DEFAULT = "uniform";
 
 const string CoreWorkload::INPUT_DATA_TYPE_PROPERTY = "inputdatatype";
-const string CoreWorkload::INPUT_DATA_TYPE_DEFAULT = "protobuf";
+const string CoreWorkload::INPUT_DATA_TYPE_DEFAULT = "PROTOBUF";
 
 const string CoreWorkload::OUTPUT_DATA_TYPE_PROPERTY = "outputdatatype";
-const string CoreWorkload::OUTPUT_DATA_TYPE_DEFAULT = "flatbuffers";
+const string CoreWorkload::OUTPUT_DATA_TYPE_DEFAULT = "FLATBUFFERS";
 
 const string CoreWorkload::MAX_SCAN_LENGTH_PROPERTY = "maxscanlength";
 const string CoreWorkload::MAX_SCAN_LENGTH_DEFAULT = "1000";

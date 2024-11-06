@@ -127,7 +127,7 @@ int main( const int argc, const char *argv[]) {
   const bool print_stats = utils::StrToBool(props["dbstatistics"]);
   const bool wait_for_balance = utils::StrToBool(props["dbwaitforbalance"]);
   const int throughput_type = stoi(props.GetProperty("throughputtype", "1"));
-  const int run_time = stoi(props.GetProperty("runtime", "150"));
+  const int run_time = stoi(props.GetProperty("runtime", "600"));
 
   string morerun = props["morerun"];
 
@@ -349,6 +349,15 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
     ycsbc::CoreWorkload wl;
     wl.Init(props);
 
+    const std::string filename = "throughput_data.csv";
+    std::ofstream file(filename, std::ios::app);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+        return;
+    }
+
+    file << "Time (s),Throughput (ops/s) for num_threads = " << num_threads << std::endl;
+
     for (int i = 0; i < num_threads; ++i) {
       throughput_ops.emplace_back(async(launch::async,
           DelegateForThroughput, db, &wl, throughput_type, run_time));
@@ -391,9 +400,12 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
 
     printf("latency raw data: \n");
     printf("latency size: %ld \n", exec_times.size());
-    //for (auto th : xputs) {
-    //  printf("throughtput: %ld\n", th);
-    //}
+
+    int timesec = 1;
+    for (auto th : xputs) {
+      file << timesec << "," << th << std::endl;
+      timesec++;
+    }
     printf("throughput mean:%lf  stddev: %lf, average latency: %lf, stddev: %lf\n", 
         mean_xput, stddev_xput, mean, stddev);
     printf("*********************************\n");
@@ -659,7 +671,7 @@ void Init(utils::Properties &props){
   props.SetProperty("transform","false");
   props.SetProperty("transform_type", "0");
   props.SetProperty("translevel", "all");
-  props.SetProperty("runtime", "150");
+  props.SetProperty("runtime", "600");
   props.SetProperty("threadcount","1");
   props.SetProperty("throughput","false");
   props.SetProperty("throughputtype", "1");

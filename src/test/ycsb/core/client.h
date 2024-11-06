@@ -49,7 +49,7 @@ inline bool Client::DoInsert() {
   if (workload_.input_data_type() == "JSON") {
     std::string val = workload_.BuildJsonRecord();
     return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
-  } else if (workload_.input_data_type() == "proto64") {
+  } else if (workload_.input_data_type() == "PROTO64") {
     data::WideRow64 value;
     workload_.BuildWide64Record(value);
     std::string serializedValue;
@@ -147,6 +147,12 @@ inline int Client::TransactionReadModifyWrite() {
       val = workload_.BuildJsonColumn();
     }
     return db_.Update(table, key, val);
+  } else if (workload_.input_data_type() == "PROTO64") {
+    data::WideRow64 value;
+    workload_.BuildWide64Record(value);
+    std::string serializedValue;
+    value.SerializeToString(&serializedValue);
+    return db_.Update(table, key, serializedValue);
   } else {
     data::Row columns;
     if (workload_.write_all_fields()) {
@@ -195,6 +201,12 @@ inline int Client::TransactionUpdate() {
       val = workload_.BuildJsonColumn();
     }
     return db_.Update(table, key, val);
+  } else if (workload_.input_data_type() == "PROTO64") {
+    data::WideRow64 value;
+    workload_.BuildWide64Record(value);
+    std::string serializedValue;
+    value.SerializeToString(&serializedValue);
+    return db_.Update(table, key, serializedValue);
   } else {
     data::Row columns;
     if (workload_.write_all_fields()) {
@@ -214,6 +226,12 @@ inline int Client::TransactionInsert() {
   if (workload_.input_data_type() == "JSON") {
     std::string val = workload_.BuildJsonRecord();
     return db_.Insert(table, key, val);
+  } else if (workload_.input_data_type() == "PROTO64") {
+    data::WideRow64 value;
+    workload_.BuildWide64Record(value);
+    std::string serializedValue;
+    value.SerializeToString(&serializedValue);
+    return db_.Insert(table, key, serializedValue);
   } else {
     data::Row columns;
     workload_.BuildRecord(columns);
