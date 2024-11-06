@@ -1,4 +1,4 @@
-syntax = "proto2";
+syntax = "proto3";
 
 package data;
 
@@ -11,6 +11,22 @@ message Row {
 }
 
 message Column {
-  optional string name = 1;
-  optional bytes value = 2;
-} 
+  string name = 1;
+  bytes value = 2;
+}
+
+message WideTable {
+  repeated WideRow64 widerow64s = 1;
+}
+
+message WideRow64 {
+  repeated bytes col64 = 1;
+}
+
+message NumTable {
+  repeated NumRow32 numrow32s = 1;
+}
+
+message NumRow32 {
+  repeated bytes numcol = 1;
+}

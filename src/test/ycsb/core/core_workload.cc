@@ -220,6 +220,12 @@ void CoreWorkload::BuildRecord(data::Row &value) {
   }
 }
 
+void CoreWorkload::BuildWide64Record(data::WideRow64 &value) {
+  for (int i = 0; i < field_count_; ++i) {
+    value.add_col64(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
+  }
+}
+
 std::string CoreWorkload::BuildJsonRecord() {
   int half = field_count_/2;
   nlohmann::json jsonData;

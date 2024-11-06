@@ -49,6 +49,12 @@ inline bool Client::DoInsert() {
   if (workload_.input_data_type() == "JSON") {
     std::string val = workload_.BuildJsonRecord();
     return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
+  } else if (workload_.input_data_type() == "proto64") {
+    data::WideRow64 value;
+    workload_.BuildWide64Record(value);
+    std::string serializedValue;
+    value.SerializeToString(&serializedValue);
+    return (db_.Insert(workload_.NextTable(), key, serializedValue) == DB::kOK);
   } else {
     data::Row value;
     workload_.BuildRecord(value);

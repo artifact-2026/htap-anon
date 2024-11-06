@@ -164,6 +164,7 @@ class CoreWorkload {
   
   virtual void BuildRecord(data::Row &value);
   virtual void BuildColumn(data::Row &update);
+  void BuildWide64Record(data::WideRow64 &value);
   virtual std::string BuildJsonRecord();
   virtual std::string BuildJsonColumn();
   virtual std::string BuildMaxKey();
