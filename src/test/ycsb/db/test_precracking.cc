@@ -52,6 +52,7 @@ namespace ycsbc {
                       const std::string &req_dist, bool index_access, std::string &result) 
     {
         rocksdb::Status s;
+        result = "";
         if (fields == nullptr) {
             for (int i = 0; i < 8; i++) {
                 std::string value;
@@ -59,10 +60,6 @@ namespace ycsbc {
                                            cfhandles_[table+"_colgrp_"+std::to_string(i)],
                                            key,
                                            &value);
-        
-                if (!s.ok() || value == "") {
-                    break;
-                }
 
                 result += value;
             }
