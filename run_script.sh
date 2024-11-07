@@ -11,7 +11,7 @@
 
 
 # point queries
-./load_script.sh baseline false xputr b > point_query.txt
+./load_script.sh baseline false xputr b 1 > point_query.txt
 ./load_script.sh cracking false xputr b >> point_query.txt
 ./load_script.sh flatbuffers false xputr b >> point_query.txt
 ./load_script.sh crackfb false xputr b >> point_query.txt

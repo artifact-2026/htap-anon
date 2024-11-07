@@ -66,11 +66,11 @@ const string CoreWorkload::REQUEST_DISTRIBUTION_PROPERTY =
     "requestdistribution";
 const string CoreWorkload::REQUEST_DISTRIBUTION_DEFAULT = "uniform";
 
-const string CoreWorkload::INPUT_DATA_TYPE_PROPERTY = "inputdatatype";
-const string CoreWorkload::INPUT_DATA_TYPE_DEFAULT = "PROTOBUF";
+const string CoreWorkload::DATA_TYPE_PROPERTY = "datatype";
+const string CoreWorkload::DATA_TYPE_DEFAULT = "mixed";
 
-const string CoreWorkload::OUTPUT_DATA_TYPE_PROPERTY = "outputdatatype";
-const string CoreWorkload::OUTPUT_DATA_TYPE_DEFAULT = "FLATBUFFERS";
+const string CoreWorkload::DATA_FORMAT_PROPERTY = "dataformat";
+const string CoreWorkload::DATA_FORMAT_DEFAULT = "protobuf";
 
 const string CoreWorkload::MAX_SCAN_LENGTH_PROPERTY = "maxscanlength";
 const string CoreWorkload::MAX_SCAN_LENGTH_DEFAULT = "1000";
@@ -127,10 +127,8 @@ void CoreWorkload::Init(const utils::Properties &p) {
                                                      WRITE_ALL_FIELDS_DEFAULT));
   index_access_ = utils::StrToBool(p.GetProperty(INDEX_ACCESS_PROPERTY,
                                                  INDEX_ACCESS_DEFAULT));
-  input_data_type_ = p.GetProperty(INPUT_DATA_TYPE_PROPERTY,
-                                  INPUT_DATA_TYPE_DEFAULT);
-  output_data_type_ = p.GetProperty(OUTPUT_DATA_TYPE_PROPERTY,
-                                    OUTPUT_DATA_TYPE_DEFAULT);
+  data_type_ = p.GetProperty(DATA_TYPE_PROPERTY, DATA_TYPE_DEFAULT);
+  data_format_ = p.GetProperty(DATA_FORMAT_PROPERTY, DATA_FORMAT_DEFAULT);
   
   if (p.GetProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_DEFAULT) == "hashed") {
     ordered_inserts_ = false;
@@ -207,59 +205,57 @@ ycsbc::Generator<uint64_t> *CoreWorkload::GetFieldLenGenerator(
   }
 }
 
-void CoreWorkload::BuildRecord(data::Row &value) {
+void CoreWorkload::BuildProtoRecord(data::Row &value, std::string type) {
   int half = field_count_/2;
   for (int i = 0; i < field_count_; ++i) {
-    data::Column* column = value.add_columns();
-    column->set_name("field"+std::to_string(i));
-    if (i < half) {
-      column->set_value(std::to_string(utils::RandomPrintInt()));
+    if (type == "string") {
+      value.add_columns(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
+    } else if (type == "numeric") {
+      value.add_columns(std::to_string(utils::RandomPrintInt()));
     } else {
-      column->set_value(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
+      if (i < half) {
+        value.add_columns(std::to_string(utils::RandomPrintInt()));
+      } else {
+        value.add_columns(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
+      }
     }
   }
 }
 
-void CoreWorkload::BuildWide64Record(data::WideRow64 &value) {
-  for (int i = 0; i < field_count_; ++i) {
-    value.add_col64(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
-  }
-}
-
-std::string CoreWorkload::BuildJsonRecord() {
+std::string CoreWorkload::BuildJsonRecord(std::string type) {
   int half = field_count_/2;
   nlohmann::json jsonData;
   for (int i = 0; i < field_count_; ++i) {
     std::string col_name = "field"+std::to_string(i);
-    if (i < half) {
+    if (type == "string") {
+      jsonData[col_name] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
+    } else if (type == "numeric") {
       jsonData[col_name] = utils::RandomPrintInt();
     } else {
-      jsonData[col_name] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
+      if (i < half) {
+        jsonData[col_name] = utils::RandomPrintInt();
+      } else {
+        jsonData[col_name] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
+      }
     }
   }
   std::string jsonString = jsonData.dump();
   return jsonString;
 }
 
-void CoreWorkload::BuildColumn(data::Row &value) {
-  data::Column* column = value.add_columns();
-  std::string colname = NextFieldName();
-  column->set_name(colname);
-
-  int valueType = std::stoi(colname.substr(5));
-  if (valueType < field_count_/2) {
-    column->set_value(std::to_string(utils::RandomPrintInt()));
+void CoreWorkload::BuildProtoColumn(data::Row &value, std::string type) {
+  if (type == "numeric") {
+    value.add_columns(std::to_string(utils::RandomPrintInt()));
   } else {
-    column->set_value(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
+    value.add_columns(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
   }
 }
 
-std::string CoreWorkload::BuildJsonColumn() {
+std::string CoreWorkload::BuildJsonColumn(std::string type) {
   nlohmann::json jsonData;
   std::string colname = NextFieldName();
-  int valueType = std::stoi(colname.substr(5));
 
-  if (valueType < field_count_/2) {
+  if (type == "numeric") {
     jsonData[colname] = std::to_string(utils::RandomPrintInt());
   } else {
     jsonData[colname] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());

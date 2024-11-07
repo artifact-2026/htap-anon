@@ -105,16 +105,16 @@ class CoreWorkload {
   static const std::string SCAN_PROPORTION_DEFAULT;
 
   ///
-  /// data type of the input
+  /// data type
   ///
-  static const std::string INPUT_DATA_TYPE_PROPERTY;
-  static const std::string INPUT_DATA_TYPE_DEFAULT;
-  
+  static const std::string DATA_TYPE_PROPERTY;
+  static const std::string DATA_TYPE_DEFAULT;
+
   ///
-  /// data type of the output
+  /// data format
   ///
-  static const std::string OUTPUT_DATA_TYPE_PROPERTY;
-  static const std::string OUTPUT_DATA_TYPE_DEFAULT;
+  static const std::string DATA_FORMAT_PROPERTY;
+  static const std::string DATA_FORMAT_DEFAULT;
 
   ///
   /// The name of the property for the proportion of
@@ -162,11 +162,10 @@ class CoreWorkload {
   ///
   virtual void Init(const utils::Properties &p);
   
-  virtual void BuildRecord(data::Row &value);
-  virtual void BuildColumn(data::Row &update);
-  void BuildWide64Record(data::WideRow64 &value);
-  virtual std::string BuildJsonRecord();
-  virtual std::string BuildJsonColumn();
+  virtual void BuildProtoRecord(data::Row &value, std::string type);
+  virtual void BuildProtoColumn(data::Row &update, std::string type);
+  virtual std::string BuildJsonRecord(std::string type);
+  virtual std::string BuildJsonColumn(std::string type);
   virtual std::string BuildMaxKey();
   virtual size_t GetRecordLength();
 
@@ -185,12 +184,12 @@ class CoreWorkload {
   bool write_all_fields() const { return write_all_fields_; }
   bool index_access() const { return index_access_; }
   std::string request_distribution() const { return request_distribution_; }
-  std::string input_data_type() const { return input_data_type_; }
-  std::string output_data_type() const { return output_data_type_; }
+  std::string data_type() const { return data_type_; }
+  std::string data_format() const { return data_format_; }
 
   CoreWorkload() :
       key_length_(16), field_count_(0), read_all_fields_(false), write_all_fields_(false), index_access_(false),
-      input_data_type_(""), output_data_type_(""), request_distribution_(""), field_len_generator_(NULL),
+      data_type_(""), data_format_(""), request_distribution_(""), field_len_generator_(NULL),
       key_generator_(NULL), key_chooser_(NULL), field_chooser_(NULL), scan_len_chooser_(NULL),
       insert_key_sequence_(3), ordered_inserts_(true), record_count_(0), max_scan_len_(0)
     {}
@@ -214,8 +213,8 @@ class CoreWorkload {
   bool read_all_fields_;
   bool write_all_fields_;
   bool index_access_;
-  std::string input_data_type_;
-  std::string output_data_type_;
+  std::string data_type_;
+  std::string data_format_;
   std::string request_distribution_;
   Generator<uint64_t> *field_len_generator_;
   Generator<uint64_t> *key_generator_;

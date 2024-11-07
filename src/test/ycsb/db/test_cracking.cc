@@ -17,7 +17,7 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTO64"));
+        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
         SetOptions(dbfilename, bootstrap, levels, fieldcount, inputType, outputType);
 
@@ -234,24 +234,6 @@ namespace ycsbc {
         options_.max_write_buffer_number = 3;
         options_.write_buffer_size = 67108864;
         options_.target_file_size_base = 67108864;
-    }
-
-    void Mycelium::KeepOnlyRequestedFields(data::Row &row,
-                                          const std::set<std::string> *fields, data::Row &selectedColumns)
-    {
-        for (auto field : *fields)
-        {
-            for (int i = 0; i < row.columns_size(); i++)
-            {
-                if (row.columns(i).name().compare(field) == 0)
-                {
-                    data::Column *selectedColumn = selectedColumns.add_columns();
-                    selectedColumn->set_name(row.columns(i).name());
-                    selectedColumn->set_value(row.columns(i).value());
-                    break;
-                }
-            }
-        }
     }
 
     void Mycelium::GetColumnFamilyDescriptors(const std::string &dbname,

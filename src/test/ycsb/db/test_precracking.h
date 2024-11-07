@@ -54,8 +54,6 @@ class RocksdbColumnStrawman : public DB{
         void SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging,
                         rocksdb::InputOutputDataType inputType,
                         rocksdb::InputOutputDataType outputType);
-	    void KeepOnlyRequestedFields(data::Row &row,
-                    const std::set<std::string> *fields, data::Row &selectedColumns);
         void GetColumnFamilyDescriptors(const std::string& dbname,
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,

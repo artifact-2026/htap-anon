@@ -86,8 +86,6 @@ class Indexing : public DB{
         void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount,
                         rocksdb::InputOutputDataType inputType,
                         rocksdb::InputOutputDataType outputType);
-	    void KeepOnlyRequestedFields(data::Row &row,
-                const std::set<std::string> *fields, data::Row &selectedColumns);
         std::vector<std::string> deserializeIndex(const std::string& serialized);
         std::vector<std::string> parsePrimaryKeys(const std::string& value);
         void GetColumnFamilyDescriptors(const std::string& dbname,

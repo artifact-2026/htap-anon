@@ -195,21 +195,6 @@ namespace ycsbc {
         options_.use_direct_io_for_flush_and_compaction = true;
     }
 
-    void Indexing::KeepOnlyRequestedFields(data::Row &row,
-                    const std::set<std::string> *fields, data::Row &selectedColumns)
-    {
-        for (auto field : *fields) {
-            for (int i = 0; i < row.columns_size(); i++) {
-                if (row.columns(i).name().compare(field) == 0) {
-                    data::Column* selectedColumn = selectedColumns.add_columns();
-                    selectedColumn->set_name(row.columns(i).name());
-                    selectedColumn->set_value(row.columns(i).value());
-                    break;
-                }
-            }
-        }
-    }
-
     void Indexing::GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname,

@@ -104,15 +104,16 @@ namespace ycsbc {
         row.ParseFromString(values);
         int grp_size = row.columns_size()/8;
         for (int i = 0; i < row.columns_size()-1; i++) {
-            std::string serializedColumn = "";
+            std::string serializedColumn;
+            data::Row splitCols;
 
             for (int j=0; j < grp_size; j++) {
                 if (i+j >= row.columns_size()) {
                     break;
                 }
-                std::string scol;
-                serializedColumn += row.columns(i+j).SerializeToString(&scol);
+                splitCols.add_columns(row.columns(i+j));
             }
+            splitCols.SerializeToString(&serializedColumn);
             
             if (!serializedColumn.empty()) {
                 s = rocksdb_->Put(rocksdb::WriteOptions(),
@@ -176,21 +177,6 @@ namespace ycsbc {
 
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
-    }
-
-    void RocksdbColumnStrawman::KeepOnlyRequestedFields(data::Row &row,
-                    const std::set<std::string> *fields, data::Row &selectedColumns)
-    {
-        for (auto field : *fields) {
-            for (int i = 0; i < row.columns_size(); i++) {
-                if (row.columns(i).name().compare(field) == 0) {
-                    data::Column* selectedColumn = selectedColumns.add_columns();
-                    selectedColumn->set_name(row.columns(i).name());
-                    selectedColumn->set_value(row.columns(i).value());
-                    break;
-                }
-            }
-        }
     }
 
     void RocksdbColumnStrawman::GetColumnFamilyDescriptors(const std::string& dbname,

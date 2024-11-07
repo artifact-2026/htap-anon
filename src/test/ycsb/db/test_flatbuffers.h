@@ -58,8 +58,6 @@ class TestFlatBuffers : public DB{
         // serialize for inserts
         void GetColumnFamilyDescriptors(const std::string& dbname,
                 std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
-        void KeepOnlyRequestedFields(data::Row &row,
-                const std::set<std::string> *fields, data::Row &selectedColumns);
         void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
                                 std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };  

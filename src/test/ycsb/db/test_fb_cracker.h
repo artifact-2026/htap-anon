@@ -57,8 +57,6 @@ class TestFBCracker : public DB{
         void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
                         rocksdb::InputOutputDataType inputType,
                         rocksdb::InputOutputDataType outputType);
-        void KeepOnlyRequestedFields(data::Row &row,
-                const std::set<std::string> *fields, data::Row &selectedColumns);
         void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
                                     std::vector<rocksdb::ColumnFamilyHandle *> handles);
         void BuildQueryHandles(std::set<std::string> fields);

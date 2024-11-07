@@ -565,21 +565,13 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("run",argv[argindex]);
       argindex++;
-    } else if(strcmp(argv[argindex],"-inputdatatype")==0){
+    } else if(strcmp(argv[argindex],"-datatype")==0){
       argindex++;
       if(argindex >= argc){
         UsageMessage(argv[0]);
         exit(0);
       }
-      props.SetProperty("inputdatatype",argv[argindex]);
-      argindex++;
-    } else if(strcmp(argv[argindex],"-outputdatatype")==0){
-      argindex++;
-      if(argindex >= argc){
-        UsageMessage(argv[0]);
-        exit(0);
-      }
-      props.SetProperty("outputdatatype",argv[argindex]);
+      props.SetProperty("datatype",argv[argindex]);
       argindex++;
     } else if(strcmp(argv[argindex],"-dboption")==0){
       argindex++;

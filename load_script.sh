@@ -11,7 +11,6 @@ usage() {
     echo "  test_type           values: [run|xputr|xputl]"
     echo "  workload_type       values: [a|b|c|d|e|f]"
     echo "  threads             values: [>=1]"
-    echo "  inputdatatype       values: [JSON|proto64|protobuf]"
 }
 
 # Check for help option or missing arguments
@@ -21,7 +20,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 # Check for the correct number of arguments
-if [ $# -ne 6 ]; then
+if [ $# -ne 5 ]; then
     echo "Error: Invalid number of arguments"
     usage
     exit 1
@@ -70,8 +69,6 @@ WORKLOAD="../src/test/ycsb/workloads/test_workload$WORKLOAD_TYPE.spec"
 
 THREADS=$5
 
-INPUT_DATA_TYPE=$6
-
 # Get the current directory
 CURRENT_DIR=$(pwd)
 
@@ -105,4 +102,4 @@ fi
 ./src/test/ycsb/ycsb_test -db $DB_TYPE -dbpath $TEST_RESULT_DIRECTORY \
   -P $WORKLOAD -bootstrap $IF_BOOTSTRAP -threads $THREADS \
   -load $LOAD -run $RUN -throughput $XPUT -levels 6 -table $DB_TYPE \
-  -throughputtype $XPUT_TYPE -inputdatatype $INPUT_DATA_TYPE
+  -throughputtype $XPUT_TYPE

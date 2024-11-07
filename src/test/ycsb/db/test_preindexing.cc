@@ -122,7 +122,7 @@ namespace ycsbc {
         row.ParseFromString(values);
         std::string ikey = "";
         if (row.columns_size() > 0) {
-            ikey = row.columns(0).value();
+            ikey = row.columns(0);
         } else {
             return 1;
         }
@@ -212,7 +212,7 @@ namespace ycsbc {
         // parse the value to get the key in the secondary index
         data::Row row;
         row.ParseFromString(value);
-        const std::string ikey = row.columns(0).value();
+        const std::string ikey = row.columns(0);
 
         // remove primary key from the secondary index
         std::string pkeys;
@@ -262,21 +262,6 @@ namespace ycsbc {
 
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
-    }
-
-    void TestPreindexing::KeepOnlyRequestedFields(data::Row &row,
-                    const std::set<std::string> *fields, data::Row &selectedColumns)
-    {
-        for (auto field : *fields) {
-            for (int i = 0; i < row.columns_size(); i++) {
-                if (row.columns(i).name().compare(field) == 0) {
-                    data::Column* selectedColumn = selectedColumns.add_columns();
-                    selectedColumn->set_name(row.columns(i).name());
-                    selectedColumn->set_value(row.columns(i).value());
-                    break;
-                }
-            }
-        }
     }
 
     void TestPreindexing::GetColumnFamilyDescriptors(const std::string& dbname,

@@ -4,8 +4,8 @@
 #include "lib/coding.h"
 #include "flatbuffers/flatbuffers.h"
 #include "flat/row_generated.h"
-#include "flat/column_num_generated.h"
-#include "flat/column_str_generated.h"
+#include "flat/row_num_generated.h"
+#include "flat/row_str_generated.h"
 
 using namespace std;
 
@@ -109,25 +109,25 @@ namespace ycsbc {
             field8, field9, field10, field11, field12, field13, field14, field15
         );*/
 
-        auto field8 = builder.CreateString(row.columns(8).value());
-        auto field9 = builder.CreateString(row.columns(9).value());
-        auto field10 = builder.CreateString(row.columns(10).value());
-        auto field11 = builder.CreateString(row.columns(11).value());
-        auto field12 = builder.CreateString(row.columns(12).value());
-        auto field13 = builder.CreateString(row.columns(13).value());
-        auto field14 = builder.CreateString(row.columns(14).value());
-        auto field15 = builder.CreateString(row.columns(15).value());
+        auto field8 = builder.CreateString(row.columns(8));
+        auto field9 = builder.CreateString(row.columns(9));
+        auto field10 = builder.CreateString(row.columns(10));
+        auto field11 = builder.CreateString(row.columns(11));
+        auto field12 = builder.CreateString(row.columns(12));
+        auto field13 = builder.CreateString(row.columns(13));
+        auto field14 = builder.CreateString(row.columns(14));
+        auto field15 = builder.CreateString(row.columns(15));
 
         auto fbRow = rocksdb::CreateFbRow(
             builder,
-            stoi(row.columns(0).value()),
-            stoi(row.columns(1).value()),
-            stoi(row.columns(2).value()),
-            stoi(row.columns(3).value()),
-            stoi(row.columns(4).value()),
-            stoi(row.columns(5).value()),
-            stoi(row.columns(6).value()),
-            stoi(row.columns(7).value()),
+            stoi(row.columns(0)),
+            stoi(row.columns(1)),
+            stoi(row.columns(2)),
+            stoi(row.columns(3)),
+            stoi(row.columns(4)),
+            stoi(row.columns(5)),
+            stoi(row.columns(6)),
+            stoi(row.columns(7)),
             field8, field9, field10, field11, field12, field13, field14, field15
         );
 
@@ -187,21 +187,6 @@ namespace ycsbc {
 
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
-    }
-
-    void TestPreconverting::KeepOnlyRequestedFields(data::Row &row,
-                    const std::set<std::string> *fields, data::Row &selectedColumns)
-    {
-        for (auto field : *fields) {
-            for (int i = 0; i < row.columns_size(); i++) {
-                if (row.columns(i).name().compare(field) == 0) {
-                    data::Column* selectedColumn = selectedColumns.add_columns();
-                    selectedColumn->set_name(row.columns(i).name());
-                    selectedColumn->set_value(row.columns(i).value());
-                    break;
-                }
-            }
-        }
     }
 
     void TestPreconverting::GetColumnFamilyDescriptors(const std::string& dbname,
