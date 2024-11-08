@@ -565,13 +565,13 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("run",argv[argindex]);
       argindex++;
-    } else if(strcmp(argv[argindex],"-datatype")==0){
+    } else if(strcmp(argv[argindex],"-columndatatype")==0){
       argindex++;
       if(argindex >= argc){
         UsageMessage(argv[0]);
         exit(0);
       }
-      props.SetProperty("datatype",argv[argindex]);
+      props.SetProperty("columndatatype",argv[argindex]);
       argindex++;
     } else if(strcmp(argv[argindex],"-dboption")==0){
       argindex++;
@@ -674,6 +674,7 @@ void Init(utils::Properties &props){
   props.SetProperty("dbwaitforbalance","false");
   props.SetProperty("morerun","");
   props.SetProperty("createdb", "false");
+  props.SetProperty("columndatatype", "0");
 }
 
 void PrintInfo(utils::Properties &props) {

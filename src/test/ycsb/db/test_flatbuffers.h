@@ -54,7 +54,8 @@ class TestFlatBuffers : public DB{
 
         void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
                         rocksdb::InputOutputDataType inputType,
-                        rocksdb::InputOutputDataType outputType);
+                        rocksdb::InputOutputDataType outputType,
+                        int columnDataType);
         // serialize for inserts
         void GetColumnFamilyDescriptors(const std::string& dbname,
                 std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);

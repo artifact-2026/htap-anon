@@ -16,8 +16,9 @@ namespace ycsbc {
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "FLATBUFFERS"));
-        noResults = 0;
-        SetOptions(props, bootstrap, levels, fieldcount, inputType, outputType);
+        int columnDataType = utils::StrToInt(props.GetProperty("columndatatype", "1"));
+
+        SetOptions(props, bootstrap, levels, fieldcount, inputType, outputType, columnDataType);
 
         options_.transformers.push_back(new rocksdb::Converter());
 
@@ -115,8 +116,13 @@ namespace ycsbc {
             it->Seek(begin_key);
             while (it->Valid() && searched < 25) {
                 const uint8_t* buf = reinterpret_cast<const uint8_t*>(it->value().data());
-                auto fbRowData = flatbuffers::GetRoot<rocksdb::FbRow>(buf);
-                sum += fbRowData->field0();
+                auto fb_row = rocksdb::GetFbRow(buf);
+
+                // Check if numcols exists and access the first element
+                if (fb_row->numcols() && fb_row->numcols()->size() > 0) {
+                    sum += fb_row->numcols()->Get(0);
+                }
+
                 it->Next();
                 searched++;
             }
@@ -177,7 +183,7 @@ namespace ycsbc {
     }
 
     void TestFlatBuffers::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
-                rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
+        rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType, int columndatatype)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
@@ -187,6 +193,7 @@ namespace ycsbc {
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
+        options_.column_data_type = columndatatype;
         options_.SetTransformerType(rocksdb::TransformerType::CONVERTER);
         options_.SetInputOutputDataType(inputDataType, outputDataType);
 

@@ -2,7 +2,7 @@
 
 ./load_script.sh baseline true load a 2 > load_test.txt
 ./load_script.sh cracking true load a 2 >> load_test.txt
-./load_script.sh flatbuffers true load a 2 >> load_test.txt
+./load_script.sh flatbuffers true load a 2 1 >> load_test.txt
 ./load_script.sh indexing true load a 2 >> load_test.txt
 ./load_script.sh crackfb true load a 2 >> load_test.txt
 ./load_script.sh precracking true load a 2 >> load_test.txt

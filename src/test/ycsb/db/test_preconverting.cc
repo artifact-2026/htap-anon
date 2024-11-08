@@ -109,27 +109,19 @@ namespace ycsbc {
             field8, field9, field10, field11, field12, field13, field14, field15
         );*/
 
-        auto field8 = builder.CreateString(row.columns(8));
-        auto field9 = builder.CreateString(row.columns(9));
-        auto field10 = builder.CreateString(row.columns(10));
-        auto field11 = builder.CreateString(row.columns(11));
-        auto field12 = builder.CreateString(row.columns(12));
-        auto field13 = builder.CreateString(row.columns(13));
-        auto field14 = builder.CreateString(row.columns(14));
-        auto field15 = builder.CreateString(row.columns(15));
+        std::vector<int32_t> numvals;
+        std::vector<flatbuffers::Offset<flatbuffers::String>> strvals;
+        for (int i = 0; i < row.columns_size(); i++) {
+            if (i < row.columns_size()/2) {
+                numvals.push_back(std::stoi(row.columns(i)));
+            } else {
+                strvals.push_back(builder.CreateString(row.columns(i)));
+            }
+        }
 
-        auto fbRow = rocksdb::CreateFbRow(
-            builder,
-            stoi(row.columns(0)),
-            stoi(row.columns(1)),
-            stoi(row.columns(2)),
-            stoi(row.columns(3)),
-            stoi(row.columns(4)),
-            stoi(row.columns(5)),
-            stoi(row.columns(6)),
-            stoi(row.columns(7)),
-            field8, field9, field10, field11, field12, field13, field14, field15
-        );
+        auto num_vector = builder.CreateVector(numvals);
+        auto col_vector = builder.CreateVector(strvals);
+        auto fbRow = rocksdb::CreateFbRow(builder, num_vector, col_vector);
 
         builder.Finish(fbRow);
 
