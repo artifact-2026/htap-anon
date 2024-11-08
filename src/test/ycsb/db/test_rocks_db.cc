@@ -62,17 +62,17 @@ namespace ycsbc {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->SeekToFirst();
             while (it->Valid()) {
-                nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
+                /*nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
                 if (parsedJson["field0"] == key) {
                     result = it->value().ToString();
                     return 0;
-                }
-                /*data::Row row;
+                }*/
+                data::Row row;
                 row.ParseFromString(it->value().ToString());
-                if (row.columns(1).value() == key) {
+                if (row.columns(0) == key) {
                     result = it->value().ToString();
                     return 0;
-                }*/
+                }
                 it->Next();
             }
         } else {
@@ -122,21 +122,22 @@ namespace ycsbc {
                 }
             }
         } else {
-            int sum = 0;
+            //int sum = 0;
             int searched = 0;
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->Seek(begin_key);
             while (it->Valid() && searched < 25) {
-                nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
-                uint32_t num = parsedJson["field0"].get<int>();
-                    /*data::Row row;
-                    row.ParseFromString(it->value().ToString());
-                    uint32_t num = std::stoi(row.columns(0).value());*/
-                sum += num;
+                //nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
+                //uint32_t num = parsedJson["field0"].get<int>();
+                //data::Row row;
+                //row.ParseFromString(it->value().ToString());
+                result.push_back(it->value().ToString());
+                //uint32_t num = row.columns(0);
+                //sum += num;
                 it->Next();
                 searched++;
             }
-            if (sum > 0) {
+            if (searched >= 25) {
                 return 0;
             }
         }

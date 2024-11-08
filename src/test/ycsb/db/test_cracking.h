@@ -61,6 +61,8 @@ class Mycelium : public DB{
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                                     std::vector<rocksdb::ColumnFamilyHandle*> handles);
         void BuildQueryHandles(std::set<std::string> fields);
+        rocksdb::Status PerformGet(rocksdb::DB* db, rocksdb::ColumnFamilyHandle* cfHandle, 
+                                   const std::string& key, std::string& result);
 };  
 
 }
