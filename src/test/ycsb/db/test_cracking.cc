@@ -18,12 +18,12 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        int num_splits = 2;
-        if (fieldcount > 25) {
+        int num_splits = 3;
+        /*if (fieldcount > 25 && fieldcount < 64) {
             num_splits = 3;
-        } else if (fieldcount > 63) {
+        } else {
             num_splits = 4;
-        }
+        }*/
 
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
@@ -80,7 +80,7 @@ namespace ycsbc {
     {
         rocksdb::Status s;
         result = "";
-        int num_splits = 2;
+        int num_splits = 3;
         int leaf_splits = num_splits*num_splits*num_splits;
 
         if (fields == nullptr) {
@@ -181,7 +181,7 @@ namespace ycsbc {
                           std::vector<std::string> &result) 
     {
         int searched = 0;
-        int num_splits = 2;
+        int num_splits = 3;
         int leaf_splits = num_splits*num_splits*num_splits;
 
         if (fields == nullptr) {
@@ -334,6 +334,7 @@ namespace ycsbc {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname, rocksdb::ColumnFamilyOptions(options_)));
       
+        bool lastSplitLevel = false;
         std::string prefix = dbname + "_sys_cf";
         std::queue<int> parents;
         parents.push(options_.num_columns);
@@ -344,6 +345,7 @@ namespace ycsbc {
 
             options_.num_levels = options_.num_levels - level;
             if (level == total_levels - 3) {
+                lastSplitLevel = true;
                 options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
             }
             for (int j = 0; j < queueLen; j++) {
@@ -353,15 +355,28 @@ namespace ycsbc {
                     continue;
                 }
 
+                if (!lastSplitLevel && parent_cols <= num_splits) {
+                    lastSplitLevel = true;
+                    options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+                }
                 for (int k = 0; k < num_splits; k++) {
                     int child = parent_cols/(num_splits-k);
                     if (child == 0) {
                         child = 1;
                     }
+
+                    if (child < num_splits) {
+                        lastSplitLevel = true;
+                        options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+                    }
                     std::string cfname_child = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*num_splits+k);
                     column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname_child, rocksdb::ColumnFamilyOptions(options_)));
 
-                    parents.push(child);
+                    options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
+
+                    if (!lastSplitLevel && child >= num_splits) {
+                        parents.push(child);
+                    }
                     if (k < num_splits-1) {
                         parent_cols -= child;
                         if (parent_cols == 0) {

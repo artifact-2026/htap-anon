@@ -10,12 +10,12 @@
 # scattered around the keyspace if they are keyed by userid.timestamp. A workload
 # which orders items purely by time, and demands the latest, is very different than 
 # workload here (which we believe is more typical of how people build systems.)
-keylength=32
-fieldcount=16
-fieldlength=64
+keylength=16
+fieldcount=15
+fieldlength=16
 
-recordcount=20000000
-operationcount=1000
+recordcount=25000000
+operationcount=20000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readallfields=true

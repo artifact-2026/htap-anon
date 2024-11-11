@@ -7,10 +7,10 @@
 #   Request distribution: zipfian
 
 keylength=16
-fieldcount=16
-fieldlength=8
-recordcount=20000000
-operationcount=200000
+fieldcount=15
+fieldlength=16
+recordcount=25000000
+operationcount=20000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readproportion=0
