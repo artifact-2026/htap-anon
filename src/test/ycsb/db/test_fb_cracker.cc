@@ -35,7 +35,7 @@ namespace ycsbc {
             }
 
             s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
-            s = rocksdb_->AddTransformingDestinationCfds(dbname, true, true, false);
+            s = rocksdb_->AddTransformingDestinationCfds(dbname, true, true, false, false, 2);
             if (!s.ok()) {
                 std::cerr<<"Creating column families ran into error: "<<s.ToString()<<std::endl;
                 exit(0);
@@ -54,7 +54,7 @@ namespace ycsbc {
                 exit(0);
             }
 
-            s = rocksdb_->AddTransformingDestinationCfds(dbname, true, true, false);
+            s = rocksdb_->AddTransformingDestinationCfds(dbname, true, true, false, false, 2);
             if (!s.ok()){
                 std::cerr<<"Column family creation for crackfb ran into error "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
