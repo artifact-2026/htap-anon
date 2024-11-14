@@ -10,6 +10,7 @@
 #include "db/test_fb_cracker.h"
 #include "db/test_preconverting.h"
 #include "db/test_preindexing.h"
+#include "db/test_crackplus.h"
 
 using namespace std;
 
@@ -42,6 +43,9 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
   } else if (props["dbname"] == "preindexing") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-preindexing");
     return new TestPreindexing(props["dbname"], dbpath.c_str(), props);
+  } else if (props["dbname"] == "crackplus") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-crackplus");
+    return new MyceliumWriteBoth(props["dbname"], dbpath.c_str(), props);
   } else return nullptr;
 }
 

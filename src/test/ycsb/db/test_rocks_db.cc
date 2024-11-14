@@ -147,7 +147,7 @@ namespace ycsbc {
 
     int TestRocksDB::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandle_, key, values);
+        rocksdb::Status s = rocksdb_->Put(write_options_, cfhandle_, key, values);
         if (s.ok()) {
             return 0;
         }
@@ -161,7 +161,7 @@ namespace ycsbc {
 
     int TestRocksDB::Delete(const std::string &table, const std::string &key)
     {
-        rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(), cfhandle_, key);
+        rocksdb::Status s = rocksdb_->Delete(write_options_, cfhandle_, key);
         if (s.ok()) {
             return 0;
         }
@@ -174,31 +174,39 @@ namespace ycsbc {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
         }
+
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
+        options_.max_open_files = -1;
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
         options_.SetInputOutputDataType(inputDataType, outputDataType);
 
+        options_.write_buffer_size = 256 * 1024 * 1024;
+        options_.max_write_buffer_number = 4;
+        options_.level0_file_num_compaction_trigger = 10;
+        options_.level0_slowdown_writes_trigger = 20;
+        options_.level0_stop_writes_trigger = 36;
+        options_.max_background_flushes = 2;
+        options_.max_background_compactions = 10;
+        options_.compression = rocksdb::kNoCompression;
+        options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(
+                rocksdb::BlockBasedTableOptions{
+                .block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024)}));
+
+        write_options_.disableWAL = true;
+
+        /*
         options_.IncreaseParallelism(16);
-        options_.level0_slowdown_writes_trigger = 16;     
-        options_.level0_stop_writes_trigger = 24;
-        options_.max_open_files = -1;
-        options_.level0_file_num_compaction_trigger = 8;
-
-        options_.max_write_buffer_number = 3;
-        options_.write_buffer_size = 67108864;
         options_.target_file_size_base = 67108864;
-
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
-
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = nullptr;  // Disable the block cache
-        options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(
-            rocksdb::NewBlockBasedTableFactory(table_options));
+        options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
+        */
     }
 
     void TestRocksDB::BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,

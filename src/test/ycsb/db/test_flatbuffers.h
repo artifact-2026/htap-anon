@@ -47,6 +47,7 @@ class TestFlatBuffers : public DB{
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
+        rocksdb::WriteOptions write_options_;
         int noResults;
         std::shared_ptr<rocksdb::Cache> cache_;
         std::shared_ptr<rocksdb::Statistics> dbstats_;

@@ -47,6 +47,7 @@ class TestFBCracker : public DB{
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
+        rocksdb::WriteOptions write_options_;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         std::vector<rocksdb::ColumnFamilyHandle*> cfhandlelist_;
         std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
@@ -61,7 +62,8 @@ class TestFBCracker : public DB{
                                     std::vector<rocksdb::ColumnFamilyHandle *> handles);
         void BuildQueryHandles(std::set<std::string> fields);
         void GetColumnFamilyDescriptors(const std::string &dbname,
-                                             std::vector<rocksdb::ColumnFamilyDescriptor> &column_families);
+                                        std::vector<rocksdb::ColumnFamilyDescriptor> &column_families,
+                                        int num_splits);
 };  
 
 }

@@ -21,7 +21,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 # Check for the correct number of arguments
-if [ $# -ne 5 ]; then
+if [ $# -lt 5 ]; then
     echo "Error: Invalid number of arguments"
     usage
     exit 1
@@ -36,8 +36,11 @@ if [ "$DB_TYPE" != "baseline" ] && \
    [ "$DB_TYPE" != "precracking" ] && \
    [ "$DB_TYPE" != "preconverting" ] && \
    [ "$DB_TYPE" != "preindexing" ] && \
+   [ "$DB_TYPE" != "crackplus" ] && \
    [ "$DB_TYPE" != "indexing" ]; then
-   echo "DB_TYPE is required with value = [baseline|cracking|flatbuffers|crackfb|precracking|preconverting|preindexing|indexing]"
+   echo "DB_TYPE is required with value = [
+              baseline|cracking|flatbuffers|crackfb|precracking|
+              preconverting|preindexing|indexing|crackplus]"
    exit 1
 fi
 

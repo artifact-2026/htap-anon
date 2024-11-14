@@ -78,6 +78,7 @@ class TestPreindexing : public DB{
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
+        rocksdb::WriteOptions write_options_;
         int noResults;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
 

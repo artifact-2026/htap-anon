@@ -18,7 +18,7 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        int num_splits = 3;
+        int num_splits = 2;
         /*if (fieldcount > 25 && fieldcount < 64) {
             num_splits = 3;
         } else {
@@ -80,13 +80,13 @@ namespace ycsbc {
     {
         rocksdb::Status s;
         result = "";
-        int num_splits = 3;
+        int num_splits = 2;
         int leaf_splits = num_splits*num_splits*num_splits;
 
         if (fields == nullptr) {
             if (req_dist == "leastrecent") {
                 for (int j = 0; j < leaf_splits; j++) {
-                    std::string foundvalue;
+                    std::string foundvalue = "";
                     s = rocksdb_->Get(rocksdb::ReadOptions(),
                                   cfhandles_[table+"_sys_cf_L3_G"+std::to_string(j)],
                                   key, &foundvalue);
@@ -115,7 +115,7 @@ namespace ycsbc {
                         //futures[j] = std::async(std::launch::async, 
                         //            std::bind(&Mycelium::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[j])));
 
-                        std::string foundvalue;
+                        std::string foundvalue = "";
                         s = rocksdb_->Get(rocksdb::ReadOptions(),
                                           cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
                                           key, &foundvalue);
@@ -149,10 +149,6 @@ namespace ycsbc {
                     return 0;
                 }
             } else {
-                //std::vector<std::future<rocksdb::Status>> futures(4);
-                //std::vector<std::string> values(4);
-                //futures[0] = std::async(std::launch::async, 
-                //                        std::bind(&Mycelium::PerformGet, this, rocksdb_, cfhandles_[table], key, std::ref(values[0])));
                 s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
                 if (result != "") {
                     return 0;
@@ -161,11 +157,10 @@ namespace ycsbc {
                     //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G0"];
                     //futures[i] = std::async(std::launch::async, 
                     //                std::bind(&Mycelium::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[i])));
-                    std::string foundvalue;
                     s = rocksdb_->Get(rocksdb::ReadOptions(),
                                       cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
-                                      key, &foundvalue);
-                    if (foundvalue != "") {
+                                      key, &result);
+                    if (result != "") {
                         return 0;
                     }
                 }
@@ -181,7 +176,7 @@ namespace ycsbc {
                           std::vector<std::string> &result) 
     {
         int searched = 0;
-        int num_splits = 3;
+        int num_splits = 2;
         int leaf_splits = num_splits*num_splits*num_splits;
 
         if (fields == nullptr) {
@@ -204,6 +199,7 @@ namespace ycsbc {
                 }
             } else {
                 int group = 1;
+                searched = 0;
                 for (int i = 0; i < 4; i++) {
                     for (int j = 0; j < group; j++) {
                         std::string cfname = table;
@@ -211,14 +207,14 @@ namespace ycsbc {
                             cfname += "_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j);
                         }
                         auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[cfname]);
+                        int searchedsofar = searched;
                         it->Seek(begin_key);
-                        searched = 0;
                         while (it->Valid() && searched < 25) {
                             result.push_back(it->value().ToString());
                             it->Next();
                             searched++;
                         }
-                        if (searched == 0) {
+                        if (searched == searchedsofar) {
                             break;
                         }
                     }
@@ -242,7 +238,6 @@ namespace ycsbc {
                     return 0;
                 }
             } else {
-                std::set<std::string> keyset;
                 for (int i = 0; i < 4; i++) {
                     std::string tablename;
                     if (i > 0) {
@@ -272,7 +267,7 @@ namespace ycsbc {
 
     int Mycelium::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        rocksdb::Status s = rocksdb_->Put(rocksdb::WriteOptions(),
+        rocksdb::Status s = rocksdb_->Put(write_options_,
                                           cfhandles_[table],
                                           key,
                                           values);
@@ -289,7 +284,7 @@ namespace ycsbc {
 
     int Mycelium::Delete(const std::string &table, const std::string &key)
     {
-        rocksdb::Status s = rocksdb_->Delete(rocksdb::WriteOptions(),
+        rocksdb::Status s = rocksdb_->Delete(write_options_,
                                              cfhandles_[table],
                                              key);
         if (s.ok()) {
@@ -304,27 +299,39 @@ namespace ycsbc {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
         }
-        
+
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
+        options_.max_open_files = -1;
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
         options_.SetInputOutputDataType(inputDataType, outputDataType);
 
-        options_.IncreaseParallelism(16);
-        options_.level0_slowdown_writes_trigger = 16;
-        options_.level0_stop_writes_trigger = 24;
-        options_.max_open_files = -1;
-        options_.level0_file_num_compaction_trigger = 8;
+        options_.write_buffer_size = 256 * 1024 * 1024;
+        options_.max_write_buffer_number = 4;
+        options_.level0_file_num_compaction_trigger = 10;
+        options_.level0_slowdown_writes_trigger = 20;
+        options_.level0_stop_writes_trigger = 36;
+        options_.max_background_flushes = 2;
+        options_.max_background_compactions = 10;
+        options_.compression = rocksdb::kNoCompression;
+        options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(
+                rocksdb::BlockBasedTableOptions{
+                .block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024)}));
 
+        write_options_.disableWAL = true;
+
+        /*
+        options_.IncreaseParallelism(16);
+        options_.target_file_size_base = 67108864;
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
-        
-        options_.max_write_buffer_number = 3;
-        options_.write_buffer_size = 67108864;
-        options_.target_file_size_base = 67108864;
+        rocksdb::BlockBasedTableOptions table_options;
+        table_options.block_cache = nullptr;  // Disable the block cache
+        options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
+        */
     }
 
     void Mycelium::GetColumnFamilyDescriptors(const std::string &dbname,

@@ -48,6 +48,7 @@ class Mycelium : public DB{
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
+        rocksdb::WriteOptions write_options_;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         std::vector<rocksdb::ColumnFamilyHandle*> cfhandlelist_;
         std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;

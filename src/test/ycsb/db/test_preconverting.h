@@ -47,6 +47,7 @@ class TestPreconverting : public DB{
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
+        rocksdb::WriteOptions write_options_;
         int noResults;
         rocksdb::ColumnFamilyHandle* cfhandle_;
 

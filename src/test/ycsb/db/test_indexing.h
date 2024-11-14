@@ -80,6 +80,7 @@ class Indexing : public DB{
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
+        rocksdb::WriteOptions write_options_;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         int noResults;
 

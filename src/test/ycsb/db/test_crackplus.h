@@ -43,11 +43,12 @@ class MyceliumWriteBoth : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~Mycelium() {};
+        ~MyceliumWriteBoth() {};
     
     private:
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
+        rocksdb::WriteOptions write_options_;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         std::vector<rocksdb::ColumnFamilyHandle*> cfhandlelist_;
         std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
@@ -57,12 +58,11 @@ class MyceliumWriteBoth : public DB{
                         rocksdb::InputOutputDataType inputType,
                         rocksdb::InputOutputDataType outputType);
         void GetColumnFamilyDescriptors(const std::string& dbname,
-                                    std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+                                    std::vector<rocksdb::ColumnFamilyDescriptor>& column_families,
+                                    int num_splits);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                                     std::vector<rocksdb::ColumnFamilyHandle*> handles);
         void BuildQueryHandles(std::set<std::string> fields);
-        rocksdb::Status PerformGet(rocksdb::DB* db, rocksdb::ColumnFamilyHandle* cfHandle, 
-                                   const std::string& key, std::string& result);
 };  
 
 }

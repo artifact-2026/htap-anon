@@ -127,12 +127,12 @@ namespace ycsbc {
             return 1;
         }
 
-        rocksdb::Status s = rocksdb_->Merge(rocksdb::WriteOptions(), cfhandles_[table+"_index_cf"], ikey, key);
+        rocksdb::Status s = rocksdb_->Merge(write_options_, cfhandles_[table+"_index_cf"], ikey, key);
         if (!s.ok()) {
             return 1;
         }
 
-        s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
+        s = rocksdb_->Put(write_options_, cfhandles_[table], key, values);
         if (!s.ok()) {
             return 1;
         }
@@ -223,13 +223,13 @@ namespace ycsbc {
         removePrimaryKeyFromList(pkeys, key);
 
         // write back the remaining pkey list to the secondary index
-        s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_index_cf"], ikey, pkeys);
+        s = rocksdb_->Put(write_options_, cfhandles_[table+"_index_cf"], ikey, pkeys);
         if (!s.ok()) {
             return 1;
         }
 
         // finally delete the key from primary data
-        s = rocksdb_->Delete(rocksdb::WriteOptions(), cfhandles_[table], key);
+        s = rocksdb_->Delete(write_options_, cfhandles_[table], key);
         if (s.ok()) {
             return 0;
         }
@@ -242,26 +242,39 @@ namespace ycsbc {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
         }
+
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
+        options_.max_open_files = -1;
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
         options_.SetInputOutputDataType(inputDataType, outputDataType);
 
+        options_.write_buffer_size = 32 * 1024 * 1024;
+        options_.max_write_buffer_number = 4;
+        options_.level0_file_num_compaction_trigger = 2;
+        options_.level0_slowdown_writes_trigger = 3;
+        options_.level0_stop_writes_trigger = 4;
+        options_.max_background_flushes = 2;
+        options_.max_background_compactions = 10;
+        options_.compression = rocksdb::kNoCompression;
+        options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(
+                rocksdb::BlockBasedTableOptions{
+                .block_cache = rocksdb::NewLRUCache(32 * 1024 * 1024)}));
+
+        write_options_.disableWAL = true;
+
+        /*
         options_.IncreaseParallelism(16);
-        options_.level0_slowdown_writes_trigger = 16;     
-        options_.level0_stop_writes_trigger = 24;
-        options_.max_open_files = -1;
-        options_.level0_file_num_compaction_trigger = 8;
-
-        options_.max_write_buffer_number = 3;
-        options_.write_buffer_size = 67108864;
         options_.target_file_size_base = 67108864;
-
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
+        rocksdb::BlockBasedTableOptions table_options;
+        table_options.block_cache = nullptr;  // Disable the block cache
+        options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
+        */
     }
 
     void TestPreindexing::GetColumnFamilyDescriptors(const std::string& dbname,
