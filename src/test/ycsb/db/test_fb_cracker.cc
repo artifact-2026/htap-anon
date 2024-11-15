@@ -15,7 +15,8 @@ namespace ycsbc {
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "FLATBUFFERS"));
-        SetOptions(props, bootstrap, levels, fieldcount, inputType, outputType);
+        int columnDataType = utils::StrToInt(props.GetProperty("columndatatype", "1"));
+        SetOptions(props, bootstrap, levels, fieldcount, inputType, outputType, columnDataType);
         int num_splits = 2;
 
         options_.transformers.push_back(new rocksdb::Distributor());
@@ -266,7 +267,8 @@ namespace ycsbc {
     }
 
     void TestFBCracker::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
-                    rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
+                                rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType,
+                                int columndatatype)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
@@ -278,6 +280,7 @@ namespace ycsbc {
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
+        options_.column_data_type = columndatatype;
         options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
         options_.SetInputOutputDataType(inputDataType, outputDataType);
 
@@ -376,7 +379,7 @@ namespace ycsbc {
         parents.push(options_.num_columns);
 
         int total_levels = options_.num_levels;
-        for (int level = 1; level < total_levels - 1; level++) {
+        for (int level = 1; level < total_levels - 2; level++) {
             int queueLen = parents.size();
 
             options_.num_levels -= level;

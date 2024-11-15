@@ -349,14 +349,13 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
     ycsbc::CoreWorkload wl;
     wl.Init(props);
 
-    const std::string filename = "throughput_data.csv";
+    /*const std::string filename = "throughput_data.csv";
     std::ofstream file(filename, std::ios::app);
     if (!file.is_open()) {
         std::cerr << "Failed to open file: " << filename << std::endl;
         return;
     }
-
-    file << "Time (s),Throughput (ops/s) for num_threads = " << num_threads << std::endl;
+    file << "Time (s),Throughput (ops/s) for num_threads = " << num_threads << std::endl;*/
 
     for (int i = 0; i < num_threads; ++i) {
       throughput_ops.emplace_back(async(launch::async,
@@ -401,11 +400,11 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
     printf("latency raw data: \n");
     printf("latency size: %ld \n", exec_times.size());
 
-    int timesec = 1;
+    /*int timesec = 1;
     for (auto th : xputs) {
       file << timesec << "," << th << std::endl;
       timesec++;
-    }
+    }*/
     printf("throughput mean:%lf  stddev: %lf, average latency: %lf, stddev: %lf\n", 
         mean_xput, stddev_xput, mean, stddev);
     printf("*********************************\n");
