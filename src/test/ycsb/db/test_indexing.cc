@@ -17,7 +17,7 @@ namespace ycsbc {
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
         SetOptions(dbfilename, bootstrap, levels, fieldcount, inputType, outputType);
-
+        write_options_.disableWAL = true;
         std::vector<rocksdb::DeriveFuncData*> deriveFuncs;
         deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
         options_.transformers.push_back(new rocksdb::Augmenter(deriveFuncs));
@@ -181,29 +181,20 @@ namespace ycsbc {
         options_.SetTransformerType(rocksdb::TransformerType::AUGMENTER);
         options_.SetInputOutputDataType(inputDataType, outputDataType);
 
-        options_.write_buffer_size = 256 * 1024 * 1024;
-        options_.max_write_buffer_number = 4;
-        options_.level0_file_num_compaction_trigger = 10;
-        options_.level0_slowdown_writes_trigger = 20;
-        options_.level0_stop_writes_trigger = 36;
-        options_.max_background_flushes = 2;
-        options_.max_background_compactions = 10;
-        options_.compression = rocksdb::kNoCompression;
-        options_.table_factory.reset(rocksdb::NewBlockBasedTableFactory(
-                rocksdb::BlockBasedTableOptions{
-                .block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024)}));
-
-        write_options_.disableWAL = true;
-
-        /*
+        options_.write_buffer_size = 64 * 1024 * 1024;
+        options_.max_write_buffer_number = 3;
+        options_.level0_file_num_compaction_trigger = 8;
+        options_.level0_slowdown_writes_trigger = 16;
+        options_.level0_stop_writes_trigger = 24;
         options_.IncreaseParallelism(16);
-        options_.target_file_size_base = 67108864;
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
+        options_.compression = rocksdb::kNoCompression;
+
+        options_.target_file_size_base = 67108864;
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = nullptr;  // Disable the block cache
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
-        */
     }
 
     void Indexing::GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)

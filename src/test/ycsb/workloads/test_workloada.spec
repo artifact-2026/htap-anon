@@ -7,9 +7,9 @@
 #   Request distribution: zipfian
 
 keylength=16
-fieldcount=15
+fieldcount=48
 fieldlength=16
-recordcount=25000000
+recordcount=20000000
 operationcount=20000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
