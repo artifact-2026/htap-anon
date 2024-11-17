@@ -331,6 +331,7 @@ namespace ycsbc {
                                              std::vector<rocksdb::ColumnFamilyDescriptor> &column_families, 
                                              int num_splits)
     {
+        options_.compaction_style = rocksdb::kCompactionStyleUniversal;
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname, rocksdb::ColumnFamilyOptions(options_)));
       
@@ -347,6 +348,7 @@ namespace ycsbc {
             if (level == total_levels - 3) {
                 lastSplitLevel = true;
                 options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+                options_.compaction_style = rocksdb::kCompactionStyleLevel;
             }
             for (int j = 0; j < queueLen; j++) {
                 int parent_cols = parents.front();
