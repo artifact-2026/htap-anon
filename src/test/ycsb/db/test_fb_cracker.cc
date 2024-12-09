@@ -279,23 +279,31 @@ namespace ycsbc {
         options_.enable_pipelined_write = true;
         options_.max_open_files = -1;
 
+        options_.env->SetBackgroundThreads(10, rocksdb::Env::Priority::LOW);
+        options_.env->SetBackgroundThreads(4, rocksdb::Env::Priority::HIGH);
+        options_.max_background_compactions = 10;
+        options_.max_background_flushes = 4;
+
+        options_.max_subcompactions = 8;
+
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.column_data_type = columndatatype;
         options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
         options_.SetInputOutputDataType(inputDataType, outputDataType);
 
-        options_.write_buffer_size = 64 * 1024 * 1024;
-        options_.max_write_buffer_number = 3;
-        options_.level0_file_num_compaction_trigger = 8;
-        options_.level0_slowdown_writes_trigger = 16;
-        options_.level0_stop_writes_trigger = 24;
-        options_.IncreaseParallelism(16);
+        options_.write_buffer_size = 128 * 1024 * 1024;
+        options_.max_write_buffer_number = 8;
+        options_.level0_file_num_compaction_trigger = 4;
+        options_.level0_slowdown_writes_trigger = 20;
+        options_.level0_stop_writes_trigger = 48;
+        options_.IncreaseParallelism(24);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
         options_.compression = rocksdb::kNoCompression;
+        options_.max_bytes_for_level_base = 256 * 1024 * 1024;
 
-        options_.target_file_size_base = 67108864;
+        options_.target_file_size_base = 256 * 1024 * 1024;
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = nullptr;  // Disable the block cache
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
@@ -364,9 +372,11 @@ namespace ycsbc {
                                              std::vector<rocksdb::ColumnFamilyDescriptor> &column_families,
                                              int num_splits)
     {
+        options_.compaction_style = rocksdb::kCompactionStyleUniversal;
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname, rocksdb::ColumnFamilyOptions(options_)));
       
+        options_.level0_file_num_compaction_trigger = 2;
         std::string prefix = dbname + "_converted_cf_sys_cf";
         std::queue<int> parents;
         parents.push(options_.num_columns);
@@ -375,9 +385,9 @@ namespace ycsbc {
         for (int level = 1; level < total_levels - 2; level++) {
             int queueLen = parents.size();
 
-            options_.num_levels -= level;
             if (level == total_levels - 3) {
                 options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+                options_.compaction_style = rocksdb::kCompactionStyleLevel;
             } else if (level == total_levels - 4) {
                 options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR | rocksdb::TransformerType::CONVERTER);
             }

@@ -343,7 +343,7 @@ namespace ycsbc {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname, rocksdb::ColumnFamilyOptions(options_)));
       
-	options_.level0_file_num_compaction_trigger = 2;
+	    options_.level0_file_num_compaction_trigger = 2;
         bool lastSplitLevel = false;
         std::string prefix = dbname + "_sys_cf";
         std::queue<int> parents;
