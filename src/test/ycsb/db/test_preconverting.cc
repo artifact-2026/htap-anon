@@ -15,7 +15,7 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "16"));
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
+        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "JSON"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "FLATBUFFERS"));
         SetOptions(dbfilename, levels, fieldcount, bootstrap, inputType, outputType);
         write_options_.disableWAL = true;
@@ -81,50 +81,25 @@ namespace ycsbc {
 
     int TestPreconverting::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        data::Row row;
-        row.ParseFromString(values);
-        //nlohmann::json parsedJson = nlohmann::json::parse(values);
+        nlohmann::json parsedJson = nlohmann::json::parse(values);
 
         flatbuffers::FlatBufferBuilder builder;
-
-        /*auto field8 = builder.CreateString(parsedJson["field8"].get<std::string>());
-        auto field9 = builder.CreateString(parsedJson["field9"].get<std::string>());
-        auto field10 = builder.CreateString(parsedJson["field10"].get<std::string>());
-        auto field11 = builder.CreateString(parsedJson["field11"].get<std::string>());
-        auto field12 = builder.CreateString(parsedJson["field12"].get<std::string>());
-        auto field13 = builder.CreateString(parsedJson["field13"].get<std::string>());
-        auto field14 = builder.CreateString(parsedJson["field14"].get<std::string>());
-        auto field15 = builder.CreateString(parsedJson["field15"].get<std::string>());
-
-        auto fbRow = rocksdb::CreateFbRow(
-            builder,
-            parsedJson["field0"].get<int>(),
-            parsedJson["field1"].get<int>(),
-            parsedJson["field2"].get<int>(),
-            parsedJson["field3"].get<int>(),
-            parsedJson["field4"].get<int>(),
-            parsedJson["field5"].get<int>(),
-            parsedJson["field6"].get<int>(),
-            parsedJson["field7"].get<int>(),
-            field8, field9, field10, field11, field12, field13, field14, field15
-        );*/
-
         std::vector<int32_t> numvals;
         std::vector<flatbuffers::Offset<flatbuffers::String>> strvals;
-        for (int i = 0; i < row.columns_size(); i++) {
-            if (i < row.columns_size()/2) {
-                numvals.push_back(std::stoi(row.columns(i)));
-            } else {
-                strvals.push_back(builder.CreateString(row.columns(i)));
+
+        for (const auto& element : parsedJson) {
+            if (element.is_number()) {
+                numvals.push_back(element.get<int>());
+            } else if (element.is_string()) {
+                strvals.push_back(builder.CreateString(element.get<std::string>()));
             }
         }
 
         auto num_vector = builder.CreateVector(numvals);
         auto col_vector = builder.CreateVector(strvals);
-        auto fbRow = rocksdb::CreateFbRow(builder, num_vector, col_vector);
-
-        builder.Finish(fbRow);
-
+        auto fb_row = rocksdb::CreateFbRow(builder, num_vector, col_vector);
+        builder.Finish(fb_row);
+            
         uint8_t *buf = builder.GetBufferPointer();
         int size = builder.GetSize();
         std::string str(reinterpret_cast<char*>(buf), size);
@@ -163,23 +138,29 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
         options_.max_open_files = -1;
+        options_.env->SetBackgroundThreads(16, rocksdb::Env::Priority::LOW);
+	    options_.env->SetBackgroundThreads(8, rocksdb::Env::Priority::HIGH);
+	    options_.max_background_compactions = 16;
+	    options_.max_background_flushes = 8;
+
+	    options_.max_subcompactions = 16;
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
         options_.SetInputOutputDataType(inputDataType, outputDataType);
 
-        options_.write_buffer_size = 64 * 1024 * 1024;
-        options_.max_write_buffer_number = 3;
-        options_.level0_file_num_compaction_trigger = 8;
-        options_.level0_slowdown_writes_trigger = 16;
-        options_.level0_stop_writes_trigger = 24;
-        options_.IncreaseParallelism(16);
+        options_.write_buffer_size = 128 * 1024 * 1024;
+        options_.max_write_buffer_number = 8;
+        options_.level0_file_num_compaction_trigger = 4;
+        options_.level0_slowdown_writes_trigger = 20;
+        options_.level0_stop_writes_trigger = 32;
+        options_.IncreaseParallelism(24);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
         options_.compression = rocksdb::kNoCompression;
         
-        options_.target_file_size_base = 67108864;
+        options_.target_file_size_base = 256 * 1024 * 1024;
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = nullptr;  // Disable the block cache
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
