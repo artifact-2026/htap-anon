@@ -6,7 +6,7 @@ usage() {
     echo "Options:"
     echo "  -h, --help          Show this help message and exit"
     echo "Arguments:"
-    echo "  db_type             values: [baseline|cracking|flatbuffers|fb-cracking|precracking|preconverting|preindexing|indexing]"
+    echo "  db_type             values: [baseline|cracking|flatbuffers|fb-cracking|precracking|preconverting|preindexing|indexing|mynoop]"
     echo "  if_bootstrap        values: [true|false]"
     echo "  test_type           values: [run|xputr|xputl]"
     echo "  workload_type       values: [a|b|c|d|e|f]"
@@ -37,10 +37,11 @@ if [ "$DB_TYPE" != "baseline" ] && \
    [ "$DB_TYPE" != "preconverting" ] && \
    [ "$DB_TYPE" != "preindexing" ] && \
    [ "$DB_TYPE" != "crackplus" ] && \
+   [ "$DB_TYPE" != "mynoop" ] && \
    [ "$DB_TYPE" != "indexing" ]; then
    echo "DB_TYPE is required with value = [
               baseline|cracking|flatbuffers|crackfb|precracking|
-              preconverting|preindexing|indexing|crackplus]"
+              preconverting|preindexing|indexing|crackplus|mynoop]"
    exit 1
 fi
 

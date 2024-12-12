@@ -14,7 +14,7 @@ namespace ycsbc {
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
         SetOptions(dbfilename, levels, fieldcount, bootstrap, inputType, outputType);
-        write_options_.disableWAL = true;
+
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
         std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;

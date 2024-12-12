@@ -1,12 +1,13 @@
 #include <nlohmann/json.hpp>
 #include "core/core_workload.h"
-#include "test_rocks_db.h"
+#include "test_noop.h"
 #include "lib/coding.h"
+#include "transformer/nooper.h"
 
 using namespace std;
 
 namespace ycsbc {
-    TestRocksDB::TestRocksDB(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
+    TestMyceliumNoop::TestMyceliumNoop(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         noResults = 0;
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
@@ -14,6 +15,7 @@ namespace ycsbc {
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
         SetOptions(props, bootstrap, levels, fieldcount, inputType, outputType);
+        options_.transformers.push_back(new rocksdb::Nooper());
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
@@ -30,6 +32,7 @@ namespace ycsbc {
             }
 
             s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
+            s = rocksdb_->AddTransformingDestinationCfds(dbname, true, false, false, false, 0);
         } else {
             column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
                     rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions(options_)));
@@ -46,16 +49,20 @@ namespace ycsbc {
         BuildColumnFamilyHandles(column_family_descriptors, cf_handles);
     }
 
-    void TestRocksDB::GetColumnFamilyDescriptors(const std::string &dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
+    void TestMyceliumNoop::GetColumnFamilyDescriptors(const std::string &dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
                 dbname, rocksdb::ColumnFamilyOptions(options_)));
+                options_.level0_file_num_compaction_trigger = 2;
+        options_.compaction_style = rocksdb::kCompactionStyleLevel;
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+            dbname+"_sys_cf_", rocksdb::ColumnFamilyOptions(options_)));
     }
 
     /*
     * Read is for point query over all columns
     */
-    int TestRocksDB::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
+    int TestMyceliumNoop::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       const std::string &req_dist, bool index_access, std::string &result) 
     {
         if (index_access) {
@@ -85,7 +92,7 @@ namespace ycsbc {
         return 1;
     }
 
-    int TestRocksDB::Scan(const std::string &table, const std::string &begin_key,
+    int TestMyceliumNoop::Scan(const std::string &table, const std::string &begin_key,
                           const std::string &end_key, const std::set<std::string> *fields,
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
@@ -145,7 +152,7 @@ namespace ycsbc {
         return 1;
     }
 
-    int TestRocksDB::Insert(const std::string &table, const std::string &key, std::string &values)
+    int TestMyceliumNoop::Insert(const std::string &table, const std::string &key, std::string &values)
     {
         rocksdb::Status s = rocksdb_->Put(write_options_, cfhandle_, key, values);
         if (s.ok()) {
@@ -154,12 +161,12 @@ namespace ycsbc {
         return 1;
     }
 
-    int TestRocksDB::Update(const std::string &table, const std::string &key, std::string &values)
+    int TestMyceliumNoop::Update(const std::string &table, const std::string &key, std::string &values)
     {
         return Insert(table, key, values);
     }
 
-    int TestRocksDB::Delete(const std::string &table, const std::string &key)
+    int TestMyceliumNoop::Delete(const std::string &table, const std::string &key)
     {
         rocksdb::Status s = rocksdb_->Delete(write_options_, cfhandle_, key);
         if (s.ok()) {
@@ -168,7 +175,7 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestRocksDB::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
+    void TestMyceliumNoop::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
                 rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
     {
         if (!logging) {
@@ -207,7 +214,7 @@ namespace ycsbc {
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
     }
 
-    void TestRocksDB::BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
+    void TestMyceliumNoop::BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
                                                 std::vector<rocksdb::ColumnFamilyHandle *> handles)
     {
         for (size_t i = 0; i < handles.size(); i++) {
