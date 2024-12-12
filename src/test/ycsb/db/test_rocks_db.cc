@@ -198,13 +198,12 @@ namespace ycsbc {
         options_.level0_file_num_compaction_trigger = 4;
         options_.level0_slowdown_writes_trigger = 30;
         options_.level0_stop_writes_trigger = 64;
-	    options_.compression = rocksdb::kNoCompression;
 
         options_.IncreaseParallelism(24);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
         rocksdb::BlockBasedTableOptions table_options;
-        table_options.block_cache = nullptr;  // Disable the block cache
+        table_options.block_cache = rocksdb::NewLRUCache(256 * 1024 * 1024); 
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
     }
 
