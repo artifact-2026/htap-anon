@@ -66,8 +66,8 @@ const string CoreWorkload::REQUEST_DISTRIBUTION_PROPERTY =
     "requestdistribution";
 const string CoreWorkload::REQUEST_DISTRIBUTION_DEFAULT = "uniform";
 
-const string CoreWorkload::DATA_TYPE_PROPERTY = "datatype";
-const string CoreWorkload::DATA_TYPE_DEFAULT = "mixed";
+const string CoreWorkload::COLUMN_DATA_TYPE_PROPERTY = "columndatatype";
+const string CoreWorkload::COLUMN_DATA_TYPE_DEFAULT = "mixed";
 
 const string CoreWorkload::DATA_FORMAT_PROPERTY = "dataformat";
 const string CoreWorkload::DATA_FORMAT_DEFAULT = "protobuf";
@@ -127,7 +127,7 @@ void CoreWorkload::Init(const utils::Properties &p) {
                                                      WRITE_ALL_FIELDS_DEFAULT));
   index_access_ = utils::StrToBool(p.GetProperty(INDEX_ACCESS_PROPERTY,
                                                  INDEX_ACCESS_DEFAULT));
-  data_type_ = p.GetProperty(DATA_TYPE_PROPERTY, DATA_TYPE_DEFAULT);
+  column_data_type_ = p.GetProperty(COLUMN_DATA_TYPE_PROPERTY, COLUMN_DATA_TYPE_DEFAULT);
   data_format_ = p.GetProperty(DATA_FORMAT_PROPERTY, DATA_FORMAT_DEFAULT);
   
   if (p.GetProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_DEFAULT) == "hashed") {

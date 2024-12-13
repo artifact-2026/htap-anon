@@ -47,11 +47,11 @@ inline bool Client::DoInsert() {
   std::string key = workload_.NextSequenceKey();
   std::string val;
   if (workload_.data_format() == "json") {
-    std::string val = workload_.BuildJsonRecord(workload_.data_type());
+    std::string val = workload_.BuildJsonRecord(workload_.column_data_type());
     return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
   } else {
     data::Row value;
-    workload_.BuildProtoRecord(value, workload_.data_type());
+    workload_.BuildProtoRecord(value, workload_.column_data_type());
     std::string serializedValue;
     value.SerializeToString(&serializedValue);
     return (db_.Insert(workload_.NextTable(), key, serializedValue) == DB::kOK);
@@ -136,17 +136,17 @@ inline int Client::TransactionReadModifyWrite() {
   if (workload_.data_format() == "json") {
     std::string val;
     if (workload_.write_all_fields()) {
-      val = workload_.BuildJsonRecord(workload_.data_type());
+      val = workload_.BuildJsonRecord(workload_.column_data_type());
     } else {
-      val = workload_.BuildJsonColumn(workload_.data_type());
+      val = workload_.BuildJsonColumn(workload_.column_data_type());
     }
     return db_.Update(table, key, val);
   } else {
     data::Row columns;
     if (workload_.write_all_fields()) {
-      workload_.BuildProtoRecord(columns, workload_.data_type());
+      workload_.BuildProtoRecord(columns, workload_.column_data_type());
     } else {
-      workload_.BuildProtoColumn(columns, workload_.data_type());
+      workload_.BuildProtoColumn(columns, workload_.column_data_type());
     }
     std::string serializedColumns;
     columns.SerializeToString(&serializedColumns);
@@ -184,17 +184,17 @@ inline int Client::TransactionUpdate() {
   if (workload_.data_format() == "json") {
     std::string val;
     if (workload_.write_all_fields()) {
-      val = workload_.BuildJsonRecord(workload_.data_type());
+      val = workload_.BuildJsonRecord(workload_.column_data_type());
     } else {
-      val = workload_.BuildJsonColumn(workload_.data_type());
+      val = workload_.BuildJsonColumn(workload_.column_data_type());
     }
     return db_.Update(table, key, val);
   } else {
     data::Row columns;
     if (workload_.write_all_fields()) {
-      workload_.BuildProtoRecord(columns, workload_.data_type());
+      workload_.BuildProtoRecord(columns, workload_.column_data_type());
     } else {
-      workload_.BuildProtoColumn(columns, workload_.data_type());
+      workload_.BuildProtoColumn(columns, workload_.column_data_type());
     }
     std::string serializedColumns;
     columns.SerializeToString(&serializedColumns);
@@ -206,11 +206,11 @@ inline int Client::TransactionInsert() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextSequenceKey();
   if (workload_.data_format() == "json") {
-    std::string val = workload_.BuildJsonRecord(workload_.data_type());
+    std::string val = workload_.BuildJsonRecord(workload_.column_data_type());
     return db_.Insert(table, key, val);
   } else {
     data::Row columns;
-    workload_.BuildProtoRecord(columns, workload_.data_type());
+    workload_.BuildProtoRecord(columns, workload_.column_data_type());
     std::string serializedColumns;
     columns.SerializeToString(&serializedColumns);
     return db_.Insert(table, key, serializedColumns);

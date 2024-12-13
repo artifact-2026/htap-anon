@@ -13,6 +13,8 @@ recordcount=20000000
 operationcount=20000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
+columndatatype=numeric
+
 readproportion=0
 updateproportion=0
 scanproportion=0

@@ -107,8 +107,8 @@ class CoreWorkload {
   ///
   /// data type
   ///
-  static const std::string DATA_TYPE_PROPERTY;
-  static const std::string DATA_TYPE_DEFAULT;
+  static const std::string COLUMN_DATA_TYPE_PROPERTY;
+  static const std::string COLUMN_DATA_TYPE_DEFAULT;
 
   ///
   /// data format
@@ -184,12 +184,12 @@ class CoreWorkload {
   bool write_all_fields() const { return write_all_fields_; }
   bool index_access() const { return index_access_; }
   std::string request_distribution() const { return request_distribution_; }
-  std::string data_type() const { return data_type_; }
+  std::string column_data_type() const { return column_data_type_; }
   std::string data_format() const { return data_format_; }
 
   CoreWorkload() :
       key_length_(16), field_count_(0), read_all_fields_(false), write_all_fields_(false), index_access_(false),
-      data_type_(""), data_format_(""), request_distribution_(""), field_len_generator_(NULL),
+      column_data_type_(""), data_format_(""), request_distribution_(""), field_len_generator_(NULL),
       key_generator_(NULL), key_chooser_(NULL), field_chooser_(NULL), scan_len_chooser_(NULL),
       insert_key_sequence_(3), ordered_inserts_(true), record_count_(0), max_scan_len_(0)
     {}
@@ -213,7 +213,7 @@ class CoreWorkload {
   bool read_all_fields_;
   bool write_all_fields_;
   bool index_access_;
-  std::string data_type_;
+  std::string column_data_type_;
   std::string data_format_;
   std::string request_distribution_;
   Generator<uint64_t> *field_len_generator_;
