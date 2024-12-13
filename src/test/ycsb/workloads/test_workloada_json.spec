@@ -11,7 +11,7 @@ fieldcount=32
 fieldlength=16
 recordcount=10000000
 operationcount=200000
-dataformat=json
+inputdataformat=json
 columndatatype=numeric
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 

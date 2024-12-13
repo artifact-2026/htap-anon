@@ -11,7 +11,6 @@ usage() {
     echo "  test_type           values: [run|xputr|xputl]"
     echo "  workload_type       values: [a|b|c|d|e|f]"
     echo "  threads             values: [>=1]"
-    echo "  column_data_type    values: [0|1|2]"
 }
 
 # Check for help option or missing arguments
@@ -74,8 +73,6 @@ WORKLOAD="../src/test/ycsb/workloads/test_workload$WORKLOAD_TYPE.spec"
 
 THREADS=$5
 
-COLUMN_DATA_TYPE=${6:-0}
-
 # Get the current directory
 CURRENT_DIR=$(pwd)
 
@@ -109,4 +106,4 @@ fi
 ./src/test/ycsb/ycsb_test -db $DB_TYPE -dbpath $TEST_RESULT_DIRECTORY \
   -P $WORKLOAD -bootstrap $IF_BOOTSTRAP -threads $THREADS \
   -load $LOAD -run $RUN -throughput $XPUT -levels 6 -table $DB_TYPE \
-  -throughputtype $XPUT_TYPE -columndatatype $COLUMN_DATA_TYPE
+  -throughputtype $XPUT_TYPE

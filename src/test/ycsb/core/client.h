@@ -46,7 +46,7 @@ class Client {
 inline bool Client::DoInsert() {
   std::string key = workload_.NextSequenceKey();
   std::string val;
-  if (workload_.data_format() == "json") {
+  if (workload_.input_data_format() == "json") {
     std::string val = workload_.BuildJsonRecord(workload_.column_data_type());
     return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
   } else {
@@ -133,7 +133,7 @@ inline int Client::TransactionReadModifyWrite() {
     db_.Read(table, key, NULL, workload_.request_distribution(), workload_.index_access(), result);
   }
   
-  if (workload_.data_format() == "json") {
+  if (workload_.input_data_format() == "json") {
     std::string val;
     if (workload_.write_all_fields()) {
       val = workload_.BuildJsonRecord(workload_.column_data_type());
@@ -181,7 +181,7 @@ inline int Client::TransactionUpdate() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
 
-  if (workload_.data_format() == "json") {
+  if (workload_.input_data_format() == "json") {
     std::string val;
     if (workload_.write_all_fields()) {
       val = workload_.BuildJsonRecord(workload_.column_data_type());
@@ -205,7 +205,7 @@ inline int Client::TransactionUpdate() {
 inline int Client::TransactionInsert() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextSequenceKey();
-  if (workload_.data_format() == "json") {
+  if (workload_.input_data_format() == "json") {
     std::string val = workload_.BuildJsonRecord(workload_.column_data_type());
     return db_.Insert(table, key, val);
   } else {

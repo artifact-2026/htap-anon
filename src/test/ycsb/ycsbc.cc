@@ -674,6 +674,7 @@ void Init(utils::Properties &props){
   props.SetProperty("morerun","");
   props.SetProperty("createdb", "false");
   props.SetProperty("columndatatype", "0");
+  props.SetProperty("inputdataformat", "protobuf");
 }
 
 void PrintInfo(utils::Properties &props) {

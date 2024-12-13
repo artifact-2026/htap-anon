@@ -69,8 +69,8 @@ const string CoreWorkload::REQUEST_DISTRIBUTION_DEFAULT = "uniform";
 const string CoreWorkload::COLUMN_DATA_TYPE_PROPERTY = "columndatatype";
 const string CoreWorkload::COLUMN_DATA_TYPE_DEFAULT = "mixed";
 
-const string CoreWorkload::DATA_FORMAT_PROPERTY = "dataformat";
-const string CoreWorkload::DATA_FORMAT_DEFAULT = "protobuf";
+const string CoreWorkload::INPUT_DATA_FORMAT_PROPERTY = "inputdataformat";
+const string CoreWorkload::INPUT_DATA_FORMAT_DEFAULT = "protobuf";
 
 const string CoreWorkload::MAX_SCAN_LENGTH_PROPERTY = "maxscanlength";
 const string CoreWorkload::MAX_SCAN_LENGTH_DEFAULT = "1000";
@@ -128,7 +128,7 @@ void CoreWorkload::Init(const utils::Properties &p) {
   index_access_ = utils::StrToBool(p.GetProperty(INDEX_ACCESS_PROPERTY,
                                                  INDEX_ACCESS_DEFAULT));
   column_data_type_ = p.GetProperty(COLUMN_DATA_TYPE_PROPERTY, COLUMN_DATA_TYPE_DEFAULT);
-  data_format_ = p.GetProperty(DATA_FORMAT_PROPERTY, DATA_FORMAT_DEFAULT);
+  input_data_format_ = p.GetProperty(INPUT_DATA_FORMAT_PROPERTY, INPUT_DATA_FORMAT_DEFAULT);
   
   if (p.GetProperty(INSERT_ORDER_PROPERTY, INSERT_ORDER_DEFAULT) == "hashed") {
     ordered_inserts_ = false;
