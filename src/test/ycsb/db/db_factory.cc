@@ -11,7 +11,7 @@
 #include "db/test_preconverting.h"
 #include "db/test_preindexing.h"
 #include "db/test_crackplus.h"
-#include "db/test_noop.h"
+#include "db/test_mynoop.h"
 
 using namespace std;
 
@@ -49,7 +49,7 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
     return new MyceliumWriteBoth(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "mynoop") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-mynoop");
-    return new TestMyceliumNoop(props["dbname"], dbpath.c_str(), props);
+    return new TestMynoop(props["dbname"], dbpath.c_str(), props);
   } else return nullptr;
 }
 

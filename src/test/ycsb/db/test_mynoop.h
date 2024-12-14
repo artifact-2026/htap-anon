@@ -21,9 +21,9 @@
 
 namespace ycsbc {
 
-class TestMyceliumNoop : public DB{
+class TestMynoop : public DB{
     public :
-        TestMyceliumNoop(const std::string& dbname, const char *dbfilename, utils::Properties &props);
+        TestMynoop(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::set<std::string> *fields,
                  const std::string &req_dist, bool index_access,
@@ -42,7 +42,7 @@ class TestMyceliumNoop : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~TestMyceliumNoop() {};
+        ~TestMynoop() {};
     
     private:
         rocksdb::DB *rocksdb_;
@@ -51,14 +51,17 @@ class TestMyceliumNoop : public DB{
         int noResults;
         std::shared_ptr<rocksdb::Cache> cache_;
         std::shared_ptr<rocksdb::Statistics> dbstats_;
-        rocksdb::ColumnFamilyHandle* cfhandle_;
+        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
 
         void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
                         rocksdb::InputOutputDataType inputType,
-                        rocksdb::InputOutputDataType outputType);
-        void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
+                        rocksdb::InputOutputDataType outputType,
+                        std::string columnDataType);
+        // serialize for inserts
+        void GetColumnFamilyDescriptors(const std::string& dbname,
+                std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
-                                                std::vector<rocksdb::ColumnFamilyHandle *> handles);        
+                                std::vector<rocksdb::ColumnFamilyHandle*> handles);
 };  
 
 }
