@@ -13,9 +13,9 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
-        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "FLATBUFFERS"));
-        int columnDataType = utils::StrToInt(props.GetProperty("columndatatype", "1"));
+        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdataformat", "PROTOBUF"));
+        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdataformat", "FLATBUFFERS"));
+        std::string columnDataType = props.GetProperty("columndatatype", "1");
         SetOptions(props, false, levels, fieldcount, inputType, outputType, columnDataType);
         int num_splits = 2;
 
@@ -268,7 +268,7 @@ namespace ycsbc {
 
     void TestFBCracker::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
                                 rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType,
-                                int columndatatype)
+                                std::string columndatatype)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
