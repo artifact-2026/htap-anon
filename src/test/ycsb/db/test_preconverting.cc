@@ -17,7 +17,7 @@ namespace ycsbc {
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "16"));
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "JSON"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "FLATBUFFERS"));
-        SetOptions(dbfilename, levels, fieldcount, bootstrap, inputType, outputType);
+        SetOptions(dbfilename, levels, fieldcount, false, inputType, outputType);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);

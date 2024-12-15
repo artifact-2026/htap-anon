@@ -27,7 +27,7 @@ namespace ycsbc {
 
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
-        SetOptions(dbfilename, bootstrap, levels, fieldcount, inputType, outputType);
+        SetOptions(dbfilename, false, levels, fieldcount, inputType, outputType);
 
         options_.transformers.push_back(new rocksdb::Distributor());
 

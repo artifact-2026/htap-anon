@@ -15,8 +15,7 @@ namespace ycsbc {
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdataformat", "FLATBUFFERS"));
         std::string columnDataType = props.GetProperty("columndatatype", "mixed");
 
-        SetOptions(props, bootstrap, levels, fieldcount, inputType, outputType, columnDataType);
-        write_options_.disableWAL = true;
+        SetOptions(props, false, levels, fieldcount, inputType, outputType, columnDataType);
         options_.transformers.push_back(new rocksdb::Mynooper());
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;

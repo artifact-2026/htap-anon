@@ -16,8 +16,7 @@ namespace ycsbc {
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "FLATBUFFERS"));
         int columnDataType = utils::StrToInt(props.GetProperty("columndatatype", "1"));
-        SetOptions(props, bootstrap, levels, fieldcount, inputType, outputType, columnDataType);
-        write_options_.disableWAL = true;
+        SetOptions(props, false, levels, fieldcount, inputType, outputType, columnDataType);
         int num_splits = 2;
 
         options_.transformers.push_back(new rocksdb::Distributor());

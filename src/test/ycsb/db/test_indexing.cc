@@ -16,7 +16,7 @@ namespace ycsbc {
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
-        SetOptions(dbfilename, bootstrap, levels, fieldcount, inputType, outputType);
+        SetOptions(dbfilename, false, levels, fieldcount, inputType, outputType);
 
         std::vector<rocksdb::DeriveFuncData*> deriveFuncs;
         deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
