@@ -86,6 +86,10 @@ namespace ycsbc {
             }
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+            if (s.ok()) {
+                return 0;
+            }
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_indexed_data_cf"], key, &result);
         }
 
         if (s.ok()) {
