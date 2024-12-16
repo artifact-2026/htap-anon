@@ -5,16 +5,16 @@
 #   Read/update ratio: 95/5
 #   Default data size: 1 KB records (16 fields, 64 bytes each, plus key)
 #   Request distribution: zipfian
-keylength=32
-fieldcount=16
-fieldlength=64
+keylength=16
+fieldcount=32
+fieldlength=16
 
 recordcount=20000000
 operationcount=200000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readallfields=true
-requestdistribution=latest
+requestdistribution=zipfian
 
 readproportion=1.0
 updateproportion=0

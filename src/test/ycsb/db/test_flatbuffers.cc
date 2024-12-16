@@ -215,6 +215,7 @@ namespace ycsbc {
 
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = rocksdb::NewLRUCache(256 * 1024 * 1024);
+        table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
     }
 
