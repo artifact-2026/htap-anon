@@ -31,9 +31,25 @@ git submodule update --init --recursive
 % ninja/make
 
 #### - Debug code  
-cmake -DCMAKE_BUILD_TYPE=Debug -S .. -B . -G Ninja  
+% cmake -DCMAKE_BUILD_TYPE=Debug -S .. -B . -G Ninja  
 gdb src/test/ycsb/ycsb_test  
 (gdb) b <functionname>
+
+##### building with debug, tools, and AddressSanitizer
+% cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=address -g" -S .. -B . -G Ninja
+% cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=thread -g" -S .. -B . -G Ninja
+% echo 'setenv PATH ${PATH}:/holly/htap/build/src/mycelium/tools' >> ~/.tcshrc
+% source ~/.tcshrc
+
+##### enable core dump
+% limit descriptors 65536
+% limit coredumpsize unlimited    ## if ulimit -c returns 0 it means it is disabled
+% source ~/.tshrc
+% gdb ./<myprogram> core.<pid>
+
+##### use valgrind
+% valgrind --leak-check=full --track-origins=yes ./your_program
+
 
 #### - Git
 % git remote set-url origin https://hcasalet:<personal_access_token>1@github.com/hcasalet/htap.git

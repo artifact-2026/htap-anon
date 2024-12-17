@@ -52,7 +52,6 @@ class MyceliumWriteBoth : public DB{
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         std::vector<rocksdb::ColumnFamilyHandle*> cfhandlelist_;
         std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
-        int noResults;
 
         void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount,
                         rocksdb::InputOutputDataType inputType,

@@ -51,9 +51,6 @@ class TestFBCracker : public DB{
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         std::vector<rocksdb::ColumnFamilyHandle*> cfhandlelist_;
         std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
-        int noResults;
-        //std::shared_ptr<rocksdb::Cache> cache_;
-        //std::shared_ptr<rocksdb::Statistics> dbstats_;
 
         void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
                         rocksdb::InputOutputDataType inputType,

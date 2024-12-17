@@ -48,7 +48,6 @@ class TestMynoop : public DB{
         rocksdb::DB *rocksdb_;
         rocksdb::Options options_;
         rocksdb::WriteOptions write_options_;
-        int noResults;
         std::shared_ptr<rocksdb::Cache> cache_;
         std::shared_ptr<rocksdb::Statistics> dbstats_;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;

@@ -134,7 +134,6 @@ int main( const int argc, const char *argv[]) {
   vector<future<struct run_result>> actual_ops;
   int total_ops = 0;
   int sum = 0;
-  utils::Timer<double> timer;
 
   //PrintInfo(props);
 
