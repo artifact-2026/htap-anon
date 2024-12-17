@@ -61,6 +61,7 @@ namespace ycsbc {
                 exit(0);
             }
         }
+        rocksdb_->DisplayTransformingDestinationCfds();
         BuildColumnFamilyHandles(column_family_descriptors, cf_handles);
     }
 
@@ -93,26 +94,26 @@ namespace ycsbc {
                 }
             } else {
                 s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-                if (result != "") {
+                if (s.ok()) {
                     return 0;
                 }
 
                 int group = 1;
+                std::string foundvalue = "";
                 for (int i = 1; i < 4; i++) {
                     group *= num_splits;
                     for (int j = 0; j < group; j++) {
-                        std::string foundvalue = "";
+                        std::string cf_name = table+"_converted_cf_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j);
+                        std::cout << "column family name: " << cf_name << std::endl;
                         s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                          cfhandles_[table+"_converted_cf_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
+                                          cfhandles_[cf_name],
                                           key, &foundvalue);
-                        if (foundvalue != "") {
-                            result += foundvalue;
-                        } else {
+                        if (!s.ok()) {
                             break;
                         }
                     }
                 
-                    if (result != "") {
+                    if (s.ok()) {
                         return 0;
                     }
                 }

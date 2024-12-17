@@ -101,7 +101,7 @@ namespace ycsbc {
                 }
             } else {
                 s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-                if (result != "") {
+                if (s.ok()) {
                     return 0;
                 }
 
