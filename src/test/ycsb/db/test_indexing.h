@@ -75,14 +75,7 @@ class Indexing : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~Indexing() {
-            for (auto& pair : cfhandles_) {
-                if (pair.second) { // Check if the pointer is valid
-                    delete pair.second; // Delete the ColumnFamilyHandle
-                }
-            }
-            cfhandles_.clear(); // Clear the map to remove all keys and values
-        };
+        ~Indexing() {};
     
     private:
         rocksdb::DB *rocksdb_;
