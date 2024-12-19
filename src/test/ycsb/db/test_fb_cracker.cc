@@ -305,13 +305,15 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
         options_.max_open_files = -1;
+        options_.compaction_style = rocksdb::kCompactionStyleLevel;
+        options_.disable_auto_compactions = false;
 
-	    options_.env->SetBackgroundThreads(10, rocksdb::Env::Priority::LOW);
-        options_.env->SetBackgroundThreads(4, rocksdb::Env::Priority::HIGH);
-        options_.max_background_compactions = 10;
-        options_.max_background_flushes = 4;
+	    options_.env->SetBackgroundThreads(20, rocksdb::Env::Priority::LOW);
+        options_.env->SetBackgroundThreads(8, rocksdb::Env::Priority::HIGH);
+        options_.max_background_compactions = 20;
+        options_.max_background_flushes = 8;
 
-        options_.max_subcompactions = 8;
+        options_.max_subcompactions = 16;
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
@@ -320,9 +322,8 @@ namespace ycsbc {
 
         options_.write_buffer_size = 128 * 1024 * 1024;
         options_.max_write_buffer_number = 8;
-        options_.level0_file_num_compaction_trigger = 4;
-        options_.level0_slowdown_writes_trigger = 20;
-        options_.level0_stop_writes_trigger = 48;
+        options_.level0_slowdown_writes_trigger = 50;
+        options_.level0_stop_writes_trigger = 80;
         options_.IncreaseParallelism(24);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
@@ -340,11 +341,11 @@ namespace ycsbc {
                                              std::vector<rocksdb::ColumnFamilyDescriptor> &column_families, 
                                              int num_splits)
     {
-        options_.compaction_style = rocksdb::kCompactionStyleUniversal;
+        options_.level0_file_num_compaction_trigger = 1;
+        options_.compaction_pri = rocksdb::kMinOverlappingRatio;
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
             dbname, rocksdb::ColumnFamilyOptions(options_)));
       
-	    options_.level0_file_num_compaction_trigger = 2;
         bool lastSplitLevel = false;
         std::string prefix = dbname + "_sys_cf";
         std::queue<int> parents;
@@ -361,7 +362,8 @@ namespace ycsbc {
             if (level == total_levels - 3) {
                 lastSplitLevel = true;
                 options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
-                options_.compaction_style = rocksdb::kCompactionStyleLevel;
+                options_.compaction_pri = rocksdb::kByCompensatedSize;
+                options_.level0_file_num_compaction_trigger = 4;
             }
             for (int j = 0; j < queueLen; j++) {
                 int parent_cols = parents.front();

@@ -182,12 +182,12 @@ namespace ycsbc {
         options_.compaction_style = rocksdb::kCompactionStyleLevel;
         options_.disable_auto_compactions = false;
 
-        options_.env->SetBackgroundThreads(10, rocksdb::Env::Priority::LOW);
-        options_.env->SetBackgroundThreads(4, rocksdb::Env::Priority::HIGH);
-        options_.max_background_compactions = 10;
-        options_.max_background_flushes = 4;
+        options_.env->SetBackgroundThreads(20, rocksdb::Env::Priority::LOW);
+        options_.env->SetBackgroundThreads(8, rocksdb::Env::Priority::HIGH);
+        options_.max_background_compactions = 20;
+        options_.max_background_flushes = 8;
 
-        options_.max_subcompactions = 8;
+        options_.max_subcompactions = 16;
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
