@@ -179,6 +179,8 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
         options_.max_open_files = -1;
+        options_.compaction_style = rocksdb::kCompactionStyleLevel;
+        options_.disable_auto_compactions = false;
 
         options_.env->SetBackgroundThreads(10, rocksdb::Env::Priority::LOW);
         options_.env->SetBackgroundThreads(4, rocksdb::Env::Priority::HIGH);
@@ -194,9 +196,8 @@ namespace ycsbc {
 
         options_.write_buffer_size = 128 * 1024 * 1024;
         options_.max_write_buffer_number = 8;
-        options_.level0_file_num_compaction_trigger = 4;
-        options_.level0_slowdown_writes_trigger = 20;
-        options_.level0_stop_writes_trigger = 48;
+        options_.level0_slowdown_writes_trigger = 50;
+        options_.level0_stop_writes_trigger = 80;
         options_.IncreaseParallelism(24);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
@@ -210,13 +211,14 @@ namespace ycsbc {
 
     void Indexing::GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
-        options_.compaction_style = rocksdb::kCompactionStyleUniversal;
+        options_.level0_file_num_compaction_trigger = 1;
+        options_.compaction_pri = rocksdb::kMinOverlappingRatio;
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname,
                                                                   rocksdb::ColumnFamilyOptions(options_)));
 
         options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
-        options_.compaction_style = rocksdb::kCompactionStyleLevel;
-        options_.level0_file_num_compaction_trigger = 2;
+        options_.level0_file_num_compaction_trigger = 4;
+        options_.compaction_pri = rocksdb::kByCompensatedSize;
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_indexed_data_cf",
                                                                   rocksdb::ColumnFamilyOptions(options_)));
 
