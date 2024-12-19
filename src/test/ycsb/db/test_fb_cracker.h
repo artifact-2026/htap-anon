@@ -1,17 +1,18 @@
-#ifndef YCSB_CPLUSPLUS_FLAT_BUFFERS_AND_CRACKING_H
-#define YCSB_CPLUSPLUS_FLAT_BUFFERS_AND_CRACKING_H
+#ifndef YCSB_CPLUSPLUS_FBCRACKER_H
+#define YCSB_CPLUSPLUS_FBCRACKER_H
 
 #include "core/db.h"
 
 #include <iostream>
 #include <errno.h>
 #include <string>
+#include <vector>
 
 #include <rocksdb/options.h>
 #include <rocksdb/db.h>
 #include <rocksdb/cache.h>
-#include <rocksdb/filter_policy.h>
 #include <rocksdb/table.h>
+#include <rocksdb/filter_policy.h>
 
 #include "core/properties.h"
 #include "core/core_workload.h"
@@ -21,9 +22,9 @@
 
 namespace ycsbc {
 
-class TestFBCracker : public DB{
+class TestFbCracker : public DB{
     public :
-        TestFBCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props);
+        TestFbCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
                  const std::set<std::string> *fields,
                  const std::string &req_dist, bool index_access,
@@ -42,7 +43,7 @@ class TestFBCracker : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~TestFBCracker() {};
+        ~TestFbCracker() {};
     
     private:
         rocksdb::DB *rocksdb_;
@@ -52,16 +53,17 @@ class TestFBCracker : public DB{
         std::vector<rocksdb::ColumnFamilyHandle*> cfhandlelist_;
         std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
 
-        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
+        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount,
                         rocksdb::InputOutputDataType inputType,
-                        rocksdb::InputOutputDataType outputType,
-                        std::string columnDataType);
-        void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
-                                    std::vector<rocksdb::ColumnFamilyHandle *> handles);
+                        rocksdb::InputOutputDataType outputType);
+        void GetColumnFamilyDescriptors(const std::string& dbname,
+                                    std::vector<rocksdb::ColumnFamilyDescriptor>& column_families,
+                                    int num_splits);
+        void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
+                                    std::vector<rocksdb::ColumnFamilyHandle*> handles);
         void BuildQueryHandles(std::set<std::string> fields);
-        void GetColumnFamilyDescriptors(const std::string &dbname,
-                                        std::vector<rocksdb::ColumnFamilyDescriptor> &column_families,
-                                        int num_splits);
+        rocksdb::Status PerformGet(rocksdb::DB* db, rocksdb::ColumnFamilyHandle* cfHandle, 
+                                   const std::string& key, std::string& result);
 };  
 
 }

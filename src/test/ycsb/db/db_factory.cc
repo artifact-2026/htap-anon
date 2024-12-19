@@ -37,7 +37,7 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
     return new TestFlatBuffers(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "crackfb") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-crackfb");
-    return new TestFBCracker(props["dbname"], dbpath.c_str(), props);
+    return new TestFbCracker(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "preconverting") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-preconverting");
     return new TestPreconverting(props["dbname"], dbpath.c_str(), props);

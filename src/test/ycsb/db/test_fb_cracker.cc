@@ -1,44 +1,55 @@
+#include <cmath>
 #include <queue>
-#include <iostream>
+#include <future>
+
 #include "core/core_workload.h"
-#include "lib/coding.h"
 #include "test_fb_cracker.h"
-#include "transformer/converter.h"
+#include "lib/coding.h"
+
+#include "rocksdb/db.h"
+#include "rocksdb/options.h"
+#include "rocksdb/slice.h"
 #include "transformer/distributor.h"
+#include "transformer/converter.h"
 
 using namespace std;
 
 namespace ycsbc {
-    TestFBCracker::TestFBCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
+    TestFbCracker::TestFbCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdataformat", "PROTOBUF"));
-        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdataformat", "FLATBUFFERS"));
-        std::string columnDataType = props.GetProperty("columndatatype", "1");
-        SetOptions(props, false, levels, fieldcount, inputType, outputType, columnDataType);
         int num_splits = 2;
+        /*if (fieldcount > 25 && fieldcount < 64) {
+            num_splits = 3;
+        } else {
+            num_splits = 4;
+        }*/
+
+        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
+        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "FLATBUFFERS"));
+        SetOptions(dbfilename, false, levels, fieldcount, inputType, outputType);
 
         options_.transformers.push_back(new rocksdb::Distributor());
         options_.transformers.push_back(new rocksdb::Converter());
-        
+
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors, num_splits);
         std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
 
         if (bootstrap) {
             rocksdb::Status s = rocksdb::DB::Open(options_, 
-                                              dbfilename,
-                                              &rocksdb_);
+                                          dbfilename,
+                                          &rocksdb_);
             if (!s.ok()){
-                std::cerr<<"Can't open flat cracker "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                std::cerr<<"Can't open crackfb "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
 
             s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
             s = rocksdb_->AddTransformingDestinationCfds(dbname, true, true, false, false, num_splits);
-            if (!s.ok()) {
-                std::cerr<<"Creating column families ran into error: "<<s.ToString()<<std::endl;
+            if (!s.ok()){
+                std::cerr<<"Creating column families ran into error "<<s.ToString()<<std::endl;
                 exit(0);
             }
         } else {
@@ -49,27 +60,25 @@ namespace ycsbc {
                                               column_family_descriptors,
                                               &cf_handles,
                                               &rocksdb_);
-
             if (!s.ok()){
-                std::cerr<<"Can't open flat cracker "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                std::cerr<<"Can't open crackfb "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
 
             s = rocksdb_->AddTransformingDestinationCfds(dbname, true, true, false, false, num_splits);
             if (!s.ok()){
-                std::cerr<<"Column family creation for crackfb ran into error "<<dbfilename<<" "<<s.ToString()<<std::endl;
+                std::cerr<<"Creating column families ran into error "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
         }
-        rocksdb_->DisplayTransformingDestinationCfds();
-        BuildColumnFamilyHandles(column_family_descriptors, cf_handles);
+        BuildColumnFamilyHandleMap(column_family_descriptors, cf_handles);
     }
 
     /*
     * Read is for point query over all columns
     */
-    int TestFBCracker::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
-                      const std::string &req_dist, bool index_access, std::string &result) 
+    int TestFbCracker::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
+                      const std::string &req_dist, bool index_access, std::string &result)
     {
         rocksdb::Status s;
         result = "";
@@ -79,9 +88,9 @@ namespace ycsbc {
         if (fields == nullptr) {
             if (req_dist == "leastrecent") {
                 for (int j = 0; j < leaf_splits; j++) {
-                    std::string foundvalue;
+                    std::string foundvalue = "";
                     s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                  cfhandles_[table+"_converted_cf_sys_cf_L3_G"+std::to_string(j)],
+                                  cfhandles_[table+"_sys_cf_L3_G"+std::to_string(j)],
                                   key, &foundvalue);
                     if (foundvalue != "") {
                         result += foundvalue;
@@ -99,21 +108,36 @@ namespace ycsbc {
                 }
 
                 int group = 1;
-                std::string foundvalue = "";
                 for (int i = 1; i < 4; i++) {
                     group *= num_splits;
+                    //std::vector<std::future<rocksdb::Status>> futures(group);
+                    //std::vector<std::string> values(group);
                     for (int j = 0; j < group; j++) {
-                        std::string cf_name = table+"_converted_cf_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j);
-                        std::cout << "column family name: " << cf_name << std::endl;
+                        //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G" + std::to_string(j)];
+                        //futures[j] = std::async(std::launch::async, 
+                        //            std::bind(&TestFbCracker::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[j])));
+
+                        std::string foundvalue = "";
                         s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                          cfhandles_[cf_name],
+                                          cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
                                           key, &foundvalue);
-                        if (!s.ok()) {
+                        if (foundvalue != "") {
+                            result += foundvalue;
+                        } else {
                             break;
                         }
                     }
+
+                    /*for (int j = 0; j < group; j++) {
+                        rocksdb::Status s = futures[j].get();
+                        if (s.ok() && !values[j].empty()) {
+                            result += values[j];
+                        } else {
+                            break;  // Exit loop if any error or empty value
+                        }
+                    }*/
                 
-                    if (s.ok()) {
+                    if (result != "") {
                         return 0;
                     }
                 }
@@ -121,7 +145,7 @@ namespace ycsbc {
         } else {
             if (req_dist == "leastrecent") {
                 s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                  cfhandles_[table+"_converted_cf_sys_cf_L3_G0"],
+                                  cfhandles_[table+"_sys_cf_L3_G0"],
                                   key, &result);
                 if (result != "") {
                     return 0;
@@ -132,8 +156,11 @@ namespace ycsbc {
                     return 0;
                 }
                 for (int i = 1; i < 4; i++) {
+                    //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G0"];
+                    //futures[i] = std::async(std::launch::async, 
+                    //                std::bind(&TestFbCracker::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[i])));
                     s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                      cfhandles_[table+"_converted_cf_sys_cf_L"+std::to_string(i)+"_G0"],
+                                      cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
                                       key, &result);
                     if (result != "") {
                         return 0;
@@ -141,10 +168,11 @@ namespace ycsbc {
                 }
             }
         }
+
         return 1;
     }
 
-    int TestFBCracker::Scan(const std::string &table, const std::string &begin_key,
+    int TestFbCracker::Scan(const std::string &table, const std::string &begin_key,
                           const std::string &end_key, const std::set<std::string> *fields,
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
@@ -156,7 +184,7 @@ namespace ycsbc {
         if (fields == nullptr) {
             if (req_dist == "leastrecent") {
                 for (int i = 0; i < leaf_splits; i++) {
-                    auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf_sys_cf_L3_G"+std::to_string(i)]);
+                    auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_sys_cf_L3_G"+std::to_string(i)]);
                     it->Seek(begin_key);
                     searched = 0;
                     while (it->Valid() && searched < 25) {
@@ -173,21 +201,22 @@ namespace ycsbc {
                 }
             } else {
                 int group = 1;
+                searched = 0;
                 for (int i = 0; i < 4; i++) {
                     for (int j = 0; j < group; j++) {
                         std::string cfname = table;
                         if (i > 0) {
-                            cfname += "_converted_cf_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j);
+                            cfname += "_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j);
                         }
                         auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[cfname]);
+                        int searchedsofar = searched;
                         it->Seek(begin_key);
-                        searched = 0;
                         while (it->Valid() && searched < 25) {
                             result.push_back(it->value().ToString());
                             it->Next();
                             searched++;
                         }
-                        if (searched == 0) {
+                        if (searched == searchedsofar) {
                             break;
                         }
                     }
@@ -199,7 +228,7 @@ namespace ycsbc {
             }
         } else {
             if (req_dist == "leastrecent") {
-                auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf_sys_cf_L3_G0"]);
+                auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_sys_cf_L3_G0"]);
                 it->Seek(begin_key);
 
                 while (it->Valid() && searched < 25) {
@@ -211,11 +240,10 @@ namespace ycsbc {
                     return 0;
                 }
             } else {
-                std::set<std::string> keyset;
                 for (int i = 0; i < 4; i++) {
                     std::string tablename;
                     if (i > 0) {
-                        tablename = table + "_converted_cf_sys_cf_L" + std::to_string(i) + "_G0";
+                        tablename = table + "_sys_cf_L" + std::to_string(i) + "_G0";
                     } else {
                         tablename = table;
                     }
@@ -235,11 +263,11 @@ namespace ycsbc {
                 }
             }
         }
-       
+        
         return 1;
     }
 
-    int TestFBCracker::Insert(const std::string &table, const std::string &key, std::string &values)
+    int TestFbCracker::Insert(const std::string &table, const std::string &key, std::string &values)
     {
         rocksdb::Status s = rocksdb_->Put(write_options_,
                                           cfhandles_[table],
@@ -251,12 +279,12 @@ namespace ycsbc {
         return 1;
     }
 
-    int TestFBCracker::Update(const std::string &table, const std::string &key, std::string &values)
+    int TestFbCracker::Update(const std::string &table, const std::string &key, std::string &values)
     {
         return Insert(table, key, values);
     }
 
-    int TestFBCracker::Delete(const std::string &table, const std::string &key)
+    int TestFbCracker::Delete(const std::string &table, const std::string &key)
     {
         rocksdb::Status s = rocksdb_->Delete(write_options_,
                                              cfhandles_[table],
@@ -267,19 +295,18 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestFBCracker::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
-                                rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType,
-                                std::string columndatatype)
+    void TestFbCracker::SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount, 
+           rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
         }
-        
+
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
         options_.max_open_files = -1;
 
-        options_.env->SetBackgroundThreads(10, rocksdb::Env::Priority::LOW);
+	    options_.env->SetBackgroundThreads(10, rocksdb::Env::Priority::LOW);
         options_.env->SetBackgroundThreads(4, rocksdb::Env::Priority::HIGH);
         options_.max_background_compactions = 10;
         options_.max_background_flushes = 4;
@@ -288,7 +315,6 @@ namespace ycsbc {
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
-        options_.column_data_type = columndatatype;
         options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
         options_.SetInputOutputDataType(inputDataType, outputDataType);
 
@@ -300,28 +326,98 @@ namespace ycsbc {
         options_.IncreaseParallelism(24);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
-        options_.max_bytes_for_level_base = 256 * 1024 * 1024;
+	    options_.max_bytes_for_level_base = 256 * 1024 * 1024;
 
         options_.target_file_size_base = 256 * 1024 * 1024;
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = rocksdb::NewLRUCache(256 * 1024 * 1024);
         table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
-
+        
     }
 
-    void TestFBCracker::BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
-                                                std::vector<rocksdb::ColumnFamilyHandle *> handles)
+    void TestFbCracker::GetColumnFamilyDescriptors(const std::string &dbname,
+                                             std::vector<rocksdb::ColumnFamilyDescriptor> &column_families, 
+                                             int num_splits)
     {
-        for (size_t i = 0; i < handles.size(); i++) {
-            if (column_family_descriptors[i].name != rocksdb::kDefaultColumnFamilyName) {
-                cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
-                cfhandlelist_.push_back(handles[i]);
+        options_.compaction_style = rocksdb::kCompactionStyleUniversal;
+        column_families.push_back(rocksdb::ColumnFamilyDescriptor(
+            dbname, rocksdb::ColumnFamilyOptions(options_)));
+      
+	    options_.level0_file_num_compaction_trigger = 2;
+        bool lastSplitLevel = false;
+        std::string prefix = dbname + "_sys_cf";
+        std::queue<int> parents;
+        parents.push(options_.num_columns);
+
+        int total_levels = options_.num_levels;
+        for (int level = 1; level < total_levels - 2; level++) {
+            int queueLen = parents.size();
+
+            options_.num_levels = options_.num_levels - level;
+            if (level == total_levels - 4) {
+                   options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR | rocksdb::TransformerType::CONVERTER);
+            }
+            if (level == total_levels - 3) {
+                lastSplitLevel = true;
+                options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+                options_.compaction_style = rocksdb::kCompactionStyleLevel;
+            }
+            for (int j = 0; j < queueLen; j++) {
+                int parent_cols = parents.front();
+                parents.pop();
+                if (parent_cols < 2) {
+                    continue;
+                }
+
+                if (!lastSplitLevel && parent_cols <= num_splits) {
+                    lastSplitLevel = true;
+                    options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+                }
+                for (int k = 0; k < num_splits; k++) {
+                    int child = parent_cols/(num_splits-k);
+                    if (child == 0) {
+                        child = 1;
+                    }
+
+                    if (child < num_splits) {
+                        lastSplitLevel = true;
+                        options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
+                    }
+                    std::string cfname_child = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*num_splits+k);
+                    column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname_child, rocksdb::ColumnFamilyOptions(options_)));
+
+                    options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
+
+                    if (!lastSplitLevel && child >= num_splits) {
+                        parents.push(child);
+                    }
+                    if (k < num_splits-1) {
+                        parent_cols -= child;
+                        if (parent_cols == 0) {
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
 
-    void TestFBCracker::BuildQueryHandles(std::set<std::string> fields) {
+    void TestFbCracker::BuildColumnFamilyHandleMap(
+        std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
+        std::vector<rocksdb::ColumnFamilyHandle *> handles)
+    {
+        for (size_t i = 0; i < handles.size(); i++)
+        {
+            if (column_family_descriptors[i].name == rocksdb::kDefaultColumnFamilyName) {
+                continue;
+            }
+            cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
+            cfhandlelist_.push_back(handles[i]);
+        }
+    }
+
+    void TestFbCracker::BuildQueryHandles(std::set<std::string> fields) {
         std::set<int> fieldpositions;
         for (auto field : fields) {
             int pos = 0;
@@ -368,51 +464,16 @@ namespace ycsbc {
         }
     }
 
-    void TestFBCracker::GetColumnFamilyDescriptors(const std::string &dbname,
-                                             std::vector<rocksdb::ColumnFamilyDescriptor> &column_families,
-                                             int num_splits)
-    {
-        options_.compaction_style = rocksdb::kCompactionStyleUniversal;
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(
-            dbname, rocksdb::ColumnFamilyOptions(options_)));
-      
-        options_.level0_file_num_compaction_trigger = 2;
-        std::string prefix = dbname + "_converted_cf_sys_cf";
-        std::queue<int> parents;
-        parents.push(options_.num_columns);
-
-        int total_levels = options_.num_levels;
-        for (int level = 1; level < total_levels - 2; level++) {
-            int queueLen = parents.size();
-
-            if (level == total_levels - 3) {
-                options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
-                options_.compaction_style = rocksdb::kCompactionStyleLevel;
-            } else if (level == total_levels - 4) {
-                options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR | rocksdb::TransformerType::CONVERTER);
-            }
-            for (int j = 0; j < queueLen; j++) {
-                int parent_cols = parents.front();
-                parents.pop();
-                if (parent_cols < 2) {
-                    continue;
-                }
-
-                for (int k = 0; k < num_splits; k++) {
-                    int child = parent_cols/(num_splits-k);
-                    std::string cfname1 = prefix + "_L" + std::to_string(level) + "_G" + std::to_string(j*num_splits+k);
-                    column_families.push_back(rocksdb::ColumnFamilyDescriptor(cfname1, rocksdb::ColumnFamilyOptions(options_)));
-                    parents.push(child);
-
-                    if (k < num_splits-1) {
-                        parent_cols -= child;
-                        if (parent_cols == 0) {
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+    rocksdb::Status TestFbCracker::PerformGet(rocksdb::DB* db, 
+                           rocksdb::ColumnFamilyHandle* cfHandle, 
+                           const std::string& key, 
+                           std::string& result) {
+    std::string foundvalue;
+    rocksdb::Status s = db->Get(rocksdb::ReadOptions(), cfHandle, key, &foundvalue);
+    if (s.ok() && !foundvalue.empty()) {
+        result = foundvalue;
     }
+    return s;
+}
 
 }
