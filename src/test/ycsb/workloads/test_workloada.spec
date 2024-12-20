@@ -13,6 +13,7 @@ recordcount=20000000
 operationcount=20000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
+inputdataformat=json
 columndatatype=numeric
 
 readproportion=0

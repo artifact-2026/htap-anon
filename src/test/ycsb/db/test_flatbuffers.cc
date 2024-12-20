@@ -14,7 +14,7 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdataformat", "PROTOBUF"));
+        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdataformat", "JSON"));
         rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdataformat", "FLATBUFFERS"));
         std::string columnDataType = props.GetProperty("columndatatype", "1");
 
@@ -92,11 +92,37 @@ namespace ycsbc {
             }
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-            if (result != "") {
+            if (s.ok()) {
+                if (fields != nullptr) {
+                    flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t*>(result.c_str()), result.size());
+                    if (rocksdb::VerifyFbRowBuffer(verifier)) {
+                        const uint8_t* buf = reinterpret_cast<const uint8_t*>(result.c_str());
+                        auto fb_row = rocksdb::GetFbRow(buf);
+                        if (fb_row && fb_row->strcols() && fb_row->strcols()->size() > 0) {
+                            static_cast<void>(fb_row->strcols()->Get(0));
+                        }
+                        if (fb_row && fb_row->numcols() && fb_row->numcols()->size() > 0) {
+                            static_cast<void>(fb_row->numcols()->Get(0));
+                        }
+                    }
+                }
                 return 0;
             }
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"], key, &result);
-            if (result != "") {
+            if (s.ok()) {
+                if (fields != nullptr) {
+                    flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t*>(result.c_str()), result.size());
+                    if (rocksdb::VerifyFbRowBuffer(verifier)) {
+                        const uint8_t* buf = reinterpret_cast<const uint8_t*>(result.c_str());
+                        auto fb_row = rocksdb::GetFbRow(buf);
+                        if (fb_row && fb_row->strcols() && fb_row->strcols()->size() > 0) {
+                            static_cast<void>(fb_row->strcols()->Get(0));
+                        }
+                        if (fb_row && fb_row->numcols() && fb_row->numcols()->size() > 0) {
+                            static_cast<void>(fb_row->numcols()->Get(0));
+                        }
+                    }
+                }
                 return 0;
             }
         }
@@ -217,7 +243,7 @@ namespace ycsbc {
         options_.SetInputOutputDataType(inputDataType, outputDataType);
 
         rocksdb::BlockBasedTableOptions table_options;
-        table_options.block_cache = rocksdb::NewLRUCache(256 * 1024 * 1024);
+        table_options.block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024);
         table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
     }

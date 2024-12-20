@@ -77,7 +77,11 @@ namespace ycsbc {
             }
         } else {
             rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, key, &result);
-            if (s.ok()) {    
+            if (s.ok()) {
+                if (fields != nullptr) {
+                    nlohmann::json parsedJson = nlohmann::json::parse(result);
+                    auto final_res = parsedJson["field0"];
+                }
                 return 0;
             }
         }
@@ -203,7 +207,7 @@ namespace ycsbc {
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
         rocksdb::BlockBasedTableOptions table_options;
-        table_options.block_cache = rocksdb::NewLRUCache(256 * 1024 * 1024);
+        table_options.block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024);
         table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
     }

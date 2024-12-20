@@ -87,12 +87,22 @@ namespace ycsbc {
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
             if (s.ok()) {
+                if (fields != nullptr) {
+                    data::Row row;
+                    row.ParseFromString(result);
+                    static_cast<void>(row.columns(0));
+                }
                 return 0;
             }
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_indexed_data_cf"], key, &result);
         }
 
         if (s.ok()) {
+            if (fields != nullptr) {
+                data::Row row;
+                row.ParseFromString(result);
+                static_cast<void>(row.columns(0));
+            }
             return 0;
         }
         return 1;
@@ -204,7 +214,7 @@ namespace ycsbc {
 
         options_.target_file_size_base = 256 * 1024 * 1024;
         rocksdb::BlockBasedTableOptions table_options;
-        table_options.block_cache = rocksdb::NewLRUCache(256 * 1024 * 1024);
+        table_options.block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024);
         table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
     }
