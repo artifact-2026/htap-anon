@@ -147,12 +147,12 @@ namespace ycsbc {
                 s = rocksdb_->Get(rocksdb::ReadOptions(),
                                   cfhandles_[table+"_sys_cf_L3_G0"],
                                   key, &result);
-                if (result != "") {
+                if (s.ok()) {
                     return 0;
                 }
             } else {
                 s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-                if (result != "") {
+                if (s.ok()) {
                     return 0;
                 }
                 for (int i = 1; i < 4; i++) {
@@ -162,7 +162,7 @@ namespace ycsbc {
                     s = rocksdb_->Get(rocksdb::ReadOptions(),
                                       cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
                                       key, &result);
-                    if (result != "") {
+                    if (s.ok()) {
                         return 0;
                     }
                 }
@@ -331,7 +331,7 @@ namespace ycsbc {
 
         options_.target_file_size_base = 256 * 1024 * 1024;
         rocksdb::BlockBasedTableOptions table_options;
-        table_options.block_cache = rocksdb::NewLRUCache(256 * 1024 * 1024);
+        table_options.block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024);
         table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
         
