@@ -15,9 +15,10 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "16"));
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "JSON"));
-        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "FLATBUFFERS"));
-        SetOptions(dbfilename, levels, fieldcount, false, inputType, outputType);
+        inputType_ = props.GetProperty("inputdataformat", "json");
+        outputType_ = props.GetProperty("outputdataformat", "flatbuffers");
+        columnDataType_ = props.GetProperty("columndatatype", "nemeric");
+        SetOptions(dbfilename, levels, fieldcount, false);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
@@ -81,17 +82,34 @@ namespace ycsbc {
 
     int TestPreconverting::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        nlohmann::json parsedJson = nlohmann::json::parse(values);
-
         flatbuffers::FlatBufferBuilder builder;
         std::vector<int32_t> numvals;
         std::vector<flatbuffers::Offset<flatbuffers::String>> strvals;
 
-        for (const auto& element : parsedJson) {
-            if (element.is_number()) {
-                numvals.push_back(element.get<int>());
-            } else if (element.is_string()) {
-                strvals.push_back(builder.CreateString(element.get<std::string>()));
+        if (inputType_ == "json") {
+            nlohmann::json parsedJson = nlohmann::json::parse(values);
+            for (const auto& element : parsedJson) {
+                if (element.is_number()) {
+                    numvals.push_back(element.get<int>());
+                } else if (element.is_string()) {
+                    strvals.push_back(builder.CreateString(element.get<std::string>()));
+                }
+            }
+        } else {
+            data::Row row;
+            row.ParseFromString(values);
+            for (int i = 0; i < row.columns_size(); i++) {
+                if (columnDataType_ == "numeric") {
+                    numvals.push_back(std::stoi(row.columns(i)));
+                } else if (columnDataType_ == "string") {
+                    strvals.push_back(builder.CreateString(row.columns(i)));
+                } else {
+                    if (i < row.columns_size()/2) {
+                        numvals.push_back(std::stoi(row.columns(i)));
+                    } else {
+                        strvals.push_back(builder.CreateString(row.columns(i)));
+                    }
+                }
             }
         }
 
@@ -128,8 +146,7 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestPreconverting::SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging,
-                rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
+    void TestPreconverting::SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
@@ -148,7 +165,8 @@ namespace ycsbc {
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
-        options_.SetInputOutputDataType(inputDataType, outputDataType);
+        options_.SetInputOutputDataType(ycsbc::DBHelper::mapStringToDataType(inputType_),
+                                        ycsbc::DBHelper::mapStringToDataType(outputType_));
 
         options_.write_buffer_size = 128 * 1024 * 1024;
         options_.max_write_buffer_number = 8;

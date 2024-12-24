@@ -81,88 +81,63 @@ namespace ycsbc {
         rocksdb::Status s;
         result = "";
         int num_splits = 2;
-        int leaf_splits = num_splits*num_splits*num_splits;
 
         if (fields == nullptr) {
-            if (req_dist == "leastrecent") {
-                for (int j = 0; j < leaf_splits; j++) {
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+            if (s.ok()) {
+                return 0;
+            }
+
+            int group = 1;
+            for (int i = 1; i < 4; i++) {
+                group *= num_splits;
+                //std::vector<std::future<rocksdb::Status>> futures(group);
+                //std::vector<std::string> values(group);
+                for (int j = 0; j < group; j++) {
+                    //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G" + std::to_string(j)];
+                    //futures[j] = std::async(std::launch::async, 
+                    //            std::bind(&Mycelium::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[j])));
+
                     std::string foundvalue = "";
                     s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                  cfhandles_[table+"_sys_cf_L3_G"+std::to_string(j)],
-                                  key, &foundvalue);
+                                        cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
+                                        key, &foundvalue);
                     if (foundvalue != "") {
                         result += foundvalue;
                     } else {
                         break;
                     }
                 }
+
+                /*for (int j = 0; j < group; j++) {
+                    rocksdb::Status s = futures[j].get();
+                    if (s.ok() && !values[j].empty()) {
+                        result += values[j];
+                    } else {
+                        break;  // Exit loop if any error or empty value
+                    }
+                }*/
+            
                 if (result != "") {
                     return 0;
                 }
-            } else {
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-                if (s.ok()) {
-                    return 0;
-                }
-
-                int group = 1;
-                for (int i = 1; i < 4; i++) {
-                    group *= num_splits;
-                    //std::vector<std::future<rocksdb::Status>> futures(group);
-                    //std::vector<std::string> values(group);
-                    for (int j = 0; j < group; j++) {
-                        //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G" + std::to_string(j)];
-                        //futures[j] = std::async(std::launch::async, 
-                        //            std::bind(&Mycelium::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[j])));
-
-                        std::string foundvalue = "";
-                        s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                          cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
-                                          key, &foundvalue);
-                        if (foundvalue != "") {
-                            result += foundvalue;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    /*for (int j = 0; j < group; j++) {
-                        rocksdb::Status s = futures[j].get();
-                        if (s.ok() && !values[j].empty()) {
-                            result += values[j];
-                        } else {
-                            break;  // Exit loop if any error or empty value
-                        }
-                    }*/
-                
-                    if (result != "") {
-                        return 0;
-                    }
-                }
             }
         } else {
-            if (req_dist == "leastrecent") {
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+            if (s.ok()) {
+                data::Row row;
+                row.ParseFromString(result);
+                return 0;
+            }
+            for (int i = 1; i < 4; i++) {
+                //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G0"];
+                //futures[i] = std::async(std::launch::async, 
+                //                std::bind(&Mycelium::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[i])));
                 s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                  cfhandles_[table+"_sys_cf_L3_G0"],
-                                  key, &result);
+                                    cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
+                                    key, &result);
                 if (s.ok()) {
                     return 0;
-                }
-            } else {
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-                if (s.ok()) {
-                    return 0;
-                }
-                for (int i = 1; i < 4; i++) {
-                    //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G0"];
-                    //futures[i] = std::async(std::launch::async, 
-                    //                std::bind(&Mycelium::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[i])));
-                    s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                      cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
-                                      key, &result);
-                    if (s.ok()) {
-                        return 0;
-                    }
                 }
             }
         }
