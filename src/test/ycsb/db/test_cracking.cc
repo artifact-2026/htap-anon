@@ -21,8 +21,8 @@ namespace ycsbc {
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         int num_splits = 2;
 
-        inputType_ = props.GetProperty("inputdatatype", "protobuf");
-        outputType_ = props.GetProperty("outputdatatype", "flatbuffers");
+        inputType_ = props.GetProperty("inputdataformat", "protobuf");
+        outputType_ = props.GetProperty("outputdataformat", "flatbuffers");
         columnDataType_ = props.GetProperty("columndatatype", "numeric");
         SetOptions(dbfilename, false, levels, fieldcount);
 
@@ -138,6 +138,12 @@ namespace ycsbc {
                                     cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
                                     key, &result);
                 if (s.ok()) {
+                    if (inputType_ == "protobuf") {
+                        data::Row row;
+                        row.ParseFromString(result);
+                    } else if (inputType_ == "json") {
+                        nlohmann::json parsedJson = nlohmann::json::parse(result);
+                    }
                     return 0;
                 }
             }
