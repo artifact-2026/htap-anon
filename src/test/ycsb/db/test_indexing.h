@@ -82,11 +82,11 @@ class Indexing : public DB{
         rocksdb::Options options_;
         rocksdb::WriteOptions write_options_;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
-        int noResults;
+        std::string inputType_;
+        std::string outputType_;
+        std::string columnDataType_;
 
-        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount,
-                        rocksdb::InputOutputDataType inputType,
-                        rocksdb::InputOutputDataType outputType);
+        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount);
         std::vector<std::string> deserializeIndex(const std::string& serialized);
         std::vector<std::string> parsePrimaryKeys(const std::string& value);
         void GetColumnFamilyDescriptors(const std::string& dbname,
