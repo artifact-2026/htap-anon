@@ -5,6 +5,7 @@
 #include "core/core_workload.h"
 #include "test_fb_cracker.h"
 #include "lib/coding.h"
+#include <nlohmann/json.hpp>
 
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
@@ -20,15 +21,10 @@ namespace ycsbc {
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         int num_splits = 2;
-        /*if (fieldcount > 25 && fieldcount < 64) {
-            num_splits = 3;
-        } else {
-            num_splits = 4;
-        }*/
 
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
-        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "FLATBUFFERS"));
-        SetOptions(dbfilename, false, levels, fieldcount, inputType, outputType);
+        inputType_ = props.GetProperty("inputdataformat", "protobuf");
+        outputType_ = props.GetProperty("outputdataformat", "flatbuffers");
+        SetOptions(dbfilename, false, levels, fieldcount);
 
         options_.transformers.push_back(new rocksdb::Distributor());
         options_.transformers.push_back(new rocksdb::Converter());
@@ -83,88 +79,64 @@ namespace ycsbc {
         rocksdb::Status s;
         result = "";
         int num_splits = 2;
-        int leaf_splits = num_splits*num_splits*num_splits;
 
         if (fields == nullptr) {
-            if (req_dist == "leastrecent") {
-                for (int j = 0; j < leaf_splits; j++) {
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+            if (s.ok()) {
+                return 0;
+            }
+
+            int group = 1;
+            for (int i = 1; i < 4; i++) {
+                group *= num_splits;
+                //std::vector<std::future<rocksdb::Status>> futures(group);
+                //std::vector<std::string> values(group);
+                for (int j = 0; j < group; j++) {
+                    //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G" + std::to_string(j)];
+                    //futures[j] = std::async(std::launch::async, 
+                    //            std::bind(&TestFbCracker::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[j])));
+
                     std::string foundvalue = "";
                     s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                  cfhandles_[table+"_sys_cf_L3_G"+std::to_string(j)],
-                                  key, &foundvalue);
+                                        cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
+                                        key, &foundvalue);
                     if (foundvalue != "") {
                         result += foundvalue;
                     } else {
                         break;
                     }
                 }
+            
                 if (result != "") {
                     return 0;
                 }
-            } else {
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-                if (s.ok()) {
-                    return 0;
-                }
-
-                int group = 1;
-                for (int i = 1; i < 4; i++) {
-                    group *= num_splits;
-                    //std::vector<std::future<rocksdb::Status>> futures(group);
-                    //std::vector<std::string> values(group);
-                    for (int j = 0; j < group; j++) {
-                        //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G" + std::to_string(j)];
-                        //futures[j] = std::async(std::launch::async, 
-                        //            std::bind(&TestFbCracker::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[j])));
-
-                        std::string foundvalue = "";
-                        s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                          cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
-                                          key, &foundvalue);
-                        if (foundvalue != "") {
-                            result += foundvalue;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    /*for (int j = 0; j < group; j++) {
-                        rocksdb::Status s = futures[j].get();
-                        if (s.ok() && !values[j].empty()) {
-                            result += values[j];
-                        } else {
-                            break;  // Exit loop if any error or empty value
-                        }
-                    }*/
-                
-                    if (result != "") {
-                        return 0;
-                    }
-                }
             }
         } else {
-            if (req_dist == "leastrecent") {
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
+            if (s.ok()) {
+                if (inputType_ == "protobuf") {
+                    data::Row row;
+                    row.ParseFromString(result);
+                } else {
+                    nlohmann::json parsedJson = nlohmann::json::parse(result);
+                }
+                return 0;
+            }
+            for (int i = 1; i < 4; i++) {
+                //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G0"];
+                //futures[i] = std::async(std::launch::async, 
+                //                std::bind(&TestFbCracker::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[i])));
                 s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                  cfhandles_[table+"_sys_cf_L3_G0"],
-                                  key, &result);
+                                    cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
+                                    key, &result);
                 if (s.ok()) {
-                    return 0;
-                }
-            } else {
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-                if (s.ok()) {
-                    return 0;
-                }
-                for (int i = 1; i < 4; i++) {
-                    //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G0"];
-                    //futures[i] = std::async(std::launch::async, 
-                    //                std::bind(&TestFbCracker::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[i])));
-                    s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                      cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
-                                      key, &result);
-                    if (s.ok()) {
-                        return 0;
+                    if (inputType_ == "protobuf") {
+                        data::Row row;
+                        row.ParseFromString(result);
+                    } else {
+                        nlohmann::json parsedJson = nlohmann::json::parse(result);
                     }
+                    return 0;
                 }
             }
         }
@@ -295,8 +267,7 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestFbCracker::SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount, 
-           rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
+    void TestFbCracker::SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount) 
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
@@ -318,7 +289,8 @@ namespace ycsbc {
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
-        options_.SetInputOutputDataType(inputDataType, outputDataType);
+        options_.SetInputOutputDataType(ycsbc::DBHelper::mapStringToDataType(inputType_),
+                                        ycsbc::DBHelper::mapStringToDataType(outputType_));
 
         options_.write_buffer_size = 128 * 1024 * 1024;
         options_.max_write_buffer_number = 8;

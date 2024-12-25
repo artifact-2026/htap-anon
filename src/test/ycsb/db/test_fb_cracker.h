@@ -52,10 +52,11 @@ class TestFbCracker : public DB{
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
         std::vector<rocksdb::ColumnFamilyHandle*> cfhandlelist_;
         std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
+        std::string inputType_;
+        std::string outputType_;
+        std::string columnDataType_;
 
-        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount,
-                        rocksdb::InputOutputDataType inputType,
-                        rocksdb::InputOutputDataType outputType);
+        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount);
         void GetColumnFamilyDescriptors(const std::string& dbname,
                                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families,
                                     int num_splits);
