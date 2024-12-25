@@ -5,6 +5,7 @@
 #include "core/core_workload.h"
 #include "test_cracking.h"
 #include "lib/coding.h"
+#include <nlohmann/json.hpp>
 
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
@@ -19,15 +20,11 @@ namespace ycsbc {
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         int num_splits = 2;
-        /*if (fieldcount > 25 && fieldcount < 64) {
-            num_splits = 3;
-        } else {
-            num_splits = 4;
-        }*/
 
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
-        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
-        SetOptions(dbfilename, false, levels, fieldcount, inputType, outputType);
+        inputType_ = props.GetProperty("inputdatatype", "protobuf");
+        outputType_ = props.GetProperty("outputdatatype", "flatbuffers");
+        columnDataType_ = props.GetProperty("columndatatype", "numeric");
+        SetOptions(dbfilename, false, levels, fieldcount);
 
         options_.transformers.push_back(new rocksdb::Distributor());
 
@@ -125,8 +122,12 @@ namespace ycsbc {
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
             if (s.ok()) {
-                data::Row row;
-                row.ParseFromString(result);
+                if (inputType_ == "protobuf") {
+                    data::Row row;
+                    row.ParseFromString(result);
+                } else if (inputType_ == "json") {
+                    nlohmann::json parsedJson = nlohmann::json::parse(result);
+                }
                 return 0;
             }
             for (int i = 1; i < 4; i++) {
@@ -268,8 +269,7 @@ namespace ycsbc {
         return 1;
     }
 
-    void Mycelium::SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount, 
-           rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
+    void Mycelium::SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
@@ -291,7 +291,8 @@ namespace ycsbc {
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
-        options_.SetInputOutputDataType(inputDataType, outputDataType);
+        options_.SetInputOutputDataType(ycsbc::DBHelper::mapStringToDataType(inputType_),
+                                        ycsbc::DBHelper::mapStringToDataType(outputType_));
 
         options_.write_buffer_size = 128 * 1024 * 1024;
         options_.max_write_buffer_number = 8;
