@@ -52,10 +52,11 @@ class TestRocksDB : public DB{
         std::shared_ptr<rocksdb::Cache> cache_;
         std::shared_ptr<rocksdb::Statistics> dbstats_;
         rocksdb::ColumnFamilyHandle* cfhandle_;
+        std::string inputType_;
+        std::string outputType_;
+        std::string columnDataType_;
 
-        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
-                        rocksdb::InputOutputDataType inputType,
-                        rocksdb::InputOutputDataType outputType);
+        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
         void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
                                                 std::vector<rocksdb::ColumnFamilyHandle *> handles);        
