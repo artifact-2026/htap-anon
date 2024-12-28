@@ -99,7 +99,6 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        result.clear();
         if (index_access) {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->SeekToFirst();
@@ -131,22 +130,25 @@ namespace ycsbc {
                 }
             }
         } else {
-            //int sum = 0;
-            int searched = 0;
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->Seek(begin_key);
-            while (it->Valid() && searched < 25) {
-                //nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
-                //uint32_t num = parsedJson["field0"].get<int>();
-                //data::Row row;
-                //row.ParseFromString(it->value().ToString());
+            while (it->Valid() && result.size() < 100) {
+                uint64_t sum = 0;
+                if (fields != nullptr) {
+                    if (inputType_ == "protobuf") {
+                        data::Row row;
+                        row.ParseFromString(it->value().ToString());
+                        sum += std::stoi(row.columns(0));
+                    } else {
+                        nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
+                        sum += std::stoi(parsedJson["field0"].get<std::string>());
+                    }
+                }
+                
                 result.push_back(it->value().ToString());
-                //uint32_t num = row.columns(0);
-                //sum += num;
                 it->Next();
-                searched++;
             }
-            if (searched >= 25) {
+            if (result.size() >= 100) {
                 return 0;
             }
         }
