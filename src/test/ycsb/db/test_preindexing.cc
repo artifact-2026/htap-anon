@@ -11,9 +11,10 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "16"));
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
-        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
-        SetOptions(dbfilename, levels, fieldcount, false, inputType, outputType);
+        inputType_ = props.GetProperty("inputdataformat", "protobuf");
+        outputType_ = props.GetProperty("outputdataformat", "protobuf");
+        columnDataType_ = props.GetProperty("columndatatype", "numeric");
+        SetOptions(dbfilename, levels, fieldcount, false);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
@@ -65,6 +66,14 @@ namespace ycsbc {
         }
 
         if (s.ok()) {
+            if (fields != nullptr) {
+                if (inputType_ == "json") {
+                    nlohmann::json parsedJson = nlohmann::json::parse(result);
+                } else {
+                    data::Row row;
+                    row.ParseFromString(result);
+                }
+            }
             return 0;
         }
         return 1;
@@ -236,8 +245,7 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestPreindexing::SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging,
-                    rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
+    void TestPreindexing::SetOptions(const char *dbfilename, int levels, int fieldcount, bool logging)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
@@ -256,7 +264,8 @@ namespace ycsbc {
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
-        options_.SetInputOutputDataType(inputDataType, outputDataType);
+        options_.SetInputOutputDataType(ycsbc::DBHelper::mapStringToDataType(inputType_),
+                                        ycsbc::DBHelper::mapStringToDataType(outputType_));
 
         options_.write_buffer_size = 128 * 1024 * 1024;
         options_.max_write_buffer_number = 8;
