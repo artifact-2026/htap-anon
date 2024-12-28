@@ -51,11 +51,9 @@ class TestMynoop : public DB{
         std::shared_ptr<rocksdb::Cache> cache_;
         std::shared_ptr<rocksdb::Statistics> dbstats_;
         std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
+        std::string inputType_, outputType_, columnDataType_;
 
-        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
-                        rocksdb::InputOutputDataType inputType,
-                        rocksdb::InputOutputDataType outputType,
-                        std::string columnDataType);
+        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
         // serialize for inserts
         void GetColumnFamilyDescriptors(const std::string& dbname,
                 std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);

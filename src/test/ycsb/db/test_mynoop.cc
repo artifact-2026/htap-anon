@@ -11,11 +11,11 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdataformat", "PROTOBUF"));
-        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdataformat", "FLATBUFFERS"));
-        std::string columnDataType = props.GetProperty("columndatatype", "mixed");
+        inputType_ = props.GetProperty("inputdataformat", "protobuf");
+        outputType_ = props.GetProperty("outputdataformat", "flatbuffers");
+        columnDataType_ = props.GetProperty("columndatatype", "numeric");
 
-        SetOptions(props, false, levels, fieldcount, inputType, outputType, columnDataType);
+        SetOptions(props, false, levels, fieldcount);
         options_.transformers.push_back(new rocksdb::Mynooper());
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
@@ -90,10 +90,26 @@ namespace ycsbc {
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
             if (result != "") {
+                if (fields != nullptr) {
+                    if (inputType_ == "json") {
+                        nlohmann::json parsedJson = nlohmann::json::parse(result);
+                    } else {
+                        data::Row row;
+                        row.ParseFromString(result);
+                    }
+                }
                 return 0;
             }
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_identity_cf"], key, &result);
             if (result != "") {
+                if (fields != nullptr) {
+                    if (inputType_ == "json") {
+                        nlohmann::json parsedJson = nlohmann::json::parse(result);
+                    } else {
+                        data::Row row;
+                        row.ParseFromString(result);
+                    }
+                }
                 return 0;
             }
         }
@@ -172,8 +188,7 @@ namespace ycsbc {
         return 1;
     }
 
-    void TestMynoop::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount,
-        rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType, std::string columndatatype)
+    void TestMynoop::SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
@@ -202,9 +217,10 @@ namespace ycsbc {
         
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
-        options_.column_data_type = columndatatype;
+        options_.column_data_type = columnDataType_;
         options_.SetTransformerType(rocksdb::TransformerType::MYNOOPER);
-        options_.SetInputOutputDataType(inputDataType, outputDataType);
+        options_.SetInputOutputDataType(ycsbc::DBHelper::mapStringToDataType(inputType_),
+                                        ycsbc::DBHelper::mapStringToDataType(outputType_));
 
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024);
