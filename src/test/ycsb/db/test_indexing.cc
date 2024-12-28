@@ -99,18 +99,17 @@ namespace ycsbc {
                 return 0;
             }
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_indexed_data_cf"], key, &result);
-        }
-
-        if (s.ok()) {
-            if (fields != nullptr) {
-                if (inputType_ == "protobuf") {
-                    data::Row row;
-                    row.ParseFromString(result);
-                } else {
-                    nlohmann::json parsedJson = nlohmann::json::parse(result);
+            if (s.ok()) {
+                if (fields != nullptr) {
+                    if (inputType_ == "protobuf") {
+                        data::Row row;
+                        row.ParseFromString(result);
+                    } else {
+                        nlohmann::json parsedJson = nlohmann::json::parse(result);
+                    }
                 }
+                return 0;
             }
-            return 0;
         }
         return 1;
     }
