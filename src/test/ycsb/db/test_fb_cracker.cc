@@ -149,89 +149,70 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        int searched = 0;
+        int searched = 100;
         int num_splits = 2;
-        int leaf_splits = num_splits*num_splits*num_splits;
 
         if (fields == nullptr) {
-            if (req_dist == "leastrecent") {
-                for (int i = 0; i < leaf_splits; i++) {
-                    auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_sys_cf_L3_G"+std::to_string(i)]);
+            int group = 1;
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < group; j++) {
+                    std::string cfname = table;
+                    if (i > 0) {
+                        cfname += "_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j);
+                    }
+                    auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[cfname]);
+                    int scanned = 0;
                     it->Seek(begin_key);
-                    searched = 0;
-                    while (it->Valid() && searched < 25) {
+                    while (it->Valid() && scanned < searched) {
                         result.push_back(it->value().ToString());
                         it->Next();
-                        searched++;
+                        scanned++;
                     }
-                    if (searched == 0) {
+                    if (scanned == 0) {
                         break;
                     }
                 }
-                if (searched == 25) {
+                if (result.size() >= uint64_t(group*100)) {
                     return 0;
+                } else {
+                    searched -= result.size()/group;
                 }
-            } else {
-                int group = 1;
-                searched = 0;
-                for (int i = 0; i < 4; i++) {
-                    for (int j = 0; j < group; j++) {
-                        std::string cfname = table;
-                        if (i > 0) {
-                            cfname += "_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j);
-                        }
-                        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[cfname]);
-                        int searchedsofar = searched;
-                        it->Seek(begin_key);
-                        while (it->Valid() && searched < 25) {
-                            result.push_back(it->value().ToString());
-                            it->Next();
-                            searched++;
-                        }
-                        if (searched == searchedsofar) {
-                            break;
-                        }
-                    }
-                    if (searched >= 25) {
-                        return 0;
-                    }
-                    group *= num_splits;
-                }
-            }
+                group *= num_splits;
+            }  
         } else {
-            if (req_dist == "leastrecent") {
-                auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_sys_cf_L3_G0"]);
+            for (int i = 0; i < 4; i++) {
+                std::string tablename;
+                if (i > 0) {
+                    tablename = table + "_sys_cf_L" + std::to_string(i) + "_G0";
+                } else {
+                    tablename = table;
+                }
+
+                auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[tablename]);
                 it->Seek(begin_key);
 
-                while (it->Valid() && searched < 25) {
+                int scanned = 0;
+                uint64_t sum = 0;
+                while (it->Valid() && scanned < searched) {
+                    if (i < 3) {
+                        if (inputType_ == "protobuf") {
+                            data::Row row;
+                            row.ParseFromString(it->value().ToString());
+                            sum += std::stoi(row.columns(0));
+                        } else {
+                            nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
+                            sum += std::stoi(parsedJson["field0"].get<std::string>());
+                        }
+                    }
                     result.push_back(it->value().ToString());
+                
                     it->Next();
-                    searched++;
+                    scanned++;
                 }
-                if (searched == 25) {
+                if (result.size() >= 100) {
                     return 0;
-                }
-            } else {
-                for (int i = 0; i < 4; i++) {
-                    std::string tablename;
-                    if (i > 0) {
-                        tablename = table + "_sys_cf_L" + std::to_string(i) + "_G0";
-                    } else {
-                        tablename = table;
-                    }
-
-                    auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[tablename]);
-                    it->Seek(begin_key);
-
-                    while (it->Valid() && searched < 25) {
-                        result.push_back(it->value().ToString());
-                    
-                        it->Next();
-                        searched++;
-                    }
-                    if (searched >= 25) {
-                        return 0;
-                    }
+                } else {
+                    searched -= result.size();
                 }
             }
         }
