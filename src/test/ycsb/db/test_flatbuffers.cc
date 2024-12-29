@@ -128,51 +128,49 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        int searched = 0;
-        int sum = 0;
-        if (req_dist == "leastrecent") {
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
-            it->Seek(begin_key);
-            while (it->Valid() && searched < 25) {
-                const uint8_t* buf = reinterpret_cast<const uint8_t*>(it->value().data());
-                auto fb_row = rocksdb::GetFbRow(buf);
-
-                // Check if numcols exists and access the first element
-                if (fb_row->numcols() && fb_row->numcols()->size() > 0) {
-                    sum += fb_row->numcols()->Get(0);
+        uint64_t searched = 100;
+        uint64_t sum = 0;
+        
+        auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
+        itt->Seek(begin_key);
+        while (itt->Valid() && result.size() < searched) {
+            if (fields != nullptr) {
+                flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t*>(itt->value().data()), itt->value().size());
+                if (rocksdb::VerifyFbRowBuffer(verifier)) {
+                    const uint8_t* buf = reinterpret_cast<const uint8_t*>(itt->value().data());
+                    auto fb_row = rocksdb::GetFbRow(buf);
+                    if (fb_row && fb_row->numcols() && fb_row->numcols()->size() > 0) {
+                        sum += fb_row->numcols()->Get(0);
+                    }
                 }
-
-                it->Next();
-                searched++;
             }
-            if (sum > 0) {
-                return 0;
-            }
+            result.push_back(itt->value().ToString());
+            itt->Next();
+        }
+        if (result.size() >= 100) {
+            return 0;
         } else {
-            std::set<std::string> keyset;
-            auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
-            itt->Seek(begin_key);
-            while (itt->Valid() && searched < 15) {
-                result.push_back(itt->value().ToString());
-                keyset.insert(itt->key().ToString());
-                
-                itt->Next();
-                searched++;
-            }
+            searched -= result.size();
+        }
 
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
-            it->Seek(begin_key);
-            searched = 0;
-            while (it->Valid() && searched < 10) {
-                if (keyset.find(it->key().ToString()) != keyset.end()) {
-                    result.push_back(it->value().ToString());
+        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"]);
+        it->Seek(begin_key);
+        while (it->Valid() && result.size() < searched) {
+            if (fields != nullptr) {
+                flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t*>(itt->value().data()), itt->value().size());
+                if (rocksdb::VerifyFbRowBuffer(verifier)) {
+                    const uint8_t* buf = reinterpret_cast<const uint8_t*>(itt->value().data());
+                    auto fb_row = rocksdb::GetFbRow(buf);
+                    if (fb_row && fb_row->numcols() && fb_row->numcols()->size() > 0) {
+                        sum += fb_row->numcols()->Get(0);
+                    }
                 }
-                it->Next();
-                searched++;
             }
+            result.push_back(it->value().ToString());
+            it->Next();
         }
         
-        if (result.size() > 0) {
+        if (result.size() >= 100) {
             return 0;
         }
         return 1;
