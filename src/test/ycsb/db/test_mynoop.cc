@@ -122,44 +122,46 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        int searched = 0;
-        int sum = 0;
-        if (req_dist == "leastrecent") {
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_identity_cf"]);
-            it->Seek(begin_key);
-            while (it->Valid() && searched < 25) {
-                result.push_back(it->value().ToString());
-                it->Next();
-                searched++;
-            }
-            if (sum > 0) {
-                return 0;
-            }
-        } else {
-            std::set<std::string> keyset;
-            auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
-            itt->Seek(begin_key);
-            while (itt->Valid() && searched < 15) {
-                result.push_back(itt->value().ToString());
-                keyset.insert(itt->key().ToString());
-                
-                itt->Next();
-                searched++;
-            }
-
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_identity_cf"]);
-            it->Seek(begin_key);
-            searched = 0;
-            while (it->Valid() && searched < 10) {
-                if (keyset.find(it->key().ToString()) != keyset.end()) {
-                    result.push_back(it->value().ToString());
+        uint64_t sum = 0;
+        
+        auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
+        itt->Seek(begin_key);
+        while (itt->Valid() && result.size() < 100) {
+            if (fields != nullptr) {
+                if (inputType_ == "protobuf") {
+                    data::Row row;
+                    row.ParseFromString(itt->value().ToString());
+                    sum += std::stoi(row.columns(0));
+                } else {
+                    nlohmann::json parsedJson = nlohmann::json::parse(itt->value().ToString());
+                    sum += std::stoi(parsedJson["field0"].get<std::string>());
                 }
-                it->Next();
-                searched++;
             }
+            result.push_back(itt->value().ToString());
+            itt->Next();
+        }
+        if (result.size() >= 100) {
+            return 0;
+        }
+
+        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_identity_cf"]);
+        it->Seek(begin_key);
+        while (it->Valid() && result.size() < 100) {
+            if (fields != nullptr) {
+                if (inputType_ == "protobuf") {
+                    data::Row row;
+                    row.ParseFromString(it->value().ToString());
+                    sum += std::stoi(row.columns(0));
+                } else {
+                    nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
+                    sum += std::stoi(parsedJson["field0"].get<std::string>());
+                }
+            }
+            result.push_back(it->value().ToString());
+            it->Next();
         }
         
-        if (result.size() > 0) {
+        if (result.size() >= 100) {
             return 0;
         }
         return 1;
