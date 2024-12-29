@@ -68,16 +68,27 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        result.clear();
         auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
-        int searched = 0;
+        uint64_t sum = 0;
         it->Seek(begin_key);
-        while (it->Valid() && searched < 25) {
+        while (it->Valid() && result.size() < 100) {
+            if (fields != nullptr) {
+                flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t*>(it->value().data()), it->value().size());
+                if (rocksdb::VerifyFbRowBuffer(verifier)) {
+                    const uint8_t* buf = reinterpret_cast<const uint8_t*>(it->value().data());
+                    auto fb_row = rocksdb::GetFbRow(buf);
+                    if (fb_row && fb_row->numcols() && fb_row->numcols()->size() > 0) {
+                        sum += fb_row->numcols()->Get(0);
+                    }
+                }
+            }
             result.push_back(it->value().ToString());
             it->Next();
-            searched++;
         }
-        return result.size();
+        if (result.size() >= 100) {
+            return 0;
+        }
+        return 1;
     }
 
     int TestPreconverting::Insert(const std::string &table, const std::string &key, std::string &values)
