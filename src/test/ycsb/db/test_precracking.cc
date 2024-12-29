@@ -87,18 +87,43 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        result.clear();
         int searched = 0;
-        auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_colgrp_0"]);
-        it->Seek(begin_key);
-        while (it->Valid() && searched < 25) {
-            result.push_back(it->value().ToString());
-            
-            it->Next();
-            searched++;
-        }
-        if (result.size() > 0) {
-            return 0;
+        if (fields == nullptr) {
+            for (int i = 0; i < 8; i++) {
+                std::string cfname = table+"_colgrp_"+std::to_string(i);
+                auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[cfname]);
+                it->Seek(begin_key);
+                searched = 0;
+                while (it->Valid() && searched < 100) {
+                    result.push_back(it->value().ToString());
+                    searched++;
+                }
+            }
+            if (result.size() >= 800) {
+                return 0;
+            }
+        } else {
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_colgrp_0"]);
+            it->Seek(begin_key);
+            while (it->Valid() && searched < 100) {
+                uint64_t sum = 0;
+                if (fields != nullptr) {
+                    if (inputType_ == "protobuf") {
+                        data::Row row;
+                        row.ParseFromString(it->value().ToString());
+                        sum += std::stoi(row.columns(0));
+                    } else {
+                        nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
+                        sum += std::stoi(parsedJson["field0"].get<std::string>());
+                    }
+                }
+                result.push_back(it->value().ToString());
+                it->Next();
+                searched++;
+            }
+            if (result.size() > 100) {
+                return 0;
+            }
         }
         return 1;
     }
