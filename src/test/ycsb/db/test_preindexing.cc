@@ -108,18 +108,29 @@ namespace ycsbc {
                 result.push_back(fvalue);
             }
         } else {
-            auto itt = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
             int searched = 0;
-            itt->Seek(begin_key);
-            while (itt->Valid() && searched < 25) {
-                result.push_back(itt->value().ToString());
+            it->Seek(begin_key);
+            while (it->Valid() && searched < 100) {
+                uint64_t sum = 0;
+                if (fields != nullptr) {
+                    if (inputType_ == "protobuf") {
+                        data::Row row;
+                        row.ParseFromString(it->value().ToString());
+                        sum += std::stoi(row.columns(0));
+                    } else {
+                        nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
+                        sum += std::stoi(parsedJson["field0"].get<std::string>());
+                    }
+                }
+                result.push_back(it->value().ToString());
 
-                itt->Next();
+                it->Next();
                 searched++;
             }
         }
 
-        if (result.size() > 0) {
+        if (result.size() > 100) {
             return 0;
         }
         return 1;
