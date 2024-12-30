@@ -138,13 +138,18 @@ namespace ycsbc {
 
     int TestPreindexing::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        data::Row row;
-        row.ParseFromString(values);
         std::string ikey = "";
-        if (row.columns_size() > 0) {
-            ikey = row.columns(0);
+        if (inputType_ == "protobuf") {
+            data::Row row;
+            row.ParseFromString(values);
+            if (row.columns_size() > 0) {
+                ikey = row.columns(0);
+            } else {
+                return 1;
+            }
         } else {
-            return 1;
+            nlohmann::json parsedJson = nlohmann::json::parse(values);
+            ikey = parsedJson["field0"].get<std::string>();
         }
 
         rocksdb::Status s = rocksdb_->Merge(write_options_, cfhandles_[table+"_index_cf"], ikey, key);
