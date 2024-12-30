@@ -132,31 +132,53 @@ namespace ycsbc {
     {
         rocksdb::Status s;
         
-        data::Row row;
-        row.ParseFromString(values);
-        int grp_size = row.columns_size()/8;
-        for (int i = 0; i < row.columns_size()-1; i++) {
-            std::string serializedColumn;
-            data::Row splitCols;
+        if (inputType_ == "protobuf") {
+            data::Row row;
+            row.ParseFromString(values);
+            int grp_size = row.columns_size()/8;
 
-            for (int j=0; j < grp_size; j++) {
-                if (i+j >= row.columns_size()) {
-                    break;
+            for (int i = 0; i < row.columns_size()-1; i++) {
+                std::string serializedColumn;
+                data::Row splitCols;
+
+                for (int j=0; j < grp_size; j++) {
+                    if (i+j >= row.columns_size()) {
+                        break;
+                    }
+                    splitCols.add_columns(row.columns(i+j));
                 }
-                splitCols.add_columns(row.columns(i+j));
-            }
-            splitCols.SerializeToString(&serializedColumn);
+                splitCols.SerializeToString(&serializedColumn);
             
-            if (!serializedColumn.empty()) {
-                s = rocksdb_->Put(write_options_,
-                                  cfhandles_[table+"_colgrp_"+std::to_string(i/2)],
-                                  key,
-                                  serializedColumn);
-            }
+                if (!serializedColumn.empty()) {
+                    s = rocksdb_->Put(write_options_,
+                                      cfhandles_[table+"_colgrp_"+std::to_string(i/grp_size)],
+                                      key,
+                                      serializedColumn);
+                }
 
-            i += grp_size - 1;
+                i += grp_size - 1;
+            }
+        } else {
+            nlohmann::json parsedJson = nlohmann::json::parse(values);
+            size_t grp_size = parsedJson.size()/8;
+
+            for (size_t i = 0; i < parsedJson.size(); i++) {
+                nlohmann::json jsonData;
+
+                for (size_t j=0; j < grp_size; j++) {
+                    if (i+j >= parsedJson.size()) {
+                        break;
+                    }
+                    jsonData["field"+std::to_string(i+j)] = parsedJson["field"+std::to_string(i+j)];
+                }
+                s = rocksdb_->Put(write_options_,
+                                  cfhandles_[table+"_colgrp_"+std::to_string(i/grp_size)],
+                                  key,
+                                  jsonData.dump());
+                
+                i += grp_size - 1;
+            }
         }
-    
         if (s.ok()) {
             return 0;
         }
@@ -224,9 +246,7 @@ namespace ycsbc {
     void RocksdbColumnStrawman::GetColumnFamilyDescriptors(const std::string& dbname,
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
-        int splits = 27;
-        
-        for (int i = 0; i < splits; i++) {
+        for (int i = 0; i < 8; i++) {
             std::string cf_name = dbname + "_colgrp_" + std::to_string(i);
             column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
         }
