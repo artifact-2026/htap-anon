@@ -122,28 +122,13 @@ namespace ycsbc {
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
             if (s.ok()) {
-                if (inputType_ == "protobuf") {
-                    data::Row row;
-                    row.ParseFromString(result);
-                } else if (inputType_ == "json") {
-                    nlohmann::json parsedJson = nlohmann::json::parse(result);
-                }
                 return 0;
             }
             for (int i = 1; i < 4; i++) {
-                //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G0"];
-                //futures[i] = std::async(std::launch::async, 
-                //                std::bind(&Mycelium::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[i])));
                 s = rocksdb_->Get(rocksdb::ReadOptions(),
                                     cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
                                     key, &result);
                 if (s.ok()) {
-                    if (inputType_ == "protobuf") {
-                        data::Row row;
-                        row.ParseFromString(result);
-                    } else if (inputType_ == "json") {
-                        nlohmann::json parsedJson = nlohmann::json::parse(result);
-                    }
                     return 0;
                 }
             }

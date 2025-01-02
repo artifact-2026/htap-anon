@@ -87,36 +87,10 @@ namespace ycsbc {
 
         s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
         if (s.ok()) {
-            if (fields != nullptr) {
-                flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t*>(result.c_str()), result.size());
-                if (rocksdb::VerifyFbRowBuffer(verifier)) {
-                    const uint8_t* buf = reinterpret_cast<const uint8_t*>(result.c_str());
-                    auto fb_row = rocksdb::GetFbRow(buf);
-                    if (fb_row && fb_row->strcols() && fb_row->strcols()->size() > 0) {
-                        static_cast<void>(fb_row->strcols()->Get(0));
-                    }
-                    if (fb_row && fb_row->numcols() && fb_row->numcols()->size() > 0) {
-                        static_cast<void>(fb_row->numcols()->Get(0));
-                    }
-                }
-            }
             return 0;
         }
         s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_converted_cf"], key, &result);
         if (s.ok()) {
-            if (fields != nullptr) {
-                flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t*>(result.c_str()), result.size());
-                if (rocksdb::VerifyFbRowBuffer(verifier)) {
-                    const uint8_t* buf = reinterpret_cast<const uint8_t*>(result.c_str());
-                    auto fb_row = rocksdb::GetFbRow(buf);
-                    if (fb_row && fb_row->strcols() && fb_row->strcols()->size() > 0) {
-                        static_cast<void>(fb_row->strcols()->Get(0));
-                    }
-                    if (fb_row && fb_row->numcols() && fb_row->numcols()->size() > 0) {
-                        static_cast<void>(fb_row->numcols()->Get(0));
-                    }
-                }
-            }
             return 0;
         }
 

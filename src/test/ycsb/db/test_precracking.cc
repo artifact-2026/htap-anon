@@ -69,12 +69,6 @@ namespace ycsbc {
                               cfhandles_[table+"_colgrp_0"],
                               key,
                               &result);
-            if (inputType_ == "protobuf") {
-                data::Row row;
-                row.ParseFromString(result);
-            } else {
-                nlohmann::json parsedJson = nlohmann::json::parse(result);
-            }
         }
         if (result != "") {
             return 0;

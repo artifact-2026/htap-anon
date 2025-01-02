@@ -79,14 +79,6 @@ namespace ycsbc {
         } else {
             rocksdb::Status s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandle_, key, &result);
             if (s.ok()) {
-                if (fields != nullptr) {
-                    if (inputType_ == "json") {
-                        nlohmann::json parsedJson = nlohmann::json::parse(result);
-                    } else {
-                        data::Row row;
-                        row.ParseFromString(result);
-                    }
-                }
                 return 0;
             }
         }

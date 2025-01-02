@@ -114,12 +114,6 @@ namespace ycsbc {
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
             if (s.ok()) {
-                if (inputType_ == "protobuf") {
-                    data::Row row;
-                    row.ParseFromString(result);
-                } else {
-                    nlohmann::json parsedJson = nlohmann::json::parse(result);
-                }
                 return 0;
             }
             for (int i = 1; i < 4; i++) {
@@ -130,12 +124,6 @@ namespace ycsbc {
                                     cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
                                     key, &result);
                 if (s.ok()) {
-                    if (inputType_ == "protobuf") {
-                        data::Row row;
-                        row.ParseFromString(result);
-                    } else {
-                        nlohmann::json parsedJson = nlohmann::json::parse(result);
-                    }
                     return 0;
                 }
             }

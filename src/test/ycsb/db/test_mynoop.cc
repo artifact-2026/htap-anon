@@ -102,14 +102,6 @@ namespace ycsbc {
             }
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_identity_cf"], key, &result);
             if (result != "") {
-                if (fields != nullptr) {
-                    if (inputType_ == "json") {
-                        nlohmann::json parsedJson = nlohmann::json::parse(result);
-                    } else {
-                        data::Row row;
-                        row.ParseFromString(result);
-                    }
-                }
                 return 0;
             }
         }

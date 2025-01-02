@@ -66,14 +66,6 @@ namespace ycsbc {
         }
 
         if (s.ok()) {
-            if (fields != nullptr) {
-                if (inputType_ == "json") {
-                    nlohmann::json parsedJson = nlohmann::json::parse(result);
-                } else {
-                    data::Row row;
-                    row.ParseFromString(result);
-                }
-            }
             return 0;
         }
         return 1;
