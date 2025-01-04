@@ -52,22 +52,22 @@ namespace ycsbc {
     int TestPreindexing::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
                       const std::string &req_dist, bool index_access, std::string &result) 
     {
-        rocksdb::Status s;
+        rocksdb::Status s, t;
         if (index_access) {
             std::string valuekeysstr;
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"], key, &valuekeysstr);
 
             std::vector<std::string> valuekeys = parsePrimaryKeys(valuekeysstr);
             for (auto valuekey : valuekeys) {
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], valuekey, &result);
+                t = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], valuekey, &result);
+            }
+            if (s.ok()) {
+                return 0;
             }
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
         }
 
-        if (s.ok()) {
-            return 0;
-        }
         return 1;
     }
 
@@ -99,6 +99,9 @@ namespace ycsbc {
                 s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], fk, &fvalue);
                 result.push_back(fvalue);
             }
+            if (result.size() > 0) {
+                return 0;
+            }
         } else {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
             int searched = 0;
@@ -120,10 +123,9 @@ namespace ycsbc {
                 it->Next();
                 searched++;
             }
-        }
-
-        if (result.size() > 100) {
-            return 0;
+            if (result.size() > 100) {
+                return 0;
+            }
         }
         return 1;
     }

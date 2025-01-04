@@ -73,17 +73,18 @@ namespace ycsbc {
                         const std::set<std::string> *fields, const std::string &req_dist,
                         bool index_access, std::string &result) 
     {
-        rocksdb::Status s;
+        rocksdb::Status s, t;
         if (index_access) {
-            for (int i = 1; i < 6; i++) {
-                std::string valuekeysstr;
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"], key, &valuekeysstr);
-                if (valuekeysstr != "") {
-                    std::vector<std::string> valuekeys = parsePrimaryKeys(valuekeysstr);
-                    for (auto vkey : valuekeys) {
-                        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], vkey, &result);
-                    }
+            std::string valuekeysstr;
+            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_secondary_index_cf"], key, &valuekeysstr);
+            if (valuekeysstr != "") {
+                std::vector<std::string> valuekeys = parsePrimaryKeys(valuekeysstr);
+                for (auto vkey : valuekeys) {
+                    t = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], vkey, &result);
                 }
+            }
+            if (s.ok()) {
+                return 0;
             }
         } else {
             s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
@@ -115,7 +116,7 @@ namespace ycsbc {
         if (index_access) {
             std::set<std::string> origkeys;
             int searched = 0;
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"]);
+            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_secondary_index_cf"]);
             it->Seek(begin_key);
             while (it->Valid() && searched < 25) {
                 std::vector<std::string> valuekeys = parsePrimaryKeys(it->value().ToString());
@@ -131,6 +132,10 @@ namespace ycsbc {
                 std::string vvalue;
                 s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], origkey, &vvalue);
                 result.push_back(vvalue);
+            }
+
+            if (result.size() > 0) {
+                return 0;
             }
         } else {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
