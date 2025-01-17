@@ -68,7 +68,7 @@ namespace ycsbc {
         options_.level0_file_num_compaction_trigger = 1;
         options_.compaction_pri = rocksdb::kMinOverlappingRatio;
         column_families.push_back(rocksdb::ColumnFamilyDescriptor(
-            dbname, rocksdb::ColumnFamilyOptions(options_)));
+                        dbname, rocksdb::ColumnFamilyOptions(options_)));
         
         options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
         options_.level0_file_num_compaction_trigger = 4;

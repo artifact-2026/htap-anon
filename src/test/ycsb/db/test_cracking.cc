@@ -411,12 +411,12 @@ namespace ycsbc {
                            rocksdb::ColumnFamilyHandle* cfHandle, 
                            const std::string& key, 
                            std::string& result) {
-    std::string foundvalue;
-    rocksdb::Status s = db->Get(rocksdb::ReadOptions(), cfHandle, key, &foundvalue);
-    if (s.ok() && !foundvalue.empty()) {
-        result = foundvalue;
+        std::string foundvalue;
+        rocksdb::Status s = db->Get(rocksdb::ReadOptions(), cfHandle, key, &foundvalue);
+        if (s.ok() && !foundvalue.empty()) {
+            result = foundvalue;
+        }
+        return s;
     }
-    return s;
-}
 
 }

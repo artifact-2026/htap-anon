@@ -41,6 +41,9 @@ gdb src/test/ycsb/ycsb_test
 % echo 'setenv PATH ${PATH}:/holly/htap/build/src/mycelium/tools' >> ~/.tcshrc
 % source ~/.tcshrc
 
+##### using tools after building with -DWITH_TOOLS=ON
+% ldb manifest_dump --db=.      (at the <path-to-db>)
+
 ##### enable core dump
 % limit descriptors 65536
 % limit coredumpsize unlimited    ## if ulimit -c returns 0 it means it is disabled
@@ -49,7 +52,6 @@ gdb src/test/ycsb/ycsb_test
 
 ##### use valgrind
 % valgrind --leak-check=full --track-origins=yes ./your_program
-
 
 #### - Git
 % git remote set-url origin https://hcasalet:<personal_access_token>1@github.com/hcasalet/htap.git
