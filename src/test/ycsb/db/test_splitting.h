@@ -49,8 +49,6 @@ class TestSplitting : public DB{
     
     private:
         std::unique_ptr<rocksdb::MymBroker> mymBroker_;
-        
-        void SetOptions(rocksdb::Options& options_, const char *dbfilename, bool logging, int levels, int fieldcount);
 };  
 
 }
