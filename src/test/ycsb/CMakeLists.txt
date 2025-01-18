@@ -5,7 +5,7 @@ set(ycsb_srcs
     db/db_factory.cc
     db/db_helper.cc
     db/test_rocks_db.cc
-    db/test_cracking.cc
+    db/test_splitting.cc
     db/test_indexing.cc
     db/test_precracking.cc
     db/test_flatbuffers.cc

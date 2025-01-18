@@ -3,7 +3,7 @@
 #include <string>
 #include <iostream>
 #include "db/test_rocks_db.h"
-#include "db/test_cracking.h"
+#include "db/test_splitting.h"
 #include "db/test_indexing.h"
 #include "db/test_precracking.h"
 #include "db/test_flatbuffers.h"
@@ -23,9 +23,9 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
   if (props["dbname"] == "baseline") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-baseline");
     return new TestRocksDB(props["dbname"], dbpath.c_str(), props);
-  } else if (props["dbname"] == "cracking") {
-    std::string dbpath = props.GetProperty("dbpath","/tmp/test-cracking");
-    return new Mycelium(props["dbname"], dbpath.c_str(), props);
+  } else if (props["dbname"] == "splitting") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-splitting");
+    return new TestSplitting(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "indexing") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-indexing");
     return new Indexing(props["dbname"], dbpath.c_str(), props);

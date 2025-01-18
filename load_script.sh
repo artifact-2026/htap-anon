@@ -6,7 +6,7 @@ usage() {
     echo "Options:"
     echo "  -h, --help          Show this help message and exit"
     echo "Arguments:"
-    echo "  db_type             values: [baseline|cracking|flatbuffers|fb-cracking|precracking|preconverting|preindexing|indexing|mynoop]"
+    echo "  db_type             values: [baseline|splitting|flatbuffers|fb-cracking|presplitting|preconverting|preindexing|indexing|mynoop]"
     echo "  if_bootstrap        values: [true|false]"
     echo "  test_type           values: [run|xputr|xputl]"
     echo "  workload_type       values: [a|b|c|d|e|f]"
@@ -29,17 +29,17 @@ fi
 # Get the command line arguments
 DB_TYPE=$1
 if [ "$DB_TYPE" != "baseline" ] && \
-   [ "$DB_TYPE" != "cracking" ] && \
+   [ "$DB_TYPE" != "splitting" ] && \
    [ "$DB_TYPE" != "flatbuffers" ] && \
    [ "$DB_TYPE" != "crackfb" ] && \
-   [ "$DB_TYPE" != "precracking" ] && \
+   [ "$DB_TYPE" != "presplitting" ] && \
    [ "$DB_TYPE" != "preconverting" ] && \
    [ "$DB_TYPE" != "preindexing" ] && \
    [ "$DB_TYPE" != "crackplus" ] && \
    [ "$DB_TYPE" != "mynoop" ] && \
    [ "$DB_TYPE" != "indexing" ]; then
    echo "DB_TYPE is required with value = [
-              baseline|cracking|flatbuffers|crackfb|precracking|
+              baseline|splitting|flatbuffers|crackfb|presplitting|
               preconverting|preindexing|indexing|crackplus|mynoop]"
    exit 1
 fi
