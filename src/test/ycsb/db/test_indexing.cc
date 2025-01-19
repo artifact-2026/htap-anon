@@ -70,7 +70,7 @@ namespace ycsbc {
     * Here Read will find the first key/value pair that the index is pointing to and return.
     */
     int Indexing::Read(const std::string &table, const std::string &key,
-                        const std::set<std::string> *fields, const std::string &req_dist,
+                        const std::set<int> *fields, const std::string &req_dist,
                         bool index_access, std::string &result) 
     {
         rocksdb::Status s, t;
@@ -108,7 +108,7 @@ namespace ycsbc {
     }
 
     int Indexing::Scan(const std::string &table, const std::string &begin_key,
-                       const std::string &end_key, const std::set<std::string> *fields,
+                       const std::string &end_key, const std::set<int> *fields,
                        const std::string &req_dist, bool index_access,
                        std::vector<std::string> &result) 
     {

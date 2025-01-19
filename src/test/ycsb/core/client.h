@@ -110,9 +110,9 @@ inline int Client::TransactionRead() {
   std::string result;
   std::string req_dist = workload_.request_distribution();
   if (!workload_.read_all_fields()) {
-    std::set<std::string> fields;
+    std::set<int> fields;
     //fields.push_back("field" + workload_.NextFieldName());
-    fields.insert("field0");
+    fields.insert(0);
     return db_.Read(table, key, &fields, req_dist, workload_.index_access(), result);
   } else {
     return db_.Read(table, key, NULL, req_dist, workload_.index_access(), result);
@@ -125,9 +125,9 @@ inline int Client::TransactionReadModifyWrite() {
   //std::vector<DB::KVPair> result;
   std::string result;
   if (!workload_.read_all_fields()) {
-    std::set<std::string> fields;
+    std::set<int> fields;
     //fields.push_back("field" + workload_.NextFieldName());
-    fields.insert("field1");
+    fields.insert(0);
     db_.Read(table, key, &fields, workload_.request_distribution(), workload_.index_access(), result);
   } else {
     db_.Read(table, key, NULL, workload_.request_distribution(), workload_.index_access(), result);
@@ -168,9 +168,9 @@ inline int Client::TransactionScan() {
   //int len = workload_.NextScanLength();
   std::vector<std::string> result;
   if (!workload_.read_all_fields()) {
-    std::set<std::string> fields;
+    std::set<int> fields;
     //fields.push_back("field" + workload_.NextFieldName());
-    fields.insert("field0");
+    fields.insert(0);
     return db_.Scan(table, key, end_key, &fields, workload_.request_distribution(), workload_.index_access(), result);
   } else {
     return db_.Scan(table, key, end_key, NULL, workload_.request_distribution(), workload_.index_access(), result);

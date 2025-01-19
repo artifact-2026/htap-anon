@@ -33,13 +33,13 @@ class DB {
   ///
   /// @param table The name of the table.
   /// @param key The key of the record to read.
-  /// @param fields The list of fields to read, or NULL for all of them.
+  /// @param fields The list of field positions to read, or NULL for all of them.
   /// @param req_dist The workload request
   /// @param result A vector of field/value pairs for the result.
   /// @return Zero on success, or a non-zero error code on error/record-miss.
   ///
   virtual int Read(const std::string &table, const std::string &key,
-                   const std::set<std::string> *fields,
+                   const std::set<int> *fields,
                    const std::string &req_dist, bool index_access,
 		               std::string &result) = 0;
   ///
@@ -56,7 +56,7 @@ class DB {
   /// @return Zero on success, or a non-zero error code on error.
   ///
   virtual int Scan(const std::string &table, const std::string &begin_key,
-                   const std::string &end_key, const std::set<std::string> *fields,
+                   const std::string &end_key, const std::set<int> *fields,
                    const std::string &req_dist, bool index_access,
                    std::vector<std::string> &result) = 0;
   ///

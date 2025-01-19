@@ -73,7 +73,7 @@ namespace ycsbc {
     /*
     * Read is for point query over all columns
     */
-    int TestFbCracker::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
+    int TestFbCracker::Read(const std::string &table, const std::string &key, const std::set<int> *fields,
                       const std::string &req_dist, bool index_access, std::string &result)
     {
         rocksdb::Status s;
@@ -133,7 +133,7 @@ namespace ycsbc {
     }
 
     int TestFbCracker::Scan(const std::string &table, const std::string &begin_key,
-                          const std::string &end_key, const std::set<std::string> *fields,
+                          const std::string &end_key, const std::set<int> *fields,
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {

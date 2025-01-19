@@ -56,12 +56,12 @@ class TestPreindexing : public DB{
     public :
         TestPreindexing(const std::string& dbname, const char *dbfilename, utils::Properties &props);
         int Read(const std::string &table, const std::string &key,
-                 const std::set<std::string> *fields,
+                 const std::set<int> *fields,
                  const std::string &req_dist, bool index_access,
                  std::string &result);
 
         int Scan(const std::string &table, const std::string &begin_key,
-                 const std::string &end_key, const std::set<std::string> *fields,
+                 const std::string &end_key, const std::set<int> *fields,
                  const std::string &req_dist, bool index_access,
                  std::vector<std::string> &result);
 

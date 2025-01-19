@@ -68,7 +68,7 @@ namespace ycsbc {
     /*
     * Read is for point query over all columns
     */
-    int MyceliumWriteBoth::Read(const std::string &table, const std::string &key, const std::set<std::string> *fields,
+    int MyceliumWriteBoth::Read(const std::string &table, const std::string &key, const std::set<int> *fields,
                       const std::string &req_dist, bool index_access, std::string &result)
     {
         rocksdb::Status s;
@@ -127,7 +127,7 @@ namespace ycsbc {
     }
 
     int MyceliumWriteBoth::Scan(const std::string &table, const std::string &begin_key,
-                          const std::string &end_key, const std::set<std::string> *fields,
+                          const std::string &end_key, const std::set<int> *fields,
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
