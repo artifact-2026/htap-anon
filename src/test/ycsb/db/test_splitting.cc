@@ -46,8 +46,7 @@ namespace ycsbc {
     int TestSplitting::Read(const std::string &table, const std::string &key, const std::set<int> *fields,
                       const std::string &req_dist, bool index_access, std::string &result)
     {
-        std::set<int> positions;
-        mymBroker_->Read(key, &positions, result);
+        mymBroker_->Read(key, fields, result);
         return 0;
     }
 
@@ -56,8 +55,7 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
-        std::set<int> positions;
-        mymBroker_->Scan(begin_key, 100, &positions, result);
+        mymBroker_->Scan(begin_key, 100, fields, result);
         return 0;
     }
 
