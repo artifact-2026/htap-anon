@@ -8,7 +8,7 @@ set(ycsb_srcs
     db/test_splitting.cc
     db/test_indexing.cc
     db/test_precracking.cc
-    db/test_flatbuffers.cc
+    db/test_converting.cc
     db/test_fb_cracker.cc
     db/test_preconverting.cc
     db/test_preindexing.cc

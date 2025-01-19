@@ -6,7 +6,7 @@
 #include "db/test_splitting.h"
 #include "db/test_indexing.h"
 #include "db/test_precracking.h"
-#include "db/test_flatbuffers.h"
+#include "db/test_converting.h"
 #include "db/test_fb_cracker.h"
 #include "db/test_preconverting.h"
 #include "db/test_preindexing.h"
@@ -32,8 +32,8 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
   } else if (props["dbname"] == "precracking") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-precracking");
     return new RocksdbColumnStrawman(props["dbname"], dbpath.c_str(), props);
-  } else if (props["dbname"] == "flatbuffers") {
-    std::string dbpath = props.GetProperty("dbpath","/tmp/test-fb");
+  } else if (props["dbname"] == "converting") {
+    std::string dbpath = props.GetProperty("dbpath","/tmp/test-converting");
     return new TestFlatBuffers(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "crackfb") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-crackfb");
