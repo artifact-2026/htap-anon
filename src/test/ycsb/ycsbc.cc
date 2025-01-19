@@ -451,13 +451,13 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("transform",argv[argindex]);
       argindex++;
-    } else if(strcmp(argv[argindex],"-transform_type")==0){
+    } else if(strcmp(argv[argindex],"-transformtype")==0){
       argindex++;
       if(argindex >= argc){
         UsageMessage(argv[0]);
         exit(0);
       }
-      props.SetProperty("transform_type",argv[argindex]);
+      props.SetProperty("transformtype",argv[argindex]);
       argindex++;
     } else if(strcmp(argv[argindex],"-translevel")==0){
       argindex++;
@@ -659,7 +659,7 @@ void Init(utils::Properties &props){
   props.SetProperty("run","false");
   props.SetProperty("bootstrap","true");
   props.SetProperty("transform","false");
-  props.SetProperty("transform_type", "0");
+  props.SetProperty("transformtype", "mynoop");
   props.SetProperty("translevel", "all");
   props.SetProperty("runtime", "600");
   props.SetProperty("threadcount","1");

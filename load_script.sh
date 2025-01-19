@@ -11,6 +11,7 @@ usage() {
     echo "  test_type           values: [run|xputr|xputl]"
     echo "  workload_type       values: [a|b|c|d|e|f]"
     echo "  threads             values: [>=1]"
+    echo "  transform_type      values: [mynoop|split|convert|augment|splitcon]
 }
 
 # Check for help option or missing arguments
@@ -73,6 +74,8 @@ WORKLOAD="../src/test/ycsb/workloads/test_workload$WORKLOAD_TYPE.spec"
 
 THREADS=$5
 
+TRANSFORM_TYPE=$6
+
 # Get the current directory
 CURRENT_DIR=$(pwd)
 
@@ -104,6 +107,6 @@ if [ "$IF_BOOTSTRAP" = "true" ]; then
 fi
 
 ./src/test/ycsb/ycsb_test -db $DB_TYPE -dbpath $TEST_RESULT_DIRECTORY \
-  -P $WORKLOAD -bootstrap $IF_BOOTSTRAP -threads $THREADS \
+  -transformtype $TRANSFORM_TYPE -P $WORKLOAD -bootstrap $IF_BOOTSTRAP -threads $THREADS \
   -load $LOAD -run $RUN -throughput $XPUT -levels 6 -table $DB_TYPE \
   -throughputtype $XPUT_TYPE

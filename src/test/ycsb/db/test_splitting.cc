@@ -17,27 +17,24 @@ using namespace std;
 namespace ycsbc {
     TestSplitting::TestSplitting(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        int levels = utils::StrToInt(props.GetProperty("levels", "6"));
-        int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         int num_splits = 2;
 
-        std::string inputType = props.GetProperty("inputdataformat", "protobuf");
-        std::string outputType = props.GetProperty("outputdataformat", "flatbuffers");
-        std::string columnDataType_ = props.GetProperty("columndatatype", "numeric");
-        
-        rocksdb::Options options_;
-        ycsbc::DBHelper::SetOptions(options_, dbfilename, false, levels, fieldcount);
-        options_.transformers.push_back(new rocksdb::Distributor());
-        options_.SetInputOutputDataType(ycsbc::DBHelper::mapStringToDataType(inputType),
-                                        ycsbc::DBHelper::mapStringToDataType(outputType));
+        rocksdb::Options options;
+        ycsbc::DBHelper::SetOptions(options, false, props);
 
-        rocksdb::InputOutputDataType dtype = rocksdb::InputOutputDataType::JSON;
-        if (inputType == "protobuf") {
-            dtype = rocksdb::InputOutputDataType::PROTOBUF;
+        std::string transformation_type = props.GetProperty("transformtype", "mynoop");
+
+        rocksdb::TransformerData data;
+        if (transformation_type == "mynoop") {
+            options.transformers.push_back(new rocksdb::Mynooper());
+            data = rocksdb::MynooperData();
+        } else if (transformation_type == "split") {
+            options.transformers.push_back(new rocksdb::Distributor());
+            std::string inputType = props.GetProperty("inputdataformat", "protobuf");
+            rocksdb::InputOutputDataType dtype = ycsbc::DBHelper::mapStringToDataType(inputType);
+            data = rocksdb::DistributorData(num_splits, false, dtype);
         }
-
-        rocksdb::DistributorData data = rocksdb::DistributorData(num_splits, false, dtype);
-        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options_, data);
+        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, data);
     }
 
     /*

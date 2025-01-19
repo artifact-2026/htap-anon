@@ -13,8 +13,14 @@ namespace ycsbc {
         return rocksdb::InputOutputDataType::UNKNOWN;
     }
 
-    void DBHelper::SetOptions(rocksdb::Options& options_, const char *dbfilename, bool logging, int levels, int fieldcount)
+    void DBHelper::SetOptions(rocksdb::Options& options_, bool logging, utils::Properties &props)
     {
+        int levels = utils::StrToInt(props.GetProperty("levels", "6"));
+        int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
+        std::string inputType = props.GetProperty("inputdataformat", "protobuf");
+        std::string outputType = props.GetProperty("outputdataformat", "flatbuffers");
+        std::string columnDataType = props.GetProperty("columndatatype", "numeric");
+        
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
         }
@@ -50,6 +56,10 @@ namespace ycsbc {
         table_options.block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024);
         table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
+
+        options_.SetInputOutputDataType(ycsbc::DBHelper::mapStringToDataType(inputType),
+                                        ycsbc::DBHelper::mapStringToDataType(outputType));
+        options_.column_data_type = columnDataType;
         
     }
 
