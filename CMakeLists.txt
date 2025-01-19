@@ -6,7 +6,6 @@ SET(CMAKE_CXX_FLAGS "-g -Wall -Werror -std=c++17")
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -D FLATBUFFERS_CXX_FLAGS=-Wno-error")
 
 FIND_PACKAGE(Protobuf REQUIRED)
-FIND_PACKAGE(Arrow REQUIRED)
 
 add_subdirectory(src/mycelium)
 add_subdirectory(src/test/ycsb)
