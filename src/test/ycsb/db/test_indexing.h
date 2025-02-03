@@ -15,6 +15,8 @@
 #include <rocksdb/table.h>
 #include <rocksdb/filter_policy.h>
 
+#include "rocksdb/mym_broker.h"
+
 #include "core/properties.h"
 #include "core/core_workload.h"
 #include "proto/columns.pb.h"
@@ -78,15 +80,8 @@ class Indexing : public DB{
         ~Indexing() {};
     
     private:
-        rocksdb::DB *rocksdb_;
-        rocksdb::Options options_;
-        rocksdb::WriteOptions write_options_;
-        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
-        std::string inputType_;
-        std::string outputType_;
-        std::string columnDataType_;
+        std::unique_ptr<rocksdb::MymBroker> mymBroker_;
 
-        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount);
         std::vector<std::string> deserializeIndex(const std::string& serialized);
         std::vector<std::string> parsePrimaryKeys(const std::string& value);
         void GetColumnFamilyDescriptors(const std::string& dbname,

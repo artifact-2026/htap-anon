@@ -125,7 +125,7 @@ namespace ycsbc {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->Seek(begin_key);
             while (it->Valid() && result.size() < 100) {
-                uint64_t sum = 0;
+                /*uint64_t sum = 0;
                 if (fields != nullptr) {
                     if (inputType_ == "protobuf") {
                         data::Row row;
@@ -135,7 +135,7 @@ namespace ycsbc {
                         nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
                         sum += std::stoi(parsedJson["field0"].get<std::string>());
                     }
-                }
+                }*/
                 
                 result.push_back(it->value().ToString());
                 it->Next();

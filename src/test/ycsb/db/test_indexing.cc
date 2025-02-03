@@ -12,57 +12,19 @@ using namespace std;
 namespace ycsbc {
     Indexing::Indexing(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        int levels = utils::StrToInt(props.GetProperty("levels", "6"));
-        int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        inputType_ = props.GetProperty("inputdataformat", "protobuf");
-        outputType_ = props.GetProperty("outputdataformat", "flatbuffers");
-        columnDataType_ = props.GetProperty("columndatatype", "numeric");
-        SetOptions(dbfilename, false, levels, fieldcount);
+        
+        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(
+                                        props.GetProperty("inputdataformat", "protobuf"));
+        rocksdb::Options options;
+        ycsbc::DBHelper::SetOptions(options, false, props);
 
         std::vector<rocksdb::DeriveFuncData*> deriveFuncs;
         deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
-        options_.transformers.push_back(new rocksdb::Augmenter(deriveFuncs));
+        options.transformers.push_back(new rocksdb::Augmenter(deriveFuncs));
+        options.SetTransformerType(rocksdb::TransformerType::AUGMENTER);
 
-        std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
-        GetColumnFamilyDescriptors(dbname, column_family_descriptors);
-        std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
-
-        if (bootstrap) {
-            rocksdb::Status s = rocksdb::DB::Open(options_, 
-                                                  dbfilename,
-                                                  &rocksdb_);
-            if (!s.ok()){
-                std::cerr<<"Can't open db "<<dbfilename<<" "<<s.ToString()<<std::endl;
-                exit(0);
-            }
-
-            s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
-            s = rocksdb_->AddTransformingDestinationCfds(dbname, false, false, true, false, 0);
-            if (!s.ok()){
-                std::cerr<<"Creating column families ran into error "<<s.ToString()<<std::endl;
-                exit(0);
-            }
-        } else {
-            column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
-                    rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions(options_)));
-            rocksdb::Status s = rocksdb::DB::Open(options_,
-                                                  dbfilename,
-                                                  column_family_descriptors,
-                                                  &cf_handles,
-                                                  &rocksdb_);
-            if (!s.ok()){
-                std::cerr<<"Can't open db "<<dbfilename<<" "<<s.ToString()<<std::endl;
-                exit(0);
-            }
-
-            s = rocksdb_->AddTransformingDestinationCfds(dbname, false, false, true, false, 0);
-            if (!s.ok()){
-                std::cerr<<"Column family creation for indexing ran into error "<<dbfilename<<" "<<s.ToString()<<std::endl;
-                exit(0);
-            }
-
-        }
-        BuildColumnFamilyHandleMap(column_family_descriptors, cf_handles);
+        rocksdb::AugmenterData data = rocksdb::AugmenterData("", inputType);
+        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, data); 
     }
 
     /*
@@ -73,38 +35,7 @@ namespace ycsbc {
                         const std::set<int> *fields, const std::string &req_dist,
                         bool index_access, std::string &result) 
     {
-        rocksdb::Status s, t;
-        if (index_access) {
-            std::string valuekeysstr;
-            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_secondary_index_cf"], key, &valuekeysstr);
-            if (valuekeysstr != "") {
-                std::vector<std::string> valuekeys = parsePrimaryKeys(valuekeysstr);
-                for (auto vkey : valuekeys) {
-                    t = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], vkey, &result);
-                }
-            }
-            if (s.ok()) {
-                return 0;
-            }
-        } else {
-            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], key, &result);
-            if (s.ok()) {
-                if (fields != nullptr) {
-                    if (inputType_ == "protobuf") {
-                        data::Row row;
-                        row.ParseFromString(result);
-                    } else {
-                        nlohmann::json parsedJson = nlohmann::json::parse(result);
-                    }
-                }
-                return 0;
-            }
-            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_indexed_data_cf"], key, &result);
-            if (s.ok()) {
-                return 0;
-            }
-        }
-        return 1;
+        return mymBroker_->Read(key, fields, result);
     }
 
     int Indexing::Scan(const std::string &table, const std::string &begin_key,
@@ -112,92 +43,12 @@ namespace ycsbc {
                        const std::string &req_dist, bool index_access,
                        std::vector<std::string> &result) 
     {
-        rocksdb::Status s;
-        if (index_access) {
-            std::set<std::string> origkeys;
-            int searched = 0;
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_secondary_index_cf"]);
-            it->Seek(begin_key);
-            while (it->Valid() && searched < 25) {
-                std::vector<std::string> valuekeys = parsePrimaryKeys(it->value().ToString());
-                for (auto vkey : valuekeys) {
-                    origkeys.insert(vkey);
-                }
-                    
-                it->Next();
-                searched++;
-            }
-
-            for (auto origkey : origkeys) {
-                std::string vvalue;
-                s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table], origkey, &vvalue);
-                result.push_back(vvalue);
-            }
-
-            if (result.size() > 0) {
-                return 0;
-            }
-        } else {
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table]);
-            it->Seek(begin_key);
-            int scanned = 0;
-            while (it->Valid() && scanned < 100) {
-                uint64_t sum = 0;
-                if (fields != nullptr) {
-                    if (inputType_ == "protobuf") {
-                        data::Row row;
-                        row.ParseFromString(it->value().ToString());
-                        sum += std::stoi(row.columns(0));
-                    } else {
-                        nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
-                        sum += std::stoi(parsedJson["field0"].get<std::string>());
-                    }
-                }
-                result.push_back(it->value().ToString());
-                it->Next();
-                scanned++;
-            }
-            if (result.size() >= 100) {
-                return 0;
-            }
-
-            it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[table+"_indexed_data_cf"]);
-            it->Seek(begin_key);
-            scanned = 0;
-            while (it->Valid() && scanned < 100) {
-                uint64_t sum = 0;
-                if (fields != nullptr) {
-                    if (inputType_ == "protobuf") {
-                        data::Row row;
-                        row.ParseFromString(it->value().ToString());
-                        sum += std::stoi(row.columns(0));
-                    } else {
-                        nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
-                        sum += std::stoi(parsedJson["field0"].get<std::string>());
-                    }
-                }
-                result.push_back(it->value().ToString());
-                it->Next();
-                scanned++;
-            }
-            if (result.size() >= 100) {
-                return 0;
-            }
-
-        }
-        return 1;
+      return mymBroker_->Scan(begin_key, 100, fields, result);
     }
 
     int Indexing::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        rocksdb::Status s = rocksdb_->Put(write_options_,
-                                      cfhandles_[table],
-                                      key,
-                                      values);
-        if (s.ok()) {
-            return 0;
-        }
-        return 1;
+        return mymBroker_->Insert(key, values);
     }
 
     int Indexing::Update(const std::string &table, const std::string &key, std::string &values)
@@ -207,78 +58,7 @@ namespace ycsbc {
 
     int Indexing::Delete(const std::string &table, const std::string &key)
     {
-        rocksdb::Status s = rocksdb_->Delete(write_options_,
-                                             cfhandles_[table],
-                                             key);
-        if (s.ok()) {
-            return 0;
-        }
-        return 1;
-    }
-
-    void Indexing::SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount)
-    {
-        if (!logging) {
-            options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
-        }
-        options_.create_if_missing = true;
-        options_.enable_pipelined_write = true;
-        options_.max_open_files = -1;
-        options_.compaction_style = rocksdb::kCompactionStyleLevel;
-        options_.disable_auto_compactions = false;
-
-        options_.env->SetBackgroundThreads(20, rocksdb::Env::Priority::LOW);
-        options_.env->SetBackgroundThreads(8, rocksdb::Env::Priority::HIGH);
-        options_.max_background_compactions = 20;
-        options_.max_background_flushes = 8;
-
-        options_.max_subcompactions = 16;
-
-        options_.num_levels = levels;
-        options_.num_columns = fieldcount;
-        options_.SetTransformerType(rocksdb::TransformerType::AUGMENTER);
-        options_.SetInputOutputDataType(ycsbc::DBHelper::mapStringToDataType(inputType_),
-                                        ycsbc::DBHelper::mapStringToDataType(outputType_));
-
-        options_.write_buffer_size = 128 * 1024 * 1024;
-        options_.max_write_buffer_number = 8;
-        options_.level0_slowdown_writes_trigger = 50;
-        options_.level0_stop_writes_trigger = 80;
-        options_.IncreaseParallelism(24);
-        options_.use_direct_reads = true;
-        options_.use_direct_io_for_flush_and_compaction = true;
-
-        options_.target_file_size_base = 256 * 1024 * 1024;
-        rocksdb::BlockBasedTableOptions table_options;
-        table_options.block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024);
-        table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
-        options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
-    }
-
-    void Indexing::GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
-    {
-        options_.level0_file_num_compaction_trigger = 1;
-        options_.compaction_pri = rocksdb::kMinOverlappingRatio;
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname,
-                                                                  rocksdb::ColumnFamilyOptions(options_)));
-
-        options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
-        options_.level0_file_num_compaction_trigger = 4;
-        options_.compaction_pri = rocksdb::kByCompensatedSize;
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_indexed_data_cf",
-                                                                  rocksdb::ColumnFamilyOptions(options_)));
-
-        options_.merge_operator = std::make_shared<SecondaryIndexMergeOperator>();
-        column_families.push_back(rocksdb::ColumnFamilyDescriptor(dbname+"_secondary_index_cf",
-                                                                  rocksdb::ColumnFamilyOptions(options_)));
-    }
-
-    void Indexing::BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
-                                              std::vector<rocksdb::ColumnFamilyHandle*> handles)
-    {
-        for (size_t i = 0; i < handles.size(); i++) {
-            cfhandles_.insert({column_family_descriptors[i].name, handles[i]});
-        }
+        return mymBroker_->Delete(key);
     }
 
     std::vector<std::string> Indexing::deserializeIndex(const std::string& serialized)
