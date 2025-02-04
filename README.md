@@ -26,9 +26,11 @@ git submodule update --init --recursive
 % ninja/make
 
 #### - Debug code  
-% cmake -DCMAKE_BUILD_TYPE=Debug -S .. -B . -G Ninja  
-gdb src/test/ycsb/ycsb_test  
+% cmake -DCMAKE_BUILD_TYPE=Debug -S .. -B . -G Ninja
+% delete build/src/test/ycsb/output/test-<dbtype>
+% gdb src/test/ycsb/ycsb_test  
 (gdb) b <functionname>
+(gdb) run 
 
 ##### building with debug, tools, and AddressSanitizer
 % cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=address -g" -S .. -B . -G Ninja

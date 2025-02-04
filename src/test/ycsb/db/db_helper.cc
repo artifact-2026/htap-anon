@@ -41,8 +41,9 @@ namespace ycsbc {
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
 
-        options_.write_buffer_size = 128 * 1024 * 1024;
+        options_.write_buffer_size = 64 * 1024 * 1024;
         options_.max_write_buffer_number = 8;
+        options_.level0_file_num_compaction_trigger = 2;
         options_.level0_slowdown_writes_trigger = 50;
         options_.level0_stop_writes_trigger = 80;
         options_.IncreaseParallelism(24);

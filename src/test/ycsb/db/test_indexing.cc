@@ -16,7 +16,7 @@ namespace ycsbc {
         rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(
                                         props.GetProperty("inputdataformat", "protobuf"));
         rocksdb::Options options;
-        ycsbc::DBHelper::SetOptions(options, false, props);
+        ycsbc::DBHelper::SetOptions(options, true, props);
 
         std::vector<rocksdb::DeriveFuncData*> deriveFuncs;
         deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
