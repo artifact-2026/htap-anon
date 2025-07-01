@@ -57,3 +57,7 @@ git submodule update --init --recursive
 ./src/test/ycsb/ycsb_test -db mycelium -dbpath /holly/test_result/test-mycelium -P "../src/test/ycsb/workloads/test_workloada.spec" -bootstrap true -threads 16 -load false -run false -throughput true -throughputtype 2 -runtime 300 -transform true -transform_type 1 -table mycelium
 
 ./src/test/ycsb/ycsb_test -db flatbuffers -dbpath /holly/test_result/test-fb -P "../src/test/ycsb/workloads/test_workloadc.spec" -bootstrap false -threads 1 -load false -run true -throughput false -transform false -transform_type 3 -table flatbuffers
+
+### System resource monitoring when testing
+sudo apt-get update
+sudo apt-get install sysstat dstat procps iotop htop -y
