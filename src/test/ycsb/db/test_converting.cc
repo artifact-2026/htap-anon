@@ -22,8 +22,8 @@ namespace ycsbc {
         
         options.transformers.push_back(new rocksdb::Converter());
         options.SetTransformerType(rocksdb::TransformerType::CONVERTER);
-        rocksdb::ConverterData data = rocksdb::ConverterData(inputType, outputType, columnDataType);
-        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, data); 
+        rocksdb::ConverterSchema schema = rocksdb::ConverterSchema(inputType, outputType, columnDataType);
+        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, schema); 
     }
 
     /*

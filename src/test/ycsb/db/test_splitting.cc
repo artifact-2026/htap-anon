@@ -17,8 +17,8 @@ namespace ycsbc {
         options.transformers.push_back(new rocksdb::Distributor());
         options.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
         rocksdb::InputOutputDataType dtype = ycsbc::DBHelper::mapStringToDataType(inputType);
-        rocksdb::DistributorData data = rocksdb::DistributorData(num_splits, false, dtype);
-        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, data);
+        rocksdb::DistributorSchema schema = rocksdb::DistributorSchema(num_splits, false, dtype);
+        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, schema);
     }
 
     /*
