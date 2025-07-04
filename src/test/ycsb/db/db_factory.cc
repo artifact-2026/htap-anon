@@ -44,9 +44,6 @@ DB* DBFactory::CreateDB(utils::Properties &props) {
   } else if (props["dbname"] == "preindexing") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-preindexing");
     return new TestPreindexing(props["dbname"], dbpath.c_str(), props);
-  } else if (props["dbname"] == "crackplus") {
-    std::string dbpath = props.GetProperty("dbpath","/tmp/test-crackplus");
-    return new MyceliumWriteBoth(props["dbname"], dbpath.c_str(), props);
   } else if (props["dbname"] == "mynoop") {
     std::string dbpath = props.GetProperty("dbpath","/tmp/test-mynoop");
     return new TestMynoop(props["dbname"], dbpath.c_str(), props);

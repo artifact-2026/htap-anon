@@ -12,7 +12,6 @@ set(ycsb_srcs
     db/test_fb_cracker.cc
     db/test_preconverting.cc
     db/test_preindexing.cc
-    db/test_crackplus.cc
     db/test_mynoop.cc
     core/core_workload.cc)
 add_executable(ycsb_test ${ycsb_srcs})
