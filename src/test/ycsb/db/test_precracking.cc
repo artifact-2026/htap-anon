@@ -105,7 +105,7 @@ namespace ycsbc {
                     if (inputType_ == "protobuf") {
                         data::Row row;
                         row.ParseFromString(it->value().ToString());
-                        sum += std::stoi(row.columns(0));
+                        sum += row.field1();
                     } else {
                         nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
                         sum += std::stoi(parsedJson["field0"].get<std::string>());
@@ -129,28 +129,41 @@ namespace ycsbc {
         if (inputType_ == "protobuf") {
             data::Row row;
             row.ParseFromString(values);
-            int grp_size = row.columns_size()/8;
+            const google::protobuf::Descriptor* descriptor = row.GetDescriptor();
+            const google::protobuf::Reflection* reflection = row.GetReflection();
 
-            for (int i = 0; i < row.columns_size()-1; i++) {
+            for (int i = 0; i < descriptor->field_count(); i++) {
+                const google::protobuf::FieldDescriptor* field = descriptor->field(i);
+                if (!reflection->HasField(row, field)) {
+                    continue;  // skip unset fields
+                }
+
                 std::string serializedColumn;
-                data::Row splitCols;
-
-                for (int j=0; j < grp_size; j++) {
-                    if (i+j >= row.columns_size()) {
+                
+                switch(field->type()) {
+                    case google::protobuf::FieldDescriptor::TYPE_INT32: {
+                        int32_t intval = reflection->GetInt32(row, field);
+                        data::Int32Wrapper intWrapper;
+                        intWrapper.set_value(intval);
+                        intWrapper.SerializeToString(&serializedColumn);
                         break;
                     }
-                    splitCols.add_columns(row.columns(i+j));
-                }
-                splitCols.SerializeToString(&serializedColumn);
-            
-                if (!serializedColumn.empty()) {
-                    s = rocksdb_->Put(write_options_,
-                                      cfhandles_[table+"_colgrp_"+std::to_string(i/grp_size)],
-                                      key,
-                                      serializedColumn);
+                    case google::protobuf::FieldDescriptor::TYPE_STRING: {
+                        std::string strval = reflection->GetString(row, field);
+                        data::StringWrapper strWrapper;
+                        strWrapper.set_value(strval);
+                        strWrapper.SerializeToString(&serializedColumn);
+                        break;
+                    }
+                    default: {
+                        break;
+                    }
                 }
 
-                i += grp_size - 1;
+                s = rocksdb_->Put(write_options_,
+                                  cfhandles_[table+"_colgrp_"+std::to_string(i)],
+                                  key,
+                                  serializedColumn);
             }
         } else {
             nlohmann::json parsedJson = nlohmann::json::parse(values);

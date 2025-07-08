@@ -109,7 +109,19 @@ namespace ycsbc {
         } else {
             data::Row row;
             row.ParseFromString(values);
-            for (int i = 0; i < row.columns_size(); i++) {
+            numvals.push_back(row.field1());
+            numvals.push_back(row.field2());
+            numvals.push_back(row.field3());
+            numvals.push_back(row.field4());
+            strvals.push_back(builder.CreateString(row.field5()));
+            strvals.push_back(builder.CreateString(row.field6()));
+            strvals.push_back(builder.CreateString(row.field7()));
+            strvals.push_back(builder.CreateString(row.field8()));
+            strvals.push_back(builder.CreateString(row.field9()));
+            strvals.push_back(builder.CreateString(row.field10()));
+            strvals.push_back(builder.CreateString(row.field11()));
+            numvals.push_back(row.field12());
+            /*for (int i = 0; i < row.columns_size(); i++) {
                 if (columnDataType_ == "numeric") {
                     numvals.push_back(std::stoi(row.columns(i)));
                 } else if (columnDataType_ == "string") {
@@ -121,7 +133,7 @@ namespace ycsbc {
                         strvals.push_back(builder.CreateString(row.columns(i)));
                     }
                 }
-            }
+            }*/
         }
 
         auto num_vector = builder.CreateVector(numvals);

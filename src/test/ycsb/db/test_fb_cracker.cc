@@ -186,7 +186,7 @@ namespace ycsbc {
                         if (inputType_ == "protobuf") {
                             data::Row row;
                             row.ParseFromString(it->value().ToString());
-                            sum += std::stoi(row.columns(0));
+                            sum += row.field1();
                         } else {
                             nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
                             sum += std::stoi(parsedJson["field0"].get<std::string>());

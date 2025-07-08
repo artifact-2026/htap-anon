@@ -15,7 +15,7 @@
 
 #include "core/properties.h"
 #include "core/core_workload.h"
-#include "proto/columns.pb.h"
+#include "data.pb.h"
 
 #include "db/db_helper.h"
 

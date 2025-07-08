@@ -12,7 +12,7 @@
 #include "db.h"
 #include "core_workload.h"
 #include "utils.h"
-#include "proto/columns.pb.h"
+#include "data.pb.h"
 
 using namespace std;
 

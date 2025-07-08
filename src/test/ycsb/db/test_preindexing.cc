@@ -112,7 +112,7 @@ namespace ycsbc {
                     if (inputType_ == "protobuf") {
                         data::Row row;
                         row.ParseFromString(it->value().ToString());
-                        sum += std::stoi(row.columns(0));
+                        sum += row.field1();
                     } else {
                         nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
                         sum += std::stoi(parsedJson["field0"].get<std::string>());
@@ -136,8 +136,9 @@ namespace ycsbc {
         if (inputType_ == "protobuf") {
             data::Row row;
             row.ParseFromString(values);
-            if (row.columns_size() > 0) {
-                ikey = row.columns(0);
+            const google::protobuf::Descriptor* descriptor = row.GetDescriptor();
+            if (descriptor->field_count() > 0) {
+                ikey = row.field1();
             } else {
                 return 1;
             }
@@ -231,7 +232,7 @@ namespace ycsbc {
         // parse the value to get the key in the secondary index
         data::Row row;
         row.ParseFromString(value);
-        const std::string ikey = row.columns(0);
+        const std::string ikey = row.field5();
 
         // remove primary key from the secondary index
         std::string pkeys;

@@ -17,13 +17,13 @@ set(ycsb_srcs
 add_executable(ycsb_test ${ycsb_srcs})
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src/test/ycsb)
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR})
+target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR} "${PROTO_GEN_DIR}")
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src/mycelium/include)
 target_include_directories(ycsb_test PUBLIC ${CMAKE_SOURCE_DIR}/src/mycelium)
 target_link_libraries(
     ycsb_test
     rocksdb
     ${Protobuf_LIBRARIES}
-    proto
+    proto_generated
     ${FLATBUFFERS_LIBRARY}
 )

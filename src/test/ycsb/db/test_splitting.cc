@@ -7,7 +7,6 @@ using namespace std;
 namespace ycsbc {
     TestSplitting::TestSplitting(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        int num_splits = 2;
 
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, false, props);
@@ -16,8 +15,14 @@ namespace ycsbc {
 
         options.transformers.push_back(new rocksdb::Distributor());
         options.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
-        rocksdb::InputOutputDataType dtype = ycsbc::DBHelper::mapStringToDataType(inputType);
-        rocksdb::DistributorSchema schema = rocksdb::DistributorSchema(num_splits, false, dtype);
+
+        auto input_proto = std::make_unique<data::Row>();
+        std::vector<std::unique_ptr<google::protobuf::Message>> output_protos;
+        output_protos.emplace_back(std::make_unique<data::Grp1>());
+        output_protos.emplace_back(std::make_unique<data::Grp2>());
+        output_protos.emplace_back(std::make_unique<data::Grp3>());
+        output_protos.emplace_back(std::make_unique<data::Grp4>());
+        rocksdb::ProtobufDistributorSchema schema = rocksdb::ProtobufDistributorSchema(std::move(input_proto), std::move(output_protos));
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, schema);
     }
 

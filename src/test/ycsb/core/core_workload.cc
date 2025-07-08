@@ -208,15 +208,27 @@ ycsbc::Generator<uint64_t> *CoreWorkload::GetFieldLenGenerator(
 void CoreWorkload::BuildProtoRecord(data::Row &value, std::string type) {
   int half = field_count_/2;
   for (int i = 0; i < field_count_; ++i) {
-    if (type == "string") {
-      value.add_columns(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
-    } else if (type == "numeric") {
-      value.add_columns(std::to_string(utils::RandomPrintInt()));
+    if (type == "string" || (type != "numeric" && i > half)) {
+      std::string s(field_len_generator_->Next(), utils::RandomPrintChar());
+      switch (i) {
+        case 5:  value.set_field5(s); break;
+        case 6:  value.set_field6(s); break;
+        case 7:  value.set_field7(s); break;
+        case 8:  value.set_field8(s); break;
+        case 9:  value.set_field9(s); break;
+        case 10: value.set_field10(s); break;
+        case 11: value.set_field11(s); break;
+        default: break;  // other fields are numeric
+      }
     } else {
-      if (i < half) {
-        value.add_columns(std::to_string(utils::RandomPrintInt()));
-      } else {
-        value.add_columns(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
+      int num = utils::RandomPrintInt();
+      switch (i) {
+        case 1:  value.set_field1(num); break;
+        case 2:  value.set_field2(num); break;
+        case 3:  value.set_field3(num); break;
+        case 4:  value.set_field4(num); break;
+        case 12: value.set_field12(num); break;
+        default: break;  // other fields are string
       }
     }
   }
@@ -245,9 +257,9 @@ std::string CoreWorkload::BuildJsonRecord(std::string type) {
 
 void CoreWorkload::BuildProtoColumn(data::Row &value, std::string type) {
   if (type == "numeric") {
-    value.add_columns(std::to_string(utils::RandomPrintInt()));
+    value.set_field1(utils::RandomPrintInt());
   } else {
-    value.add_columns(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
+    value.set_field5(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
   }
 }
 
