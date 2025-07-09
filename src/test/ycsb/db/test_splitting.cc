@@ -1,6 +1,6 @@
 #include "core/core_workload.h"
 #include "test_splitting.h"
-#include "transformer/distributor.h"
+#include "transformer/distributor/distributor.h"
 
 using namespace std;
 

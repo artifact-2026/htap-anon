@@ -10,7 +10,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
-#include "transformer/distributor.h"
+#include "transformer/distributor/distributor.h"
 #include "transformer/converter.h"
 
 using namespace std;
