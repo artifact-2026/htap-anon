@@ -31,8 +31,33 @@ add_library(proto_generated STATIC
     "${PROTO_GEN_DIR}/data.pb.h"
 )
 add_dependencies(proto_generated generate_proto_files)
-
 target_include_directories(proto_generated PUBLIC "${PROTO_GEN_DIR}")
+
+find_program(FLATC_EXECUTABLE flatc REQUIRED)
+find_package(Flatbuffers REQUIRED)
+
+set(FLATBUFFERS_SCHEMA ${CMAKE_SOURCE_DIR}/ddl/flat/row.fbs)
+set(FLATBUFFERS_GEN_DIR ${CMAKE_BINARY_DIR}/flatbuffers_gen)
+
+add_custom_command(
+    OUTPUT
+        ${FLATBUFFERS_GEN_DIR}/row_generated.h
+    COMMAND ${FLATC_EXECUTABLE}
+    ARGS -c --gen-object-api
+         -o ${FLATBUFFERS_GEN_DIR}
+         ${FLATBUFFERS_SCHEMA}
+    DEPENDS ${FLATBUFFERS_SCHEMA}
+    COMMENT "Generating FlatBuffers headers"
+)
+
+add_custom_target(generate_flatbuffers_files
+    DEPENDS ${FLATBUFFERS_GEN_DIR}/row_generated.h
+)
+
+add_library(flatbuffers_generated INTERFACE)
+add_dependencies(flatbuffers_generated generate_flatbuffers_files)
+
+target_include_directories(flatbuffers_generated INTERFACE ${FLATBUFFERS_GEN_DIR})
 
 add_subdirectory(src/mycelium)
 add_subdirectory(src/test/ycsb)

@@ -25,5 +25,6 @@ target_link_libraries(
     rocksdb
     ${Protobuf_LIBRARIES}
     proto_generated
+    flatbuffers_generated
     ${FLATBUFFERS_LIBRARY}
 )

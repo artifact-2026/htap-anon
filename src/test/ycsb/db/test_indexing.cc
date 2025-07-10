@@ -5,7 +5,7 @@
 #include "core/core_workload.h"
 #include "test_indexing.h"
 #include "lib/coding.h"
-#include "transformer/distributor/distributor.h"
+#include "transformer/distribute/distributor.h"
 
 using namespace std;
 

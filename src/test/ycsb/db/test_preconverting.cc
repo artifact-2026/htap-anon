@@ -3,9 +3,7 @@
 #include "test_preconverting.h"
 #include "lib/coding.h"
 #include "flatbuffers/flatbuffers.h"
-#include "flat/row_generated.h"
-#include "flat/row_num_generated.h"
-#include "flat/row_str_generated.h"
+#include "row_generated.h"
 
 using namespace std;
 
@@ -74,9 +72,9 @@ namespace ycsbc {
         while (it->Valid() && result.size() < 100) {
             if (fields != nullptr) {
                 flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t*>(it->value().data()), it->value().size());
-                if (rocksdb::VerifyFbRowBuffer(verifier)) {
+                if (flat::VerifyFbRowBuffer(verifier)) {
                     const uint8_t* buf = reinterpret_cast<const uint8_t*>(it->value().data());
-                    auto fb_row = rocksdb::GetFbRow(buf);
+                    auto fb_row = flat::GetFbRow(buf);
                     if (fb_row && fb_row->numcols() && fb_row->numcols()->size() > 0) {
                         sum += fb_row->numcols()->Get(0);
                     }
@@ -138,7 +136,7 @@ namespace ycsbc {
 
         auto num_vector = builder.CreateVector(numvals);
         auto col_vector = builder.CreateVector(strvals);
-        auto fb_row = rocksdb::CreateFbRow(builder, num_vector, col_vector);
+        auto fb_row = flat::CreateFbRow(builder, num_vector, col_vector);
         builder.Finish(fb_row);
             
         uint8_t *buf = builder.GetBufferPointer();
