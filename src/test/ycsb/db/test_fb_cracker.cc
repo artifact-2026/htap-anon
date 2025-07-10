@@ -11,7 +11,7 @@
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
 #include "transformer/distribute/distributor.h"
-#include "transformer/converter.h"
+#include "transformer/convert/converter.h"
 
 using namespace std;
 
