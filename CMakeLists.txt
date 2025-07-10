@@ -6,7 +6,7 @@ SET(CMAKE_CXX_FLAGS "-g -Wall -Werror -std=c++17")
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -D FLATBUFFERS_CXX_FLAGS=-Wno-error -frtti")
 
 find_package(Protobuf REQUIRED)
-set(PROTO_SRC "${CMAKE_SOURCE_DIR}/proto/data.proto")
+set(PROTO_SRC "${CMAKE_SOURCE_DIR}/ddl/proto/data.proto")
 set(PROTO_GEN_DIR "${CMAKE_BINARY_DIR}/proto_gen")
 
 add_custom_command(
@@ -15,7 +15,7 @@ add_custom_command(
         "${PROTO_GEN_DIR}/data.pb.h"
     COMMAND ${Protobuf_PROTOC_EXECUTABLE}
     ARGS
-        --proto_path=${CMAKE_SOURCE_DIR}/proto
+        --proto_path=${CMAKE_SOURCE_DIR}/ddl/proto
         --cpp_out=${PROTO_GEN_DIR}
         ${PROTO_SRC}
     DEPENDS ${PROTO_SRC}
