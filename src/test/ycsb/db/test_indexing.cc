@@ -23,7 +23,7 @@ namespace ycsbc {
         options.transformers.push_back(new rocksdb::Augmenter());
         options.SetTransformerType(rocksdb::TransformerType::AUGMENTER);
 
-        rocksdb::AugmenterSchema schema = rocksdb::AugmenterSchema("", inputType);
+        auto schema = std::make_shared<rocksdb::AugmenterSchema>("", inputType);
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, schema); 
     }
 

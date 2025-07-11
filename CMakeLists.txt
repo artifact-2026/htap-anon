@@ -43,7 +43,7 @@ add_custom_command(
     OUTPUT
         ${FLATBUFFERS_GEN_DIR}/row_generated.h
     COMMAND ${FLATC_EXECUTABLE}
-    ARGS -c --gen-object-api
+    ARGS -c --gen-object-api --reflect-types
          -o ${FLATBUFFERS_GEN_DIR}
          ${FLATBUFFERS_SCHEMA}
     DEPENDS ${FLATBUFFERS_SCHEMA}

@@ -22,7 +22,7 @@ namespace ycsbc {
         output_protos.emplace_back(std::make_unique<data::Grp2>());
         output_protos.emplace_back(std::make_unique<data::Grp3>());
         output_protos.emplace_back(std::make_unique<data::Grp4>());
-        rocksdb::ProtobufDistributorSchema schema = rocksdb::ProtobufDistributorSchema(std::move(input_proto), std::move(output_protos));
+        auto schema = std::make_shared<rocksdb::ProtobufDistributorSchema>(std::move(input_proto), std::move(output_protos));
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, schema);
     }
 

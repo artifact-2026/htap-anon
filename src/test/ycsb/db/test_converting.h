@@ -18,8 +18,10 @@
 #include "core/properties.h"
 #include "core/core_workload.h"
 #include "data.pb.h"
+#include "row_generated.h"
 
 #include "db/db_helper.h"
+#include "transformer/convert/protobuf2flatbuffers_schema.h"
 
 namespace ycsbc {
 
