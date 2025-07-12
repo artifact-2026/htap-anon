@@ -2,7 +2,7 @@
 #include "core/core_workload.h"
 #include "test_mynoop.h"
 #include "lib/coding.h"
-#include "transformer/mynooper.h"
+#include "transformer/identity/mynooper.h"
 
 using namespace std;
 

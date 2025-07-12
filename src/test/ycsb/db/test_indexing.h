@@ -21,7 +21,8 @@
 #include "core/core_workload.h"
 #include "data.pb.h"
 
-#include "transformer/augmenter.h"
+#include "transformer/augment/augmenter.h"
+#include "transformer/augment/protobuf_index_schema.h"
 
 #include "db/db_helper.h"
 
