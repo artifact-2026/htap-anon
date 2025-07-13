@@ -21,8 +21,9 @@ namespace ycsbc {
         
         options.transformers.push_back(std::make_shared<rocksdb::Converter>());
         options.SetTransformerType(rocksdb::TransformerType::CONVERTER);
-        auto schema = std::make_shared<rocksdb::Protobuf2FlatbuffersSchema>(std::move(input_proto_template), fb_type_table);
-        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, schema); 
+        options.schemaDescriptors.push_back(std::make_shared<rocksdb::Protobuf2FlatbuffersSchema>(std::move(input_proto_template), fb_type_table));
+
+        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options); 
     }
 
     /*

@@ -21,9 +21,9 @@ namespace ycsbc {
         deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
         options.transformers.push_back(std::make_shared<rocksdb::Augmenter>());
         options.SetTransformerType(rocksdb::TransformerType::AUGMENTER);
+        options.schemaDescriptors.push_back(std::make_shared<rocksdb::AugmenterSchema>("", inputType));
 
-        auto schema = std::make_shared<rocksdb::AugmenterSchema>("", inputType);
-        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, schema); 
+        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options); 
     }
 
     /*
