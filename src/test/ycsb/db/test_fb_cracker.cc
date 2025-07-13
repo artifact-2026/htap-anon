@@ -26,8 +26,8 @@ namespace ycsbc {
         outputType_ = props.GetProperty("outputdataformat", "flatbuffers");
         SetOptions(dbfilename, false, levels, fieldcount);
 
-        options_.transformers.push_back(new rocksdb::Distributor());
-        options_.transformers.push_back(new rocksdb::Converter());
+        options_.transformers.push_back(std::make_shared<rocksdb::Distributor>());
+        options_.transformers.push_back(std::make_shared<rocksdb::Converter>());
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors, num_splits);

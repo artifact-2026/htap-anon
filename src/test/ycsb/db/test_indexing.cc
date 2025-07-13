@@ -19,7 +19,7 @@ namespace ycsbc {
 
         std::vector<rocksdb::DeriveFuncData*> deriveFuncs;
         deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
-        options.transformers.push_back(new rocksdb::Augmenter());
+        options.transformers.push_back(std::make_shared<rocksdb::Augmenter>());
         options.SetTransformerType(rocksdb::TransformerType::AUGMENTER);
 
         auto schema = std::make_shared<rocksdb::AugmenterSchema>("", inputType);

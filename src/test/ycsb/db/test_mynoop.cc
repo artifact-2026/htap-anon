@@ -16,7 +16,7 @@ namespace ycsbc {
         columnDataType_ = props.GetProperty("columndatatype", "numeric");
 
         SetOptions(props, true, levels, fieldcount);
-        options_.transformers.push_back(new rocksdb::Mynooper());
+        options_.transformers.push_back(std::make_shared<rocksdb::Mynooper>());
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
