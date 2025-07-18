@@ -92,13 +92,13 @@ namespace ycsbc {
                 //std::vector<std::future<rocksdb::Status>> futures(group);
                 //std::vector<std::string> values(group);
                 for (int j = 0; j < group; j++) {
-                    //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G" + std::to_string(j)];
+                    //auto cfHandle = cfhandles_[table + "_split_cf_" + std::to_string(i) + "_G" + std::to_string(j)];
                     //futures[j] = std::async(std::launch::async, 
                     //            std::bind(&TestFbCracker::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[j])));
 
                     std::string foundvalue = "";
                     s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                        cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j)],
+                                        cfhandles_[table+"_split_cf_"+std::to_string(j)],
                                         key, &foundvalue);
                     if (foundvalue != "") {
                         result += foundvalue;
@@ -117,11 +117,11 @@ namespace ycsbc {
                 return 0;
             }
             for (int i = 1; i < 4; i++) {
-                //auto cfHandle = cfhandles_[table + "_sys_cf_L" + std::to_string(i) + "_G0"];
+                //auto cfHandle = cfhandles_[table + "_split_cf_L" + std::to_string(i) + "_G0"];
                 //futures[i] = std::async(std::launch::async, 
                 //                std::bind(&TestFbCracker::PerformGet, this, rocksdb_, cfHandle, key, std::ref(values[i])));
                 s = rocksdb_->Get(rocksdb::ReadOptions(),
-                                    cfhandles_[table+"_sys_cf_L"+std::to_string(i)+"_G0"],
+                                    cfhandles_[table+"_split_cf_0"],
                                     key, &result);
                 if (s.ok()) {
                     return 0;
@@ -146,7 +146,7 @@ namespace ycsbc {
                 for (int j = 0; j < group; j++) {
                     std::string cfname = table;
                     if (i > 0) {
-                        cfname += "_sys_cf_L"+std::to_string(i)+"_G"+std::to_string(j);
+                        cfname += "_split_cf_"+std::to_string(j);
                     }
                     auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandles_[cfname]);
                     int scanned = 0;
@@ -171,7 +171,7 @@ namespace ycsbc {
             for (int i = 0; i < 4; i++) {
                 std::string tablename;
                 if (i > 0) {
-                    tablename = table + "_sys_cf_L" + std::to_string(i) + "_G0";
+                    tablename = table + "_split_cf_0";
                 } else {
                     tablename = table;
                 }
@@ -288,7 +288,7 @@ namespace ycsbc {
             dbname, rocksdb::ColumnFamilyOptions(options_)));
       
         bool lastSplitLevel = false;
-        std::string prefix = dbname + "_sys_cf";
+        std::string prefix = dbname + "_split_cf";
         std::queue<int> parents;
         parents.push(options_.num_columns);
 
