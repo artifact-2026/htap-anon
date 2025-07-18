@@ -13,17 +13,17 @@ namespace ycsbc {
     TestFlatBuffers::TestFlatBuffers(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         
-        std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::Row>();
-        const flatbuffers::TypeTable* fb_type_table = flat::FbRowTypeTable();
-
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, false, props);
         
         options.transformers.push_back(std::make_shared<rocksdb::Converter>());
         options.SetTransformerType(rocksdb::TransformerType::CONVERTER);
+
+        std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::Row>();
+        const flatbuffers::TypeTable* fb_type_table = flat::FbRowTypeTable();
         options.schemaDescriptors.push_back(std::make_shared<rocksdb::Protobuf2FlatbuffersSchema>(std::move(input_proto_template), fb_type_table));
 
-        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options); 
+        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1); 
     }
 
     /*

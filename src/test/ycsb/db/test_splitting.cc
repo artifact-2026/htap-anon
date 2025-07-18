@@ -11,8 +11,6 @@ namespace ycsbc {
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, false, props);
 
-        std::string inputType = props.GetProperty("inputdataformat", "protobuf");
-
         options.transformers.push_back(std::make_shared<rocksdb::Distributor>());
         options.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
 
@@ -24,7 +22,7 @@ namespace ycsbc {
         output_protos.emplace_back(std::make_unique<data::Grp4>());
         options.schemaDescriptors.push_back(std::make_shared<rocksdb::ProtobufDistributorSchema>(2, std::move(input_proto), std::move(output_protos)));
 
-        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options);
+        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 2);
     }
 
     /*

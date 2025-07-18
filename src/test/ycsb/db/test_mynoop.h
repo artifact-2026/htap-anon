@@ -12,6 +12,7 @@
 #include <rocksdb/cache.h>
 #include <rocksdb/table.h>
 #include <rocksdb/filter_policy.h>
+#include <rocksdb/mym_broker.h>
 
 #include "core/properties.h"
 #include "core/core_workload.h"
@@ -45,20 +46,7 @@ class TestMynoop : public DB{
         ~TestMynoop() {};
     
     private:
-        rocksdb::DB *rocksdb_;
-        rocksdb::Options options_;
-        rocksdb::WriteOptions write_options_;
-        std::shared_ptr<rocksdb::Cache> cache_;
-        std::shared_ptr<rocksdb::Statistics> dbstats_;
-        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
-        std::string inputType_, outputType_, columnDataType_;
-
-        void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
-        // serialize for inserts
-        void GetColumnFamilyDescriptors(const std::string& dbname,
-                std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
-        void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
-                                std::vector<rocksdb::ColumnFamilyHandle*> handles);
+        std::unique_ptr<rocksdb::MymBroker> mymBroker_;
 };  
 
 }

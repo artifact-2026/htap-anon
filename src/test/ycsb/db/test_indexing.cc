@@ -27,7 +27,7 @@ namespace ycsbc {
         options.schemaDescriptors.push_back(std::make_shared<rocksdb::ProtobufAugmenterSchema>(indexes,
                                             std::make_unique<data::Row>()));
 
-        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options); 
+        mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1); 
     }
 
     /*
