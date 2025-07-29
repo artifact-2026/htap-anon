@@ -11,8 +11,6 @@ namespace ycsbc {
         noResults = 0;
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        inputType_ = props.GetProperty("inputdataformat", "protobuf");
-        outputType_ = props.GetProperty("outputdataformat", "flatbuffers");
         columnDataType_ = props.GetProperty("columndatatype", "numeric");
         SetOptions(props, false, levels, fieldcount);
 
@@ -190,8 +188,6 @@ namespace ycsbc {
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
-        options_.SetInputOutputDataType(ycsbc::DBHelper::mapStringToDataType(inputType_),
-                                        ycsbc::DBHelper::mapStringToDataType(outputType_));
 
         options_.compaction_style = rocksdb::kCompactionStyleLevel;
         options_.write_buffer_size = 128 * 1024 * 1024;
