@@ -12,7 +12,6 @@ namespace ycsbc {
         ycsbc::DBHelper::SetOptions(options, false, props);
 
         options.transformers.push_back(std::make_shared<rocksdb::Distributor>());
-        options.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR);
 
         auto input_proto = std::make_unique<data::Row>();
         //auto input_proto = std::unique_ptr<google::protobuf::Message>(new data::Row());

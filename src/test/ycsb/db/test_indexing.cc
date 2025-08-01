@@ -18,7 +18,6 @@ namespace ycsbc {
         std::vector<rocksdb::DeriveFuncData*> deriveFuncs;
         deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
         options.transformers.push_back(std::make_shared<rocksdb::Augmenter>());
-        options.SetTransformerType(rocksdb::TransformerType::AUGMENTER);
 
         std::vector<std::string> index_keys;
         index_keys.push_back("field1");

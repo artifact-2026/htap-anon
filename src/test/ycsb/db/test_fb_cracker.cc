@@ -24,8 +24,6 @@ namespace ycsbc {
         
         options.transformers.push_back(std::make_shared<rocksdb::Distributor>());
         options.transformers.push_back(std::make_shared<rocksdb::Converter>());
-        options.SetTransformerType(rocksdb::TransformerType::DISTRIBUTOR |
-                                   rocksdb::TransformerType::CONVERTER);
 
         auto input_proto = std::make_unique<data::Row>();
         std::vector<std::unique_ptr<google::protobuf::Message>> output_protos;

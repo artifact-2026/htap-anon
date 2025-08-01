@@ -187,8 +187,7 @@ namespace ycsbc {
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
-        options_.SetTransformerType(rocksdb::TransformerType::NOTRANSFORMATION);
-
+        
         options_.compaction_style = rocksdb::kCompactionStyleLevel;
         options_.write_buffer_size = 128 * 1024 * 1024;
         options_.max_write_buffer_number = 8;

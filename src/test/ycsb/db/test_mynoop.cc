@@ -13,7 +13,6 @@ namespace ycsbc {
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, false, props);
         options.transformers.push_back(std::make_shared<rocksdb::Mynooper>());
-        options.SetTransformerType(rocksdb::TransformerType::MYNOOPER);
         options.schemaDescriptors.push_back(std::make_shared<rocksdb::MynooperSchema>());
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1);

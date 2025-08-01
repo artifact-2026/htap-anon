@@ -17,7 +17,6 @@ namespace ycsbc {
         ycsbc::DBHelper::SetOptions(options, false, props);
         
         options.transformers.push_back(std::make_shared<rocksdb::Converter>());
-        options.SetTransformerType(rocksdb::TransformerType::CONVERTER);
 
         std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::Row>();
         const flatbuffers::TypeTable* fb_type_table = flat::FbRowTypeTable();
