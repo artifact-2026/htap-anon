@@ -22,12 +22,12 @@ class SkewedLeastRecentGenerator : public Generator<uint64_t> {
  private:
   CounterGenerator &basis_;
   ZipfianGenerator zipfian_;
-  std::atomic<uint64_t> last_;
+  std::atomic<uint64_t> last_{0};
 };
 
 inline uint64_t SkewedLeastRecentGenerator::Next() {
-  uint64_t max = basis_.Last()/4;
-  return last_ = max - zipfian_.Next(max) % max;
+  uint64_t max = basis_.Last();
+  return last_ = zipfian_.Next(max);
 }
 
 } // ycsbc

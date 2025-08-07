@@ -1,26 +1,25 @@
 # Yahoo! Cloud System Benchmark
-# Workload E: Range queries only workload
-#   Application example: threaded conversations, where each scan is for the posts in a given thread (assumed to be clustered by thread id)
+# Workload F: Read-modify-write workload
+#   Application example: user database, where user records are read and modified by the user or to record user activity.
 #                        
-#   Scan/insert ratio: 95/5
-#   Default data size: 1 KB records (16 fields, 64 bytes each, plus key)
+#   Read/read-modify-write ratio: 50/50
+#   Default data size: 1 KB records (10 fields, 100 bytes each, plus key)
 #   Request distribution: zipfian
-
-# The insert order is hashed, not ordered. Although the scans are ordered, it does not necessarily
-# follow that the data is inserted in order. For example, posts for thread 342 may not be inserted contiguously, but
-# instead interspersed with posts from lots of other threads. The way the YCSB client works is that it will pick a start
-# key, and then request a number of records; this works fine even for hashed insertion.
 keylength=16
-fieldcount=15
-fieldlength=16
+fieldcount=1
+fieldlength=65536
 
-recordcount=25000000
-operationcount=20000
+recordcount=2000000
+operationcount=2000000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readallfields=true
 
-readproportion=0
-updateproportion=1.0
+readproportion=0.5
+updateproportion=0
 scanproportion=0
 insertproportion=0
+readmodifywriteproportion=0.5
+
+requestdistribution=zipfian
+

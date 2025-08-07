@@ -9,16 +9,16 @@ keylength=32
 fieldcount=16
 fieldlength=64
 
-recordcount=20000000
-operationcount=200000
+recordcount=2000000
+operationcount=2000000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readallfields=false
 
 readproportion=0
-updateproportion=0
-scanproportion=0
+updateproportion=0.05
+scanproportion=0.95
 insertproportion=0
-readmodifywriteproportion=1.0
+readmodifywriteproportion=0
 
-requestdistribution=leastrecent
+requestdistribution=zipfian
