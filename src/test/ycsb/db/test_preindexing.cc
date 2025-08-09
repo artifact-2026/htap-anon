@@ -112,7 +112,7 @@ namespace ycsbc {
                     if (inputType_ == "protobuf") {
                         data::Row row;
                         row.ParseFromString(it->value().ToString());
-                        sum += row.field1();
+                        sum += std::stoi(row.columns(0).value());
                     } else {
                         nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
                         sum += std::stoi(parsedJson["field0"].get<std::string>());
@@ -136,9 +136,9 @@ namespace ycsbc {
         if (inputType_ == "protobuf") {
             data::Row row;
             row.ParseFromString(values);
-            const google::protobuf::Descriptor* descriptor = row.GetDescriptor();
-            if (descriptor->field_count() > 0) {
-                ikey = row.field1();
+            
+            if (row.columns_size() > 0) {
+                ikey = row.columns(0).value();
             } else {
                 return 1;
             }
@@ -158,60 +158,6 @@ namespace ycsbc {
         }
 
         return 0;
-
-        // find out if this key was indexed before
-        /*std::string indexed;
-        s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0-helper"], key, &indexed);
-        if (indexed != "" && indexed != ikey) {
-            // remove the old indexed value
-            std::string removekeysstr;
-            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_derived_cf_0"], indexed, &removekeysstr);
-
-            std::vector<std::string> removekeys = deserializeIndex(removekeysstr);
-            removekeys.erase(std::remove(removekeys.begin(), removekeys.end(), key), removekeys.end());
-
-            // write back the remaining keys after the removal
-            if (removekeys.size() > 0) {
-                std::ostringstream oss;
-
-                size_t sz = removekeys.size();
-                oss.write(reinterpret_cast<const char*>(&sz), sizeof(sz));
-
-                for (const auto& k : removekeys) {
-                    size_t klen = k.size();
-                    oss.write(reinterpret_cast<const char*>(&klen), sizeof(klen));
-                    oss.write(k.c_str(), klen);
-                }
-                s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_derived_cf_0"], indexed, oss.str());
-            }
-        } else if (indexed == "") {
-            // key was never indexed before so we add it
-            std::string indvalues;
-            s = rocksdb_->Get(rocksdb::ReadOptions(), cfhandles_[table+"_index_cf"], ikey, &indvalues);
-
-            std::ostringstream oss;
-            size_t key_len = key.size();
-            oss.write(reinterpret_cast<const char*>(&key_len), sizeof(key_len));  // Write string length
-            oss.write(key.c_str(), key_len);
-
-            indvalues += oss.str();
-
-            s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table+"_index_cf"], ikey, indvalues);
-            if (s.ok()) {
-                s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
-                if (s.ok()) {
-                    return 0;
-                }
-            }
-        }
-
-        // index was taken care of, now insert the data
-        s = rocksdb_->Put(rocksdb::WriteOptions(), cfhandles_[table], key, values);
-        if (s.ok()) {
-            return 0;
-        }
-
-        return 1;*/
     }
 
     int TestPreindexing::Update(const std::string &table, const std::string &key, std::string &values)
@@ -232,7 +178,7 @@ namespace ycsbc {
         // parse the value to get the key in the secondary index
         data::Row row;
         row.ParseFromString(value);
-        const std::string ikey = row.field5();
+        const std::string ikey = row.columns(4).value();
 
         // remove primary key from the secondary index
         std::string pkeys;

@@ -51,7 +51,7 @@ inline bool Client::DoInsert() {
     return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
   } else {
     data::Row value;
-    workload_.BuildProtoRecord(value, workload_.column_data_type());
+    workload_.BuildProtoRecord(value);
     std::string serializedValue;
     value.SerializeToString(&serializedValue);
     return (db_.Insert(workload_.NextTable(), key, serializedValue) == DB::kOK);
@@ -144,9 +144,9 @@ inline int Client::TransactionReadModifyWrite() {
   } else {
     data::Row columns;
     if (workload_.write_all_fields()) {
-      workload_.BuildProtoRecord(columns, workload_.column_data_type());
+      workload_.BuildProtoRecord(columns);
     } else {
-      workload_.BuildProtoColumn(columns, workload_.column_data_type());
+      workload_.BuildProtoColumn(columns, "field1");
     }
     std::string serializedColumns;
     columns.SerializeToString(&serializedColumns);
@@ -192,9 +192,9 @@ inline int Client::TransactionUpdate() {
   } else {
     data::Row columns;
     if (workload_.write_all_fields()) {
-      workload_.BuildProtoRecord(columns, workload_.column_data_type());
+      workload_.BuildProtoRecord(columns);
     } else {
-      workload_.BuildProtoColumn(columns, workload_.column_data_type());
+      workload_.BuildProtoColumn(columns, "field1");
     }
     std::string serializedColumns;
     columns.SerializeToString(&serializedColumns);
@@ -210,7 +210,7 @@ inline int Client::TransactionInsert() {
     return db_.Insert(table, key, val);
   } else {
     data::Row columns;
-    workload_.BuildProtoRecord(columns, workload_.column_data_type());
+    workload_.BuildProtoRecord(columns);
     std::string serializedColumns;
     columns.SerializeToString(&serializedColumns);
     return db_.Insert(table, key, serializedColumns);

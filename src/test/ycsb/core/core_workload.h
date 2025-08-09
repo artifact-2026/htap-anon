@@ -162,8 +162,8 @@ class CoreWorkload {
   ///
   virtual void Init(const utils::Properties &p);
   
-  virtual void BuildProtoRecord(data::Row &value, std::string type);
-  virtual void BuildProtoColumn(data::Row &update, std::string type);
+  virtual void BuildProtoRecord(data::Row &value);
+  virtual void BuildProtoColumn(data::Row &update, std::string name);
   virtual std::string BuildJsonRecord(std::string type);
   virtual std::string BuildJsonColumn(std::string type);
   virtual std::string BuildMaxKey();

@@ -2,49 +2,13 @@ syntax = "proto3";
 
 package data;
 
+// Represents a single column in the row
+message Column {
+  string name = 1;   // e.g., "field0"
+  bytes value = 2;   // binary-safe value (use bytes instead of string if fixed-size random data)
+}
+
+// Represents one YCSB record
 message Row {
-  int32 field1 = 1;
-  int32 field2 = 2;
-  int32 field3 = 3;
-  int32 field4 = 4;
-  string field5 = 5;
-  string field6 = 6;
-  string field7 = 7;
-  string field8 = 8;
-  string field9 = 9;
-  string field10 = 10;
-  string field11 = 11;
-  int32 field12 = 12;
-}
-
-message Grp1 {
-  int32 field1 = 1;
-  int32 field2 = 2;
-  int32 field3 = 3;
-}
-
-message Grp2 {
-  int32 field4 = 1;
-  string field5 = 2;
-  string field6 = 3;
-}
-
-message Grp3 {
-  string field7 = 1;
-  string field8 = 2;
-  string field9 = 3;
-}
-
-message Grp4 {
-  string field10 = 1;
-  string field11 = 2;
-  int32 field12 = 3;
-}
-
-message Int32Wrapper {
-  int32 value = 1;
-}
-
-message StringWrapper {
-  string value = 1;
+  repeated Column columns = 1;   // All fields for this row
 }

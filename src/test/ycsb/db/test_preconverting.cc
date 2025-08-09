@@ -72,11 +72,14 @@ namespace ycsbc {
         while (it->Valid() && result.size() < 100) {
             if (fields != nullptr) {
                 flatbuffers::Verifier verifier(reinterpret_cast<const uint8_t*>(it->value().data()), it->value().size());
-                if (flat::VerifyFbRowBuffer(verifier)) {
+                if (flat::VerifyRowBuffer(verifier)) {
                     const uint8_t* buf = reinterpret_cast<const uint8_t*>(it->value().data());
-                    auto fb_row = flat::GetFbRow(buf);
-                    if (fb_row && fb_row->numcols() && fb_row->numcols()->size() > 0) {
-                        sum += fb_row->numcols()->Get(0);
+                    auto fb_row = flat::GetRow(buf);
+                    auto cols = fb_row->columns();
+                    if (cols && cols->size() > 0) {
+                        const flat::Column* c0 = cols->Get(0);
+                        std::string s(reinterpret_cast<const char*>(c0->value()->Data()), c0->value()->size());
+                        sum += std::stoull(s);
                     }
                 }
             }
@@ -94,49 +97,34 @@ namespace ycsbc {
         flatbuffers::FlatBufferBuilder builder;
         std::vector<int32_t> numvals;
         std::vector<flatbuffers::Offset<flatbuffers::String>> strvals;
+        std::vector<flatbuffers::Offset<flat::Column>> cols;
 
         if (inputType_ == "json") {
             nlohmann::json parsedJson = nlohmann::json::parse(values);
-            for (const auto& element : parsedJson) {
-                if (element.is_number()) {
-                    numvals.push_back(element.get<int>());
-                } else if (element.is_string()) {
-                    strvals.push_back(builder.CreateString(element.get<std::string>()));
-                }
+            cols.reserve(parsedJson.size());
+
+            for (auto it = parsedJson.begin(); it != parsedJson.end(); ++it) {
+                auto name_off = builder.CreateString(it.key());
+                const std::string& pv = it.value();
+                auto val_off  = builder.CreateVector(reinterpret_cast<const uint8_t*>(pv.data()), pv.size());
+                auto fc = flat::CreateColumn(builder, name_off, val_off);
+                cols.push_back(fc);
             }
         } else {
             data::Row row;
             row.ParseFromString(values);
-            numvals.push_back(row.field1());
-            numvals.push_back(row.field2());
-            numvals.push_back(row.field3());
-            numvals.push_back(row.field4());
-            strvals.push_back(builder.CreateString(row.field5()));
-            strvals.push_back(builder.CreateString(row.field6()));
-            strvals.push_back(builder.CreateString(row.field7()));
-            strvals.push_back(builder.CreateString(row.field8()));
-            strvals.push_back(builder.CreateString(row.field9()));
-            strvals.push_back(builder.CreateString(row.field10()));
-            strvals.push_back(builder.CreateString(row.field11()));
-            numvals.push_back(row.field12());
-            /*for (int i = 0; i < row.columns_size(); i++) {
-                if (columnDataType_ == "numeric") {
-                    numvals.push_back(std::stoi(row.columns(i)));
-                } else if (columnDataType_ == "string") {
-                    strvals.push_back(builder.CreateString(row.columns(i)));
-                } else {
-                    if (i < row.columns_size()/2) {
-                        numvals.push_back(std::stoi(row.columns(i)));
-                    } else {
-                        strvals.push_back(builder.CreateString(row.columns(i)));
-                    }
-                }
-            }*/
-        }
+            cols.reserve(row.columns_size());
 
-        auto num_vector = builder.CreateVector(numvals);
-        auto col_vector = builder.CreateVector(strvals);
-        auto fb_row = flat::CreateFbRow(builder, num_vector, col_vector);
+            for (int i = 0; i < row.columns_size(); i++) {
+                auto name_off = builder.CreateString(row.columns(i).name());
+                const std::string& pv = row.columns(i).value();  // bytes -> std::string in C++ API
+                auto val_off  = builder.CreateVector(reinterpret_cast<const uint8_t*>(pv.data()), pv.size());
+                auto fc = flat::CreateColumn(builder, name_off, val_off);
+                cols.push_back(fc);
+            }
+        }
+        auto cols_vec = builder.CreateVector(cols);
+        auto fb_row = flat::CreateRow(builder, cols_vec);
         builder.Finish(fb_row);
             
         uint8_t *buf = builder.GetBufferPointer();

@@ -27,16 +27,16 @@ namespace ycsbc {
 
         auto input_proto = std::make_unique<data::Row>();
         std::vector<std::unique_ptr<google::protobuf::Message>> output_protos;
-        output_protos.emplace_back(std::make_unique<data::Grp1>());
-        output_protos.emplace_back(std::make_unique<data::Grp2>());
-        output_protos.emplace_back(std::make_unique<data::Grp3>());
-        output_protos.emplace_back(std::make_unique<data::Grp4>());
+        output_protos.emplace_back(std::make_unique<data::Row>());
+        output_protos.emplace_back(std::make_unique<data::Row>());
+        output_protos.emplace_back(std::make_unique<data::Row>());
+        output_protos.emplace_back(std::make_unique<data::Row>());
         options.schemaDescriptors.push_back(
                 std::make_shared<rocksdb::ProtobufDistributorSchema>(2, 
                     std::move(input_proto), std::move(output_protos)));
 
         std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::Row>();
-        const flatbuffers::TypeTable* fb_type_table = flat::FbRowTypeTable();
+        const flatbuffers::TypeTable* fb_type_table = flat::RowTypeTable();
         options.schemaDescriptors.push_back(
                 std::make_shared<rocksdb::Protobuf2FlatbuffersSchema>(
                     std::move(input_proto_template), fb_type_table));

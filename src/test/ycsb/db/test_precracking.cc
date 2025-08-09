@@ -105,7 +105,7 @@ namespace ycsbc {
                     if (inputType_ == "protobuf") {
                         data::Row row;
                         row.ParseFromString(it->value().ToString());
-                        sum += row.field1();
+                        sum += std::stoi(row.columns(0).value());
                     } else {
                         nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
                         sum += std::stoi(parsedJson["field0"].get<std::string>());
@@ -128,38 +128,21 @@ namespace ycsbc {
         
         if (inputType_ == "protobuf") {
             data::Row row;
-            row.ParseFromString(values);
-            const google::protobuf::Descriptor* descriptor = row.GetDescriptor();
-            const google::protobuf::Reflection* reflection = row.GetReflection();
+            if (!row.ParseFromString(values)) {
+                std::cout << "parsing value input into Protobuf schema had an error." << std::endl;
+                return 1;
+            }
 
-            for (int i = 0; i < descriptor->field_count(); i++) {
-                const google::protobuf::FieldDescriptor* field = descriptor->field(i);
-                if (!reflection->HasField(row, field)) {
-                    continue;  // skip unset fields
-                }
+            for (int i = 0; i < row.columns_size(); i++) {
+                data::Row splitRow;
+                const auto& src = row.columns(i);
+                auto* c = splitRow.add_columns();
+                c->set_name(src.name());
+                c->set_value(src.value());
 
                 std::string serializedColumn;
+                splitRow.SerializeToString(&serializedColumn);
                 
-                switch(field->type()) {
-                    case google::protobuf::FieldDescriptor::TYPE_INT32: {
-                        int32_t intval = reflection->GetInt32(row, field);
-                        data::Int32Wrapper intWrapper;
-                        intWrapper.set_value(intval);
-                        intWrapper.SerializeToString(&serializedColumn);
-                        break;
-                    }
-                    case google::protobuf::FieldDescriptor::TYPE_STRING: {
-                        std::string strval = reflection->GetString(row, field);
-                        data::StringWrapper strWrapper;
-                        strWrapper.set_value(strval);
-                        strWrapper.SerializeToString(&serializedColumn);
-                        break;
-                    }
-                    default: {
-                        break;
-                    }
-                }
-
                 s = rocksdb_->Put(write_options_,
                                   cfhandles_[table+"_colgrp_"+std::to_string(i)],
                                   key,

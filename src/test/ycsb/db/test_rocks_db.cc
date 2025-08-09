@@ -68,7 +68,7 @@ namespace ycsbc {
                 }*/
                 data::Row row;
                 row.ParseFromString(it->value().ToString());
-                if (row.field5() == key) {
+                if (row.columns(4).name() == key) {
                     result = it->value().ToString();
                     return 0;
                 }

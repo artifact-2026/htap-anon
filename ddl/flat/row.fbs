@@ -1,8 +1,12 @@
 namespace flat;
 
-table FbRow {
-    numcols:[int32];
-    strcols:[string];
+table Column {
+  name:string;
+  value:[ubyte];   // binary-safe column payload
 }
 
-root_type FbRow;
+table Row {
+  columns:[Column];
+}
+
+root_type Row;
