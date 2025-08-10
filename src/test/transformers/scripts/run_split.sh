@@ -36,7 +36,10 @@ for FILEPATH in "$INPUT_DIR"/*.sst; do
 
 
     # Run transformation
-    ./bin/split_column_groups "$FILEPATH" "$OUT_PATH" > "$LOG_PATH/stdout.log" 2> "$LOG_PATH/stderr.log"
+    ./split_column_groups \
+    --input "$FILEPATH" \
+    --out1 "${OUT_PATH}/split1.log" \
+    --out2 "${OUT_PATH}/split2.log" > "$LOG_PATH/stdout.log" 2> "$LOG_PATH/stderr.log"
 done
 
 set +e
