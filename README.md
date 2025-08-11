@@ -40,8 +40,9 @@ git submodule update --init --recursive
 (gdb) b <functionname>
 (gdb) run 
 
-##### building with debug, tools, and AddressSanitizer
+##### building with debug, tools, db_bench, and AddressSanitizer
 % cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=address -g" -S .. -B . -G Ninja
+% cmake -DWITH_BENCHMARK_TOOLS=on -DWITH_TOOLS=on .. -B . -G Ninja
 % cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=thread -g" -S .. -B . -G Ninja
 % echo 'setenv PATH ${PATH}:/holly/htap/build/src/mycelium/tools' >> ~/.tcshrc
 % source ~/.tcshrc
@@ -69,3 +70,15 @@ git submodule update --init --recursive
 ### System resource monitoring when testing
 sudo apt-get update
 sudo apt-get install sysstat dstat procps iotop htop -y
+
+### Run the transformation tests standalone
+#### Location: src/test/transformers/scripts
+
+#### build code
+% c++ -std=c++17 -O2 -Wall split_from_hex.cc data.pb.cc -o split_from_hex `pkg-config --cflags --libs protobuf` -pthread
+#### run sst_dimp
+% ./src/mycelium/tools/sst_dump --command=scan --file="/holly/transformation_input/000011.sst" --output_hex | sed -n 's/^value: //p' \
+ | ./split_from_hex "/holly/transformation_output/split1.binpb" "/holly/transformation_output/split2.binpb" \
+ > "/holly/transformation_logs/split_stdout.log" 2> "/holly/transformation_logs/split_stderr.log"
+
+### c++ -std=c++17 -O2 -Wall split_column_groups.cc data.pb.cc -o split_column_groups `pkg-config --cflags --libs protobuf` -pthread

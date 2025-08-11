@@ -1,54 +1,43 @@
 #!/bin/bash
-set -e
-
-# ---------------------------
-# Usage check
-# ---------------------------
-if [ "$#" -ne 3 ]; then
-    echo "Usage: $0 <input_dir> <output_dir> <log_dir>"
-    exit 1
-fi
+set -euo pipefail
 
 INPUT_DIR="$1"
 OUTPUT_DIR="$2"
 LOG_DIR="$3"
 
-mkdir -p "$OUTPUT_DIR"
-mkdir -p "$LOG_DIR"
+mkdir -p "$OUTPUT_DIR" "$LOG_DIR"
 
-DEVICE=$(df "$OUTPUT_DIR" | tail -1 | awk '{print $1}')
+# Fixed binary locations
+SSTDUMP_BIN="./src/mycelium/tools/sst_dump"
+SPLIT_BIN="../src/test/transformers/scripts/split_from_hex"
 
-iostat -dx $DEVICE 1 > iostat_log.txt &
-IOSTAT_PID=$!
-vmstat 1 > vmstat_log.txt &
+# Start monitors
+echo "[*] Starting monitors..."
+vmstat 1 > "$LOG_DIR/vmstat.log" &
 VMSTAT_PID=$!
+iostat -x 1 > "$LOG_DIR/iostat.log" &
+IOSTAT_PID=$!
 
-for FILEPATH in "$INPUT_DIR"/*.sst; do
-    FILENAME=$(basename "$FILEPATH")
-    BASENAME="${FILENAME%.*}"  # remove .sst extension
+# Process each SST file in INPUT_DIR
+echo "[*] Processing SST files from $INPUT_DIR..."
+for sst_file in "$INPUT_DIR"/*.sst; do
+    base_name=$(basename "$sst_file" .sst)
 
-    echo "Processing: $FILENAME"
+    out1="$OUTPUT_DIR/${base_name}_split1.binpb"
+    out2="$OUTPUT_DIR/${base_name}_split2.binpb"
+    stdout_log="$LOG_DIR/${base_name}_stdout.log"
+    stderr_log="$LOG_DIR/${base_name}_stderr.log"
 
-    # Create per-file output and log directories
-    OUT_PATH="$OUTPUT_DIR/$BASENAME"
-    LOG_PATH="$LOG_DIR/$BASENAME"
-    mkdir -p "$OUT_PATH" "$LOG_PATH"
-
-
-    # Run transformation
-    ./split_column_groups \
-    --input "$FILEPATH" \
-    --out1 "${OUT_PATH}/split1.log" \
-    --out2 "${OUT_PATH}/split2.log" > "$LOG_PATH/stdout.log" 2> "$LOG_PATH/stderr.log"
+    echo "    - Splitting $sst_file"
+    (
+      "$SSTDUMP_BIN" --command=scan --file="$sst_file" --output_hex \
+        | awk -F'=> ' '/=>/ && NF==2 {print $2}' \
+        | "$SPLIT_BIN" "$out1" "$out2"
+    ) >"$stdout_log" 2>"$stderr_log"
 done
 
-set +e
-kill "$IOSTAT_PID" 2>/dev/null || true
-kill "$VMSTAT_PID" 2>/dev/null || true
-wait "$IOSTAT_PID" 2>/dev/null || true
-wait "$VMSTAT_PID" 2>/dev/null || true
-set -e
+# Stop monitors
+echo "[*] Stopping monitors..."
+kill $VMSTAT_PID $IOSTAT_PID
 
-echo "--- Analysis for splitting transformation ---"
-./analyze_baseline.sh
-echo
+echo "[*] Done."
