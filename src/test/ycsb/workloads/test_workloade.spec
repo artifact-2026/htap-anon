@@ -11,12 +11,11 @@
 # instead interspersed with posts from lots of other threads. The way the YCSB client works is that it will pick a start
 # key, and then request a number of records; this works fine even for hashed insertion.
 keylength=16
-fieldcount=1
-fieldlength=65536
-columndatatype=string
+fieldcount=32
+fieldlength=512
 
-recordcount=2000000
-operationcount=2000000
+recordcount=3000000
+operationcount=1000000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readallfields=true

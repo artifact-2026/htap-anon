@@ -11,11 +11,11 @@
 # which orders items purely by time, and demands the latest, is very different than 
 # workload here (which we believe is more typical of how people build systems.)
 keylength=16
-fieldcount=1
-fieldlength=65536
+fieldcount=32
+fieldlength=512
 
-recordcount=2000000
-operationcount=2000000
+recordcount=3000000
+operationcount=1000000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readallfields=true

@@ -42,7 +42,7 @@ git submodule update --init --recursive
 
 ##### building with debug, tools, db_bench, and AddressSanitizer
 % cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=address -g" -S .. -B . -G Ninja
-% cmake -DWITH_BENCHMARK_TOOLS=on -DWITH_TOOLS=on .. -B . -G Ninja
+% cmake -DWITH_BENCHMARK_TOOLS=on -DWITH_TOOLS=on -S .. -B . -G Ninja
 % cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=thread -g" -S .. -B . -G Ninja
 % echo 'setenv PATH ${PATH}:/holly/htap/build/src/mycelium/tools' >> ~/.tcshrc
 % source ~/.tcshrc
