@@ -211,26 +211,24 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
         options_.max_open_files = -1;
-        options_.env->SetBackgroundThreads(16, rocksdb::Env::Priority::LOW);
-	    options_.env->SetBackgroundThreads(8, rocksdb::Env::Priority::HIGH);
-	    options_.max_background_compactions = 16;
-	    options_.max_background_flushes = 8;
+	    options_.max_background_compactions = 32;
+        options_.max_background_jobs = 64;
 
 	    options_.max_subcompactions = 16;
 
         options_.num_levels = levels;
         options_.num_columns = fieldcount;
         
-        options_.write_buffer_size = 128 * 1024 * 1024;
-        options_.max_write_buffer_number = 8;
-        options_.level0_file_num_compaction_trigger = 4;
-        options_.level0_slowdown_writes_trigger = 20;
-        options_.level0_stop_writes_trigger = 32;
-        options_.IncreaseParallelism(24);
+        options_.write_buffer_size = 32 * 1024 * 1024;
+        //options_.max_write_buffer_number = 8;
+        //options_.level0_file_num_compaction_trigger = 4;
+        //options_.level0_slowdown_writes_trigger = 20;
+        //options_.level0_stop_writes_trigger = 32;
+        //options_.IncreaseParallelism(24);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
 
-        options_.target_file_size_base = 256 * 1024 * 1024;
+        //options_.target_file_size_base = 256 * 1024 * 1024;
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024);
         table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));
