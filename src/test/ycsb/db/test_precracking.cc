@@ -14,7 +14,7 @@ namespace ycsbc {
         inputType_ = props.GetProperty("inputdataformat", "protobuf");
         outputType_ = props.GetProperty("outputdataformat", "flatbuffers");
         columnDataType_ = props.GetProperty("columndatatype", "numeric");
-        SetOptions(dbfilename, levels, fieldcount, false);
+        SetOptions(dbfilename, levels, fieldcount, true);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);

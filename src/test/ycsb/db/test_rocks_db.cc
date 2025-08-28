@@ -12,7 +12,7 @@ namespace ycsbc {
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         columnDataType_ = props.GetProperty("columndatatype", "numeric");
-        SetOptions(props, false, levels, fieldcount);
+        SetOptions(props, true, levels, fieldcount);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);

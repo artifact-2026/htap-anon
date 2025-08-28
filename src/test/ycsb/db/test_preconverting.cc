@@ -16,7 +16,7 @@ namespace ycsbc {
         inputType_ = props.GetProperty("inputdataformat", "json");
         outputType_ = props.GetProperty("outputdataformat", "flatbuffers");
         columnDataType_ = props.GetProperty("columndatatype", "nemeric");
-        SetOptions(dbfilename, levels, fieldcount, false);
+        SetOptions(dbfilename, levels, fieldcount, true);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);

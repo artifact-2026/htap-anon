@@ -11,7 +11,7 @@ namespace ycsbc {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         
         rocksdb::Options options;
-        ycsbc::DBHelper::SetOptions(options, false, props);
+        ycsbc::DBHelper::SetOptions(options, true, props);
         options.transformers.push_back(std::make_shared<rocksdb::Mynooper>());
         options.schemaDescriptors.push_back(std::make_shared<rocksdb::MynooperSchema>());
 
