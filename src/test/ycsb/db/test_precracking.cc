@@ -133,20 +133,36 @@ namespace ycsbc {
                 return 1;
             }
 
-            for (int i = 0; i < row.columns_size(); i++) {
-                data::Row splitRow;
-                const auto& src = row.columns(i);
-                auto* c = splitRow.add_columns();
-                c->set_name(src.name());
-                c->set_value(src.value());
+            constexpr int kGroupSize = 4;
+            const int num_cols   = row.columns_size();
+            const int num_groups = (num_cols + kGroupSize - 1) / kGroupSize;  // 32 -> 8
 
-                std::string serializedColumn;
-                splitRow.SerializeToString(&serializedColumn);
-                
-                s = rocksdb_->Put(write_options_,
-                                  cfhandles_[table+"_colgrp_"+std::to_string(i)],
-                                  key,
-                                  serializedColumn);
+            for (int g = 0; g < num_groups; ++g) {
+                data::Row groupRow;
+
+                const int start = g * kGroupSize;
+                const int end   = std::min(start + kGroupSize, num_cols);
+                for (int i = start; i < end; ++i) {
+                    const auto& src = row.columns(i);
+                    auto* c = groupRow.add_columns();
+                    c->set_name(src.name());
+                    c->set_value(src.value());
+                }
+
+                std::string serialized;
+                serialized.reserve(groupRow.ByteSizeLong());   // optional, avoids reallocs
+                groupRow.SerializeToString(&serialized);
+
+                // write to CF: table + "_colgrp_" + group_index  (expects 8 CFs: 0..7)
+                const std::string cfname = table + "_colgrp_" + std::to_string(g);
+                auto it = cfhandles_.find(cfname);
+                assert(it != cfhandles_.end());                // make sure the CF exists
+
+                s = rocksdb_->Put(write_options_, it->second, key, serialized);
+                if (!s.ok()) {
+                    // handle/log error or break/return as appropriate for your code
+                    break;
+                }
             }
         } else {
             nlohmann::json parsedJson = nlohmann::json::parse(values);

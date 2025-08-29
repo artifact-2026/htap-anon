@@ -11,6 +11,10 @@ cat ~/.ssh/id_ed25519.pub
 Create a new ssh/gpg key at Github.com settings
 git remote set-url origin git@github.com:<username>/<repo-name>.git
 
+#### - Set the disk
+fdisk -l    //to view
+fdisk <device_name>  -- enter n (new partition) -- hit enter for default values -- enter w (write the partition table)
+
 #### - Get the source code  
 git clone git@github.com:hcasalet/htap.git
 cd htap  
