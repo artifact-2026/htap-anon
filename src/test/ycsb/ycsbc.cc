@@ -571,6 +571,14 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("columndatatype",argv[argindex]);
       argindex++;
+    } else if(strcmp(argv[argindex],"-inputdataformat")==0){
+      argindex++;
+      if(argindex >= argc){
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("inputdataformat",argv[argindex]);
+      argindex++;
     } else if(strcmp(argv[argindex],"-dboption")==0){
       argindex++;
       if(argindex >= argc){

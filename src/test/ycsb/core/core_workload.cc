@@ -244,7 +244,7 @@ std::string CoreWorkload::BuildJsonColumn(std::string type) {
   std::string colname = NextFieldName();
 
   if (type == "numeric") {
-    jsonData[colname] = std::to_string(utils::RandomPrintInt());
+    jsonData[colname] = utils::RandomPrintInt();
   } else {
     jsonData[colname] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
   }
