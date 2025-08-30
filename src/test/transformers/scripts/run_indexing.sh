@@ -27,7 +27,7 @@ for sst_file in "$INPUT_DIR"/*.sst; do
     stdout_log="$LOG_DIR/${base_name}_stdout.log"
     stderr_log="$LOG_DIR/${base_name}_stderr.log"
 
-    echo "    - Splitting $sst_file"
+    echo "    - Processing $sst_file" for indexing
     (
       "$SSTDUMP_BIN" --command=scan --file="$sst_file" --output_hex \
         | awk -F'=> ' '/=>/ && NF==2 {print $2}' \

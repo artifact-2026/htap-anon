@@ -110,9 +110,9 @@ namespace ycsbc {
                 uint64_t sum = 0;
                 if (fields != nullptr) {
                     if (inputType_ == "protobuf") {
-                        data::Row row;
+                        data::ByteRow row;
                         row.ParseFromString(it->value().ToString());
-                        sum += std::stoi(row.columns(0).value());
+                        sum += std::stoi(row.values(0).value());
                     } else {
                         nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
                         sum += std::stoi(parsedJson["field0"].get<std::string>());
@@ -134,11 +134,11 @@ namespace ycsbc {
     {
         std::string ikey = "";
         if (inputType_ == "protobuf") {
-            data::Row row;
+            data::ByteRow row;
             row.ParseFromString(values);
             
-            if (row.columns_size() > 0) {
-                ikey = row.columns(0).value();
+            if (row.values_size() > 0) {
+                ikey = row.values(0).value();
             } else {
                 return 1;
             }
@@ -176,9 +176,9 @@ namespace ycsbc {
         }
 
         // parse the value to get the key in the secondary index
-        data::Row row;
+        data::ByteRow row;
         row.ParseFromString(value);
-        const std::string ikey = row.columns(4).value();
+        const std::string ikey = row.values(4).value();
 
         // remove primary key from the secondary index
         std::string pkeys;

@@ -103,9 +103,9 @@ namespace ycsbc {
                 uint64_t sum = 0;
                 if (fields != nullptr) {
                     if (inputType_ == "protobuf") {
-                        data::Row row;
+                        data::ByteRow row;
                         row.ParseFromString(it->value().ToString());
-                        sum += std::stoi(row.columns(0).value());
+                        sum += std::stoi(row.values(0).value());
                     } else {
                         nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
                         sum += std::stoi(parsedJson["field0"].get<std::string>());
@@ -127,25 +127,24 @@ namespace ycsbc {
         rocksdb::Status s;
         
         if (inputType_ == "protobuf") {
-            data::Row row;
+            data::ByteRow row;
             if (!row.ParseFromString(values)) {
                 std::cout << "parsing value input into Protobuf schema had an error." << std::endl;
                 return 1;
             }
 
             constexpr int kGroupSize = 4;
-            const int num_cols   = row.columns_size();
+            const int num_cols   = row.values_size();
             const int num_groups = (num_cols + kGroupSize - 1) / kGroupSize;  // 32 -> 8
 
             for (int g = 0; g < num_groups; ++g) {
-                data::Row groupRow;
+                data::ByteRow groupRow;
 
                 const int start = g * kGroupSize;
                 const int end   = std::min(start + kGroupSize, num_cols);
                 for (int i = start; i < end; ++i) {
-                    const auto& src = row.columns(i);
-                    auto* c = groupRow.add_columns();
-                    c->set_name(src.name());
+                    const auto& src = row.values(i);
+                    auto* c = groupRow.add_values();
                     c->set_value(src.value());
                 }
 

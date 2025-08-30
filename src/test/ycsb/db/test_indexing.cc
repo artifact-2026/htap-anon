@@ -24,7 +24,7 @@ namespace ycsbc {
         std::vector<std::vector<std::string>> indexes;
         indexes.push_back(index_keys);
         options.schemaDescriptors.push_back(std::make_shared<rocksdb::ProtobufAugmenterSchema>(indexes,
-                                            std::make_unique<data::Row>()));
+                                            std::make_unique<data::ByteRow>()));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1); 
     }

@@ -18,7 +18,7 @@ namespace ycsbc {
         
         options.transformers.push_back(std::make_shared<rocksdb::Converter>());
 
-        std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::Row>();
+        std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::ByteRow>();
         const flatbuffers::TypeTable* fb_type_table = flat::RowTypeTable();
         options.schemaDescriptors.push_back(
                 std::make_shared<rocksdb::Protobuf2FlatbuffersSchema>(

@@ -1,7 +1,6 @@
 namespace flat;
 
 table Column {
-  name:string;
   value:[ubyte];   // binary-safe column payload
 }
 

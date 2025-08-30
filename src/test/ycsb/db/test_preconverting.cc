@@ -94,47 +94,49 @@ namespace ycsbc {
 
     int TestPreconverting::Insert(const std::string &table, const std::string &key, std::string &values)
     {
-        flatbuffers::FlatBufferBuilder builder;
-        std::vector<int32_t> numvals;
-        std::vector<flatbuffers::Offset<flatbuffers::String>> strvals;
-        std::vector<flatbuffers::Offset<flat::Column>> cols;
-
+        std::string serializedStr;
         if (inputType_ == "json") {
             nlohmann::json parsedJson = nlohmann::json::parse(values);
-            cols.reserve(parsedJson.size());
+            data::Int32Row irow;
+            irow.mutable_values()->Reserve(static_cast<int>(parsedJson.size()));
 
             for (auto it = parsedJson.begin(); it != parsedJson.end(); ++it) {
-                auto name_off = builder.CreateString(it.key());
-                const std::string& pv = it.value();
-                auto val_off  = builder.CreateVector(reinterpret_cast<const uint8_t*>(pv.data()), pv.size());
-                auto fc = flat::CreateColumn(builder, name_off, val_off);
-                cols.push_back(fc);
+                auto val64 = it.value().get<int64_t>();
+                auto* col = irow.add_values();             // create a new Int32Column
+                col->set_value(static_cast<int32_t>(val64)); 
             }
+            std::string str;
+            irow.SerializeToString(&serializedStr);
         } else {
-            data::Row row;
-            row.ParseFromString(values);
-            cols.reserve(row.columns_size());
+            flatbuffers::FlatBufferBuilder builder;
+            std::vector<int32_t> numvals;
+            std::vector<flatbuffers::Offset<flatbuffers::String>> strvals;
+            std::vector<flatbuffers::Offset<flat::Column>> cols;
 
-            for (int i = 0; i < row.columns_size(); i++) {
-                auto name_off = builder.CreateString(row.columns(i).name());
-                const std::string& pv = row.columns(i).value();  // bytes -> std::string in C++ API
+            data::ByteRow row;
+            row.ParseFromString(values);
+            cols.reserve(row.values_size());
+
+            for (int i = 0; i < row.values_size(); i++) {
+                const std::string& pv = row.values(i).value();  // bytes -> std::string in C++ API
                 auto val_off  = builder.CreateVector(reinterpret_cast<const uint8_t*>(pv.data()), pv.size());
-                auto fc = flat::CreateColumn(builder, name_off, val_off);
+                auto fc = flat::CreateColumn(builder, val_off);
                 cols.push_back(fc);
             }
-        }
-        auto cols_vec = builder.CreateVector(cols);
-        auto fb_row = flat::CreateRow(builder, cols_vec);
-        builder.Finish(fb_row);
+        
+            auto cols_vec = builder.CreateVector(cols);
+            auto fb_row = flat::CreateRow(builder, cols_vec);
+            builder.Finish(fb_row);
             
-        uint8_t *buf = builder.GetBufferPointer();
-        int size = builder.GetSize();
-        std::string str(reinterpret_cast<char*>(buf), size);
+            uint8_t *buf = builder.GetBufferPointer();
+            int size = builder.GetSize();
+            serializedStr = std::string(reinterpret_cast<char*>(buf), size);
+        }
 
         rocksdb::Status s = rocksdb_->Put(write_options_,
                                   cfhandle_,
                                   key,
-                                  str);
+                                  serializedStr);
         if (s.ok()) {
             return 0;
         }

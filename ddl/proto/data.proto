@@ -3,12 +3,27 @@ syntax = "proto3";
 package data;
 
 // Represents a single column in the row
-message Column {
-  string name = 1;   // e.g., "field0"
-  bytes value = 2;   // binary-safe value (use bytes instead of string if fixed-size random data)
+message ByteColumn {
+  bytes value = 1;   // binary-safe value (use bytes instead of string if fixed-size random data)
 }
 
 // Represents one YCSB record
-message Row {
-  repeated Column columns = 1;   // All fields for this row
+message ByteRow {
+  repeated ByteColumn values = 1;   // All fields for this row
+}
+
+message Int32Column {
+  int32 value = 1;
+}
+
+message Int32Row {
+  repeated Int32Column values = 1;
+}
+
+message Int64Column {
+  int64 value = 1;
+}
+
+message Int64Row {
+  repeated Int64Column values = 1;
 }

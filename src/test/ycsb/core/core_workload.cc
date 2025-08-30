@@ -205,10 +205,9 @@ ycsbc::Generator<uint64_t> *CoreWorkload::GetFieldLenGenerator(
   }
 }
 
-void CoreWorkload::BuildProtoRecord(data::Row &value) {
+void CoreWorkload::BuildProtoRecord(data::ByteRow &value) {
   for (int i = 0; i < field_count_; ++i) {
-    auto* c = value.add_columns();
-    c->set_name("field" + std::to_string(i));
+    auto* c = value.add_values();
     std::string s(field_len_generator_->Next(), utils::RandomPrintChar());
     c->set_value(s);
   }
@@ -235,9 +234,8 @@ std::string CoreWorkload::BuildJsonRecord(std::string type) {
   return jsonString;
 }
 
-void CoreWorkload::BuildProtoColumn(data::Row &value, std::string name) {
-  auto* c = value.add_columns();
-  c->set_name(name);
+void CoreWorkload::BuildProtoColumn(data::ByteRow &value, std::string name) {
+  auto* c = value.add_values();
   c->set_value(std::string(field_len_generator_->Next(), utils::RandomPrintChar()));
 }
 
