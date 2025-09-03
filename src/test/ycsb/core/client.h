@@ -44,8 +44,7 @@ class Client {
 };
 
 inline bool Client::DoInsert() {
-  std::string key = workload_.NextSequenceKey();
-  std::string val;
+  const std::string key = workload_.NextSequenceKey();
   if (workload_.input_data_format() == "json") {
     std::string val = workload_.BuildJsonRecord(workload_.column_data_type());
     return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
@@ -134,20 +133,11 @@ inline int Client::TransactionReadModifyWrite() {
   }
   
   if (workload_.input_data_format() == "json") {
-    std::string val;
-    if (workload_.write_all_fields()) {
-      val = workload_.BuildJsonRecord(workload_.column_data_type());
-    } else {
-      val = workload_.BuildJsonColumn(workload_.column_data_type());
-    }
+    std::string val = workload_.BuildJsonRecord(workload_.column_data_type());
     return db_.Update(table, key, val);
   } else {
     data::ByteRow columns;
-    if (workload_.write_all_fields()) {
-      workload_.BuildProtoRecord(columns);
-    } else {
-      workload_.BuildProtoColumn(columns, "field1");
-    }
+    workload_.BuildProtoRecord(columns);
     std::string serializedColumns;
     columns.SerializeToString(&serializedColumns);
     return db_.Update(table, key, serializedColumns);
@@ -183,19 +173,12 @@ inline int Client::TransactionUpdate() {
 
   if (workload_.input_data_format() == "json") {
     std::string val;
-    if (workload_.write_all_fields()) {
-      val = workload_.BuildJsonRecord(workload_.column_data_type());
-    } else {
-      val = workload_.BuildJsonColumn(workload_.column_data_type());
-    }
+    val = workload_.BuildJsonRecord(workload_.column_data_type());
     return db_.Update(table, key, val);
   } else {
     data::ByteRow columns;
-    if (workload_.write_all_fields()) {
-      workload_.BuildProtoRecord(columns);
-    } else {
-      workload_.BuildProtoColumn(columns, "field1");
-    }
+    workload_.BuildProtoRecord(columns);
+    
     std::string serializedColumns;
     columns.SerializeToString(&serializedColumns);
     return db_.Update(table, key, serializedColumns);

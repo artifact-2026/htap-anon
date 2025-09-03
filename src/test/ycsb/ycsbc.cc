@@ -40,8 +40,8 @@ bool StrStartWith(const char *str, const char *pre);
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props);
 void Init(utils::Properties &props);
 void PrintInfo(utils::Properties &props);
-void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats);
-void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats);
+void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats, ycsbc::CoreWorkload& wl);
+void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats, ycsbc::CoreWorkload& wl);
 
 struct run_result DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
     bool is_loading) {
@@ -135,21 +135,20 @@ int main( const int argc, const char *argv[]) {
   int total_ops = 0;
   int sum = 0;
 
-  //PrintInfo(props);
+  // init workload
+  ycsbc::CoreWorkload wl;
+  wl.Init(props);  // exactly once
 
   if( load ) {
-    runLoad(props, num_threads, db, print_stats);
+    runLoad(props, num_threads, db, print_stats, wl);
   }
 
   if( throughput ) {
-    runXput(props, num_threads, db, throughput_type, run_time, print_stats);
+    runXput(props, num_threads, db, throughput_type, run_time, print_stats, wl);
   }
 
   if( run ) {
     // Peforms transactions
-    ycsbc::CoreWorkload wl;
-    wl.Init(props);
-
     for(int j = 0; j < ycsbc::Operation::READMODIFYWRITE + 1; j++){
       ops_cnt[j].store(0);
       ops_time[j].store(0);
@@ -199,11 +198,26 @@ int main( const int argc, const char *argv[]) {
 
     printf("********** run result **********\n");
     printf("all operation records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
-    if ( temp_cnt[ycsbc::INSERT] )          printf("insert ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT]*1e-6, 1.0 * temp_cnt[ycsbc::INSERT] * 1e6 / temp_time[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT] / temp_cnt[ycsbc::INSERT]);
-    if ( temp_cnt[ycsbc::READ] )            printf("read ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::READ], 1.0 * temp_time[ycsbc::READ]*1e-6, 1.0 * temp_cnt[ycsbc::READ] * 1e6 / temp_time[ycsbc::READ], 1.0 * temp_time[ycsbc::READ] / temp_cnt[ycsbc::READ]);
-    if ( temp_cnt[ycsbc::UPDATE] )          printf("update ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::UPDATE], 1.0 * temp_time[ycsbc::UPDATE]*1e-6, 1.0 * temp_cnt[ycsbc::UPDATE] * 1e6 / temp_time[ycsbc::UPDATE], 1.0 * temp_time[ycsbc::UPDATE] / temp_cnt[ycsbc::UPDATE]);
-    if ( temp_cnt[ycsbc::SCAN] )            printf("scan ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::SCAN], 1.0 * temp_time[ycsbc::SCAN]*1e-6, 1.0 * temp_cnt[ycsbc::SCAN] * 1e6 / temp_time[ycsbc::SCAN], 1.0 * temp_time[ycsbc::SCAN] / temp_cnt[ycsbc::SCAN]);
-    if ( temp_cnt[ycsbc::READMODIFYWRITE] ) printf("rmw ops   :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", temp_cnt[ycsbc::READMODIFYWRITE], 1.0 * temp_time[ycsbc::READMODIFYWRITE]*1e-6, 1.0 * temp_cnt[ycsbc::READMODIFYWRITE] * 1e6 / temp_time[ycsbc::READMODIFYWRITE], 1.0 * temp_time[ycsbc::READMODIFYWRITE] / temp_cnt[ycsbc::READMODIFYWRITE]);
+    if ( temp_cnt[ycsbc::INSERT] )          printf("insert ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
+      temp_cnt[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT]*1e-6, 
+      1.0 * temp_cnt[ycsbc::INSERT] * 1e6 / temp_time[ycsbc::INSERT] * num_threads, 
+      1.0 * temp_time[ycsbc::INSERT] / temp_cnt[ycsbc::INSERT]);
+    if ( temp_cnt[ycsbc::READ] )            printf("read ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
+      temp_cnt[ycsbc::READ], 1.0 * temp_time[ycsbc::READ]*1e-6, 
+      1.0 * temp_cnt[ycsbc::READ] * 1e6 / temp_time[ycsbc::READ] * num_threads, 
+      1.0 * temp_time[ycsbc::READ] / temp_cnt[ycsbc::READ]);
+    if ( temp_cnt[ycsbc::UPDATE] )          printf("update ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
+      temp_cnt[ycsbc::UPDATE], 1.0 * temp_time[ycsbc::UPDATE]*1e-6, 
+      1.0 * temp_cnt[ycsbc::UPDATE] * 1e6 / temp_time[ycsbc::UPDATE] * num_threads, 
+      1.0 * temp_time[ycsbc::UPDATE] / temp_cnt[ycsbc::UPDATE]);
+    if ( temp_cnt[ycsbc::SCAN] )            printf("scan ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
+      temp_cnt[ycsbc::SCAN], 1.0 * temp_time[ycsbc::SCAN]*1e-6, 
+      1.0 * temp_cnt[ycsbc::SCAN] * 1e6 / temp_time[ycsbc::SCAN] * num_threads, 
+      1.0 * temp_time[ycsbc::SCAN] / temp_cnt[ycsbc::SCAN]);
+    if ( temp_cnt[ycsbc::READMODIFYWRITE] ) printf("rmw ops   :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
+      temp_cnt[ycsbc::READMODIFYWRITE], 1.0 * temp_time[ycsbc::READMODIFYWRITE]*1e-6, 
+      1.0 * temp_cnt[ycsbc::READMODIFYWRITE] * 1e6 / temp_time[ycsbc::READMODIFYWRITE] * num_threads, 
+      1.0 * temp_time[ycsbc::READMODIFYWRITE] / temp_cnt[ycsbc::READMODIFYWRITE]);
     printf("total requests: %ld, latency mean: %lf, latency stddev: %lf\n", txn_latencies.size(), latency_mean, latency_stddev);
     printf("Min: %ld, P25: %ld, P50: %ld, P75: %ld, P99: %ld\n", min, p25, p50, p75, p99);
     printf("********************************\n");
@@ -311,10 +325,8 @@ int main( const int argc, const char *argv[]) {
   return 0;
 }
 
-void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats) {
+void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats, ycsbc::CoreWorkload& wl) {
   vector<future<struct run_result>> actual_ops;
-  ycsbc::CoreWorkload wl;
-  wl.Init(props);
 
   uint64_t load_start = get_now_micros();
   int total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
@@ -343,10 +355,8 @@ void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool prin
   }
 }
 
-void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats) {
+void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats, ycsbc::CoreWorkload& wl) {
     vector<future<struct run_result>> throughput_ops;
-    ycsbc::CoreWorkload wl;
-    wl.Init(props);
 
     /*const std::string filename = "throughput_data.csv";
     std::ofstream file(filename, std::ios::app);

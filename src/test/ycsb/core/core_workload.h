@@ -6,6 +6,7 @@
 #include <string>
 #include <cstring>
 #include <cmath>
+#include <mutex>
 #include "db.h"
 #include "properties.h"
 #include "generator.h"
@@ -187,6 +188,8 @@ class CoreWorkload {
   std::string column_data_type() const { return column_data_type_; }
   std::string input_data_format() const { return input_data_format_; }
 
+  void prepareRandomInts(int num_ints);
+
   CoreWorkload() :
       key_length_(16), field_count_(0), read_all_fields_(false), write_all_fields_(false), index_access_(false),
       column_data_type_(""), input_data_format_(""), request_distribution_(""), field_len_generator_(NULL),
@@ -205,6 +208,8 @@ class CoreWorkload {
  protected:
   static Generator<uint64_t> *GetFieldLenGenerator(const utils::Properties &p);
   std::string BuildKeyName(uint64_t key_num);
+
+  std::vector<int> random_ints_;
 
   std::string pool_name_;
   std::string table_name_;
@@ -226,6 +231,7 @@ class CoreWorkload {
   bool ordered_inserts_;
   size_t record_count_;
   int max_scan_len_;
+  std::once_flag random_ints_once_;
 };
 
 inline std::string CoreWorkload::NextSequenceKey() {
