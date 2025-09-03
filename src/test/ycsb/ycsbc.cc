@@ -197,7 +197,10 @@ int main( const int argc, const char *argv[]) {
     auto p75 = txn_latencies[n*0.75];
 
     printf("********** run result **********\n");
-    printf("all operation records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n\n", sum, 1.0 * use_time*1e-6, 1.0 * sum * 1e6 / use_time, 1.0 * use_time / sum);
+    printf("all operation records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n\n", 
+      sum, 1.0 * use_time*1e-6, 
+      1.0 * sum * 1e6 / use_time, 
+      1.0 * use_time / sum * num_threads);
     if ( temp_cnt[ycsbc::INSERT] )          printf("insert ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
       temp_cnt[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT]*1e-6, 
       1.0 * temp_cnt[ycsbc::INSERT] * 1e6 / temp_time[ycsbc::INSERT] * num_threads, 

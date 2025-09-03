@@ -188,7 +188,7 @@ class CoreWorkload {
   std::string column_data_type() const { return column_data_type_; }
   std::string input_data_format() const { return input_data_format_; }
 
-  void prepareRandomInts(int num_ints);
+  void prepareJsonValues(int num_ints, std::string type);
 
   CoreWorkload() :
       key_length_(16), field_count_(0), read_all_fields_(false), write_all_fields_(false), index_access_(false),
@@ -209,7 +209,7 @@ class CoreWorkload {
   static Generator<uint64_t> *GetFieldLenGenerator(const utils::Properties &p);
   std::string BuildKeyName(uint64_t key_num);
 
-  std::vector<int> random_ints_;
+  std::vector<std::string> json_values_;
 
   std::string pool_name_;
   std::string table_name_;

@@ -213,40 +213,38 @@ void CoreWorkload::BuildProtoRecord(data::ByteRow &value) {
   }
 }
 
-void CoreWorkload::prepareRandomInts(int num_ints) {
-  random_ints_.clear();
-  random_ints_.reserve(static_cast<size_t>(num_ints) * 2);
-  for (int i = 0; i < num_ints*2; i++) {
-    random_ints_.emplace_back(utils::RandomPrintInt());
+void CoreWorkload::prepareJsonValues(int num_ints, std::string type) {
+  json_values_.clear();
+  json_values_.reserve(static_cast<size_t>(num_ints));
+
+  for (int i = 0; i < num_ints; i++) {
+    nlohmann::json jsonData;
+    for (int j = 0; j < field_count_; j++) {
+      std::string col_name = "field"+std::to_string(j);
+      if (type == "numeric") {
+        jsonData[col_name] = utils::RandomPrintInt();
+      } else if (type == "string") {
+        jsonData[col_name] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
+      } else {
+        if (j < field_count_/2) {
+          jsonData[col_name] = utils::RandomPrintInt();
+        } else {
+          jsonData[col_name] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
+        }
+      }
+    }
+    std::string jsonString = jsonData.dump();
+    json_values_.push_back(jsonString);
   }
 }
 
 std::string CoreWorkload::BuildJsonRecord(std::string type) {
   // One-time, thread-safe initialization per CoreWorkload instance
-  std::call_once(random_ints_once_, [this]{
-    prepareRandomInts(field_count_);
+  std::call_once(random_ints_once_, [this, type]{
+    prepareJsonValues(10, type);
   });
 
-  int start = rand() % field_count_;
-  int half = field_count_/2;
-
-  nlohmann::json jsonData;
-  for (int i = 0; i < field_count_; ++i) {
-    std::string col_name = "field"+std::to_string(i);
-    if (type == "string") {
-      jsonData[col_name] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
-    } else if (type == "numeric") {
-      jsonData[col_name] = random_ints_[start+i];
-    } else {
-      if (i < half) {
-        jsonData[col_name] = random_ints_[start+i];
-      } else {
-        jsonData[col_name] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
-      }
-    }
-  }
-  std::string jsonString = jsonData.dump();
-  return jsonString;
+  return json_values_[rand() % 10];
 }
 
 void CoreWorkload::BuildProtoColumn(data::ByteRow &value, std::string name) {
@@ -258,9 +256,8 @@ std::string CoreWorkload::BuildJsonColumn(std::string type) {
   nlohmann::json jsonData;
   std::string colname = NextFieldName();
 
-  int search = rand() % field_count_;
   if (type == "numeric") {
-    jsonData[colname] = random_ints_[search];
+    jsonData[colname] = utils::RandomPrintInt();
   } else {
     jsonData[colname] = std::string(field_len_generator_->Next(), utils::RandomPrintChar());
   }
