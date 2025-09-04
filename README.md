@@ -37,12 +37,22 @@ git submodule update --init --recursive
 % cmake -S .. -B . -G Ninja / cmake -S .. -B .
 % ninja/make
 
-#### - Debug code  
+#### - Debug gdb
 % cmake -DCMAKE_BUILD_TYPE=Debug -S .. -B . -G Ninja
 % delete build/src/test/ycsb/output/test-<dbtype>
 % gdb src/test/ycsb/ycsb_test  
 (gdb) b <functionname>
 (gdb) run 
+
+#### - Debug system
+( Kernel log (OOMs say "Out of memory" / "Killed process <pid>"))
+% dmesg -T | egrep -i 'killed process|out of memory|oom' | tail -n 50
+
+( If distro uses journald:)
+% journalctl -k -n 200 | egrep -i 'killed process|out of memory|oom'
+
+( checking device)
+% iostat -dx -N -t -y 1 3
 
 ##### building with debug, tools, db_bench, and AddressSanitizer
 % cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=address -g" -S .. -B . -G Ninja

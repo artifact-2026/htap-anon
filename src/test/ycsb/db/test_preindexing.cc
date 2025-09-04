@@ -144,7 +144,7 @@ namespace ycsbc {
             }
         } else {
             nlohmann::json parsedJson = nlohmann::json::parse(values);
-            ikey = parsedJson["field0"].get<std::string>();
+            ikey = std::to_string(parsedJson["field0"].get<int64_t>());
         }
 
         rocksdb::Status s = rocksdb_->Merge(write_options_, cfhandles_[table+"_index_cf"], ikey, key);
