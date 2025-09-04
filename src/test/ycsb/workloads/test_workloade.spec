@@ -15,7 +15,7 @@ fieldcount=32
 fieldlength=512
 
 recordcount=3000000
-operationcount=1000000
+operationcount=100000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
 readallfields=false
@@ -30,5 +30,3 @@ requestdistribution=zipfian
 maxscanlength=100
 
 scanlengthdistribution=uniform
-
-
