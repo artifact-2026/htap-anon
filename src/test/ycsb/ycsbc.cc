@@ -687,7 +687,7 @@ void Init(utils::Properties &props){
   props.SetProperty("throughput","false");
   props.SetProperty("throughputtype", "1");
   props.SetProperty("fieldcount","0");
-  props.SetProperty("levels", "2");
+  props.SetProperty("levels", "7");
   props.SetProperty("dboption","0");
   props.SetProperty("dbstatistics","false");
   props.SetProperty("dbwaitforbalance","false");

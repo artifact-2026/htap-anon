@@ -23,17 +23,6 @@ namespace ycsbc {
         options.schemaDescriptors.push_back(std::make_shared<rocksdb::ProtobufDistributorSchema>(
             output_protos.size(), std::move(input_proto), std::move(output_protos)));
 
-        auto input_proto1 = std::make_unique<data::ByteRow>();
-        std::vector<std::unique_ptr<google::protobuf::Message>> output_protos1;
-        output_protos1.emplace_back(std::make_unique<data::ByteRow>());
-        output_protos1.emplace_back(std::make_unique<data::ByteRow>());
-        output_protos1.emplace_back(std::make_unique<data::ByteRow>());
-        output_protos1.emplace_back(std::make_unique<data::ByteRow>());
-        options.schemaDescriptors.push_back(std::make_shared<rocksdb::ProtobufDistributorSchema>(
-            output_protos1.size(), std::move(input_proto1), std::move(output_protos1)));
-        
-        
-
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 2);
     }
 

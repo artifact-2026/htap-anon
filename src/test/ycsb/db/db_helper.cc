@@ -15,7 +15,7 @@ namespace ycsbc {
 
     void DBHelper::SetOptions(rocksdb::Options& options_, bool logging, utils::Properties &props)
     {
-        int levels = utils::StrToInt(props.GetProperty("levels", "6"));
+        int levels = utils::StrToInt(props.GetProperty("levels", "7"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         
         if (!logging) {
