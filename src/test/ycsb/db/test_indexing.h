@@ -22,7 +22,7 @@
 #include "data.pb.h"
 
 #include "transformer/augment/augmenter.h"
-#include "transformer/augment/protobuf_index_schema.h"
+#include "transformer/augment/json_index_schema.h"
 
 #include "db/db_helper.h"
 

@@ -15,6 +15,8 @@ namespace ycsbc {
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
 
+        options.paranoid_file_checks = false;
+
         std::vector<rocksdb::DeriveFuncData*> deriveFuncs;
         deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
         options.transformers.push_back(std::make_shared<rocksdb::Augmenter>());
@@ -23,9 +25,8 @@ namespace ycsbc {
         index_keys.push_back("field1");
         std::vector<std::vector<std::string>> indexes;
         indexes.push_back(index_keys);
-        options.schemaDescriptors.push_back(std::make_shared<rocksdb::ProtobufAugmenterSchema>(indexes,
-                                            std::make_unique<data::ByteRow>()));
-
+        options.schemaDescriptors.push_back(std::make_shared<rocksdb::JsonAugmenterSchema>(indexes,nlohmann::json::object()));
+        
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1); 
     }
 
