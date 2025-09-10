@@ -11,6 +11,7 @@ using namespace std;
 namespace ycsbc {
     Indexing::Indexing(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
+        std::string data_format = props.GetProperty("inputdataformat","protobuf");
         
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
@@ -21,11 +22,20 @@ namespace ycsbc {
         deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
         options.transformers.push_back(std::make_shared<rocksdb::Augmenter>());
 
-        std::vector<std::string> index_keys;
-        index_keys.push_back("field1");
-        std::vector<std::vector<std::string>> indexes;
-        indexes.push_back(index_keys);
-        options.schemaDescriptors.push_back(std::make_shared<rocksdb::JsonAugmenterSchema>(indexes,nlohmann::json::object()));
+        if (data_format == "json") {
+            std::vector<std::string> index_keys;
+            index_keys.push_back("field1");
+            std::vector<std::vector<std::string>> indexes;
+            indexes.push_back(index_keys);
+            options.schemaDescriptors.push_back(std::make_shared<rocksdb::JsonAugmenterSchema>(indexes,nlohmann::json::object()));
+        } else if (data_format == "protobuf") {
+            std::vector<int> index_keys;
+            index_keys.push_back(1);
+            std::vector<std::vector<int>> indexes;
+            indexes.push_back(index_keys);
+            options.schemaDescriptors.push_back(std::make_shared<rocksdb::ProtobufAugmenterSchema>(
+                                    indexes, std::make_unique<data::ByteRow>()));
+        }
         
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1); 
     }
