@@ -17,7 +17,7 @@ namespace ycsbc {
         SetOptions(dbfilename, levels, fieldcount, true);
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
-        GetColumnFamilyDescriptors(dbname, column_family_descriptors);
+        GetColumnFamilyDescriptors(dbname, fieldcount, column_family_descriptors);
         std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
 
         if (bootstrap) {
@@ -133,9 +133,9 @@ namespace ycsbc {
                 return 1;
             }
 
-            constexpr int kGroupSize = 4;
             const int num_cols   = row.values_size();
-            const int num_groups = (num_cols + kGroupSize - 1) / kGroupSize;  // 32 -> 8
+            constexpr int kGroupSize = 1;
+            const int num_groups = num_cols;  // 32 -> 8
 
             for (int g = 0; g < num_groups; ++g) {
                 data::ByteRow groupRow;
@@ -244,9 +244,10 @@ namespace ycsbc {
     }
 
     void RocksdbColumnStrawman::GetColumnFamilyDescriptors(const std::string& dbname,
+                    int num_groups,
                     std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
     {
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < num_groups; i++) {
             std::string cf_name = dbname + "_colgrp_" + std::to_string(i);
             column_families.push_back(rocksdb::ColumnFamilyDescriptor(cf_name, rocksdb::ColumnFamilyOptions(options_)));
         }

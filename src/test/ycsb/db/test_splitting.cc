@@ -7,21 +7,21 @@ using namespace std;
 namespace ycsbc {
     TestSplitting::TestSplitting(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
+        int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "2"));
 
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
 
         options.transformers.push_back(std::make_shared<rocksdb::Distributor>());
-        options.transformers.push_back(std::make_shared<rocksdb::Distributor>());
 
         auto input_proto = std::make_unique<data::ByteRow>();
         std::vector<std::unique_ptr<google::protobuf::Message>> output_protos;
-        output_protos.emplace_back(std::make_unique<data::ByteRow>());
-        output_protos.emplace_back(std::make_unique<data::ByteRow>());
-        output_protos.emplace_back(std::make_unique<data::ByteRow>());
-        output_protos.emplace_back(std::make_unique<data::ByteRow>());
+        for (int i = 0; i < fieldcount; i++) {
+            output_protos.emplace_back(std::make_unique<data::ByteRow>());
+        }
+        
         options.schemaDescriptors.push_back(std::make_shared<rocksdb::ProtobufDistributorSchema>(
-            output_protos.size(), std::move(input_proto), std::move(output_protos)));
+            fieldcount, std::move(input_proto), std::move(output_protos)));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 2);
     }
