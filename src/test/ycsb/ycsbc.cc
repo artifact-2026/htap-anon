@@ -40,12 +40,11 @@ bool StrStartWith(const char *str, const char *pre);
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props);
 void Init(utils::Properties &props);
 void PrintInfo(utils::Properties &props);
-void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats, ycsbc::CoreWorkload& wl);
-void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats, ycsbc::CoreWorkload& wl);
+void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls);
+void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls);
 
 struct run_result DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
     bool is_loading) {
-  db->Init();
   ycsbc::Client client(*db, *wl);
   struct run_result rr(0, 0, num_ops);
   int next_report_ = 0;
@@ -75,7 +74,6 @@ struct run_result DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const i
 }
 
 struct run_result DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int throughputType, int runTime) {
-  db->Init();
   ycsbc::Client client(*db, *wl);
   struct run_result td_oks(0, runTime, runTime);
 
@@ -104,7 +102,6 @@ struct run_result DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, 
     }
     exectime += (get_now_micros() - exec_start);
   }
-  db->Close();
   return td_oks;
 }
 
@@ -118,6 +115,7 @@ int main( const int argc, const char *argv[]) {
     cout << "Unknown database name " << props["dbname"] << endl;
     exit(0);
   }
+  db->Init();
   std::cout << "db name: " << props["dbname"] << std::endl;
 
   const bool load = utils::StrToBool(props.GetProperty("load","false"));
@@ -128,23 +126,38 @@ int main( const int argc, const char *argv[]) {
   const bool wait_for_balance = utils::StrToBool(props["dbwaitforbalance"]);
   const int throughput_type = stoi(props.GetProperty("throughputtype", "1"));
   const int run_time = stoi(props.GetProperty("runtime", "600"));
+  const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
 
   string morerun = props["morerun"];
 
   vector<future<struct run_result>> actual_ops;
-  int total_ops = 0;
   int sum = 0;
 
   // init workload
-  ycsbc::CoreWorkload wl;
-  wl.Init(props);  // exactly once
+  const int total_recs = std::stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
+  const int base = total_recs / num_threads;
+  const int rem  = total_recs % num_threads;
+  std::vector<std::unique_ptr<ycsbc::CoreWorkload>> wls(num_threads);
+  for (int t = 0; t < num_threads; ++t) {
+    const int my_ops   = base + (t < rem ? 1 : 0);
+    const long my_start = long(base) * t + std::min(t, rem);
+
+    utils::Properties p_t = props;
+    p_t.SetProperty(ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY, std::to_string(my_ops));
+    p_t.SetProperty("insertstart", std::to_string(my_start));
+    p_t.SetProperty("totalrecordcount", std::to_string(total_recs));
+
+    auto wl = std::make_unique<ycsbc::CoreWorkload>();
+    wl->Init(p_t);
+    wls[t] = std::move(wl);
+  }
 
   if( load ) {
-    runLoad(props, num_threads, db, print_stats, wl);
+    runLoad(props, num_threads, db, print_stats, wls);
   }
 
   if( throughput ) {
-    runXput(props, num_threads, db, throughput_type, run_time, print_stats, wl);
+    runXput(props, num_threads, db, throughput_type, run_time, print_stats, wls);
   }
 
   if( run ) {
@@ -155,11 +168,12 @@ int main( const int argc, const char *argv[]) {
     }
 
     actual_ops.clear();
-    total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
     uint64_t run_start = get_now_micros();
     for (int i = 0; i < num_threads; ++i) {
-      actual_ops.emplace_back(async(launch::async,
-          DelegateClient, db, &wl, total_ops / num_threads, false));
+      actual_ops.emplace_back(std::async(std::launch::async,
+        [&, i, total_ops] {                    // <-- capture wls by reference (&), not by value
+          return DelegateClient(db, wls[i].get(), total_ops/num_threads, /*is_loading=*/true);
+        }));
     }
     assert((int)actual_ops.size() == num_threads);
     sum = 0;
@@ -266,11 +280,12 @@ int main( const int argc, const char *argv[]) {
       wl.Init(props);
 
       actual_ops.clear();
-      total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
       uint64_t run_start = get_now_micros();
       for (int i = 0; i < num_threads; ++i) {
-        actual_ops.emplace_back(async(launch::async,
-            DelegateClient, db, &wl, total_ops / num_threads, false));
+        actual_ops.emplace_back(std::async(std::launch::async,
+          [&, i, total_ops] {                    // <-- capture wls by reference (&), not by value
+            return DelegateClient(db, wls[i].get(), total_ops/num_threads, /*is_loading=*/true);
+          }));
       }
       assert((int)actual_ops.size() == num_threads);
       sum = 0;
@@ -324,18 +339,20 @@ int main( const int argc, const char *argv[]) {
     db->PrintStats();
     printf("-------------------------------------------\n");
   }
+  db->Close();
   delete db;
   return 0;
 }
 
-void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats, ycsbc::CoreWorkload& wl) {
+void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls) {
+  int total_rds = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
   vector<future<struct run_result>> actual_ops;
-
   uint64_t load_start = get_now_micros();
-  int total_ops = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
   for (int i = 0; i < num_threads; ++i) {
-    actual_ops.emplace_back(async(launch::async,
-        DelegateClient, db, &wl, total_ops / num_threads, true));
+    actual_ops.emplace_back(std::async(std::launch::async,
+      [&, i, total_rds] {                    // <-- capture wls by reference (&), not by value
+        return DelegateClient(db, wls[i].get(), total_rds/num_threads, /*is_loading=*/true);
+      }));
   }
   assert((int)actual_ops.size() == num_threads);
 
@@ -358,7 +375,7 @@ void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool prin
   }
 }
 
-void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats, ycsbc::CoreWorkload& wl) {
+void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls) {
     vector<future<struct run_result>> throughput_ops;
 
     /*const std::string filename = "throughput_data.csv";
@@ -370,8 +387,10 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
     file << "Time (s),Throughput (ops/s) for num_threads = " << num_threads << std::endl;*/
 
     for (int i = 0; i < num_threads; ++i) {
-      throughput_ops.emplace_back(async(launch::async,
-          DelegateForThroughput, db, &wl, throughput_type, run_time));
+      throughput_ops.emplace_back(std::async(std::launch::async,
+        [&, i] {                    // <-- capture wls by reference (&), not by value
+          return DelegateForThroughput(db, wls[i].get(), throughput_type, /*is_loading=*/true);
+        }));
     }
     assert((int)throughput_ops.size() == num_threads);
 

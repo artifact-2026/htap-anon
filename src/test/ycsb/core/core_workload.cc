@@ -86,6 +86,7 @@ const string CoreWorkload::INSERT_START_PROPERTY = "insertstart";
 const string CoreWorkload::INSERT_START_DEFAULT = "0";
 
 const string CoreWorkload::RECORD_COUNT_PROPERTY = "recordcount";
+const string CoreWorkload::TOTAL_RECORD_COUNT_PROPERTY = "totalrecordcount";
 const string CoreWorkload::OPERATION_COUNT_PROPERTY = "operationcount";
 
 void CoreWorkload::Init(const utils::Properties &p) {
@@ -111,6 +112,7 @@ void CoreWorkload::Init(const utils::Properties &p) {
       READMODIFYWRITE_PROPORTION_PROPERTY, READMODIFYWRITE_PROPORTION_DEFAULT));
   
   record_count_ = std::stoi(p.GetProperty(RECORD_COUNT_PROPERTY));
+  total_record_count_ = std::stoi(p.GetProperty(TOTAL_RECORD_COUNT_PROPERTY));
   request_distribution_ = p.GetProperty(REQUEST_DISTRIBUTION_PROPERTY,
                                            REQUEST_DISTRIBUTION_DEFAULT);
   max_scan_len_ = std::stoi(p.GetProperty(MAX_SCAN_LENGTH_PROPERTY,

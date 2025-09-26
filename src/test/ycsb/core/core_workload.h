@@ -155,6 +155,7 @@ class CoreWorkload {
   static const std::string INSERT_START_DEFAULT;
   
   static const std::string RECORD_COUNT_PROPERTY;
+  static const std::string TOTAL_RECORD_COUNT_PROPERTY;
   static const std::string OPERATION_COUNT_PROPERTY;
 
   ///
@@ -230,12 +231,13 @@ class CoreWorkload {
   CounterGenerator insert_key_sequence_;
   bool ordered_inserts_;
   size_t record_count_;
+  size_t total_record_count_;
   int max_scan_len_;
   std::once_flag random_ints_once_;
 };
 
 inline std::string CoreWorkload::NextSequenceKey() {
-  uint64_t key_num = key_generator_->Next() % record_count_;
+  uint64_t key_num = key_generator_->Next() % total_record_count_;
   return BuildKeyName(key_num);
 }
 
