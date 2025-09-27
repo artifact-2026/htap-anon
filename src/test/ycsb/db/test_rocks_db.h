@@ -42,7 +42,20 @@ class TestRocksDB : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~TestRocksDB() {};
+        ~TestRocksDB() {
+            if (rocksdb_) {
+                rocksdb::FlushOptions fo; fo.wait = true;
+                rocksdb_->Flush(fo, cfhandle_);
+
+                rocksdb::CompactRangeOptions cro;
+                rocksdb_->CompactRange(cro, cfhandle_, nullptr, nullptr);
+
+                rocksdb_->DestroyColumnFamilyHandle(cfhandle_);
+                
+                delete rocksdb_;
+                rocksdb_ = nullptr;
+            }
+        };
     
     private:
         rocksdb::DB *rocksdb_;
