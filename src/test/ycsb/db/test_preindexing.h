@@ -73,7 +73,21 @@ class TestPreindexing : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~TestPreindexing() {};
+        ~TestPreindexing() {
+            if (rocksdb_) {
+                rocksdb::FlushOptions fo; fo.wait = true;
+                for (const auto& pair : cfhandles_) rocksdb_->Flush(fo, pair.second);
+
+                rocksdb::CompactRangeOptions cro;
+                for (const auto& pair : cfhandles_) rocksdb_->CompactRange(cro, pair.second, nullptr, nullptr);
+
+                for (const auto& pair : cfhandles_) rocksdb_->DestroyColumnFamilyHandle(pair.second);
+                cfhandles_.clear();
+                
+                delete rocksdb_;
+                rocksdb_ = nullptr;
+            }
+        };
     
     private:
         rocksdb::DB *rocksdb_;
