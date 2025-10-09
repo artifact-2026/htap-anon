@@ -42,7 +42,23 @@ class RocksdbColumnStrawman : public DB{
 
         int Delete(const std::string &table, const std::string &key);
 
-        ~RocksdbColumnStrawman() {};
+        ~RocksdbColumnStrawman() {
+            if (rocksdb_) {
+                rocksdb::FlushOptions fo; fo.wait = true;
+                for (auto& [name, handle] : cfhandles_)  rocksdb_->Flush(fo, handle);
+
+                rocksdb::CompactRangeOptions cro;
+                for (auto& [name, handle] : cfhandles_) rocksdb_->CompactRange(cro, handle, nullptr, nullptr);
+
+                for (auto& [name, handle] : cfhandles_) rocksdb_->DestroyColumnFamilyHandle(handle);
+
+                cfhandles_.clear();
+                handleList_.clear();
+                
+                delete rocksdb_;
+                rocksdb_ = nullptr;
+            }
+        };
     
     private:
         rocksdb::DB *rocksdb_;
