@@ -172,7 +172,7 @@ int main( const int argc, const char *argv[]) {
     for (int i = 0; i < num_threads; ++i) {
       actual_ops.emplace_back(std::async(std::launch::async,
         [&, i, total_ops] {                    // <-- capture wls by reference (&), not by value
-          return DelegateClient(db, wls[i].get(), total_ops/num_threads, /*is_loading=*/true);
+          return DelegateClient(db, wls[i].get(), total_ops/num_threads, /*is_loading=*/false);
         }));
     }
     assert((int)actual_ops.size() == num_threads);
@@ -195,6 +195,11 @@ int main( const int argc, const char *argv[]) {
       temp_time[j] = ops_time[j].load(std::memory_order_relaxed);
     }
 
+    if  (txn_latencies.empty()) {
+      printf("Error! No run results!\n");
+      return -1;
+    }
+
     double latency_mean = std::accumulate(txn_latencies.begin(), txn_latencies.end(), 0.0) / txn_latencies.size();
     double latency_sq_sum = std::accumulate(txn_latencies.begin(), txn_latencies.end(), 0.0, 
         [latency_mean](double acc, uint64_t value) {
@@ -204,34 +209,31 @@ int main( const int argc, const char *argv[]) {
 
     std::sort(txn_latencies.begin(), txn_latencies.end());
     size_t n = txn_latencies.size();
-    auto p50 = txn_latencies[n/2];
-    auto p99 = txn_latencies[n*0.99];
-    auto min = txn_latencies[0];
-    auto p25 = txn_latencies[n*0.25];
-    auto p75 = txn_latencies[n*0.75];
+    auto idx = [&](double p){ return txn_latencies[std::min((size_t)std::floor(p*(n-1)), n-1)]; };
+    auto p50 = idx(0.50), p99 = idx(0.99), p25 = idx(0.25), p75 = idx(0.75), min = idx(0.0);
 
     printf("********** run result **********\n");
     printf("all operation records:%d  use time:%.3f s  IOPS:%.2f iops (%.2f us/op)\n\n", 
       sum, 1.0 * use_time*1e-6, 
       1.0 * sum * 1e6 / use_time, 
       1.0 * use_time / sum * num_threads);
-    if ( temp_cnt[ycsbc::INSERT] )          printf("insert ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
+    printf("insert ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
       temp_cnt[ycsbc::INSERT], 1.0 * temp_time[ycsbc::INSERT]*1e-6, 
-      1.0 * temp_cnt[ycsbc::INSERT] * 1e6 / temp_time[ycsbc::INSERT] * num_threads, 
+      1.0 * temp_cnt[ycsbc::INSERT] * 1e6 / use_time, 
       1.0 * temp_time[ycsbc::INSERT] / temp_cnt[ycsbc::INSERT]);
-    if ( temp_cnt[ycsbc::READ] )            printf("read ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
+    printf("read ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
       temp_cnt[ycsbc::READ], 1.0 * temp_time[ycsbc::READ]*1e-6, 
-      1.0 * temp_cnt[ycsbc::READ] * 1e6 / temp_time[ycsbc::READ] * num_threads, 
+      1.0 * temp_cnt[ycsbc::READ] * 1e6 / use_time, 
       1.0 * temp_time[ycsbc::READ] / temp_cnt[ycsbc::READ]);
-    if ( temp_cnt[ycsbc::UPDATE] )          printf("update ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
+    printf("update ops:%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
       temp_cnt[ycsbc::UPDATE], 1.0 * temp_time[ycsbc::UPDATE]*1e-6, 
-      1.0 * temp_cnt[ycsbc::UPDATE] * 1e6 / temp_time[ycsbc::UPDATE] * num_threads, 
+      1.0 * temp_cnt[ycsbc::UPDATE] * 1e6 / use_time, 
       1.0 * temp_time[ycsbc::UPDATE] / temp_cnt[ycsbc::UPDATE]);
-    if ( temp_cnt[ycsbc::SCAN] )            printf("scan ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
+    printf("scan ops  :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
       temp_cnt[ycsbc::SCAN], 1.0 * temp_time[ycsbc::SCAN]*1e-6, 
-      1.0 * temp_cnt[ycsbc::SCAN] * 1e6 / temp_time[ycsbc::SCAN] * num_threads, 
+      1.0 * temp_cnt[ycsbc::SCAN] * 1e6 / use_time, 
       1.0 * temp_time[ycsbc::SCAN] / temp_cnt[ycsbc::SCAN]);
-    if ( temp_cnt[ycsbc::READMODIFYWRITE] ) printf("rmw ops   :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
+    printf("rmw ops   :%7lu  use time:%7.3f s  IOPS:%7.2f iops (%.2f us/op)\n", 
       temp_cnt[ycsbc::READMODIFYWRITE], 1.0 * temp_time[ycsbc::READMODIFYWRITE]*1e-6, 
       1.0 * temp_cnt[ycsbc::READMODIFYWRITE] * 1e6 / temp_time[ycsbc::READMODIFYWRITE] * num_threads, 
       1.0 * temp_time[ycsbc::READMODIFYWRITE] / temp_cnt[ycsbc::READMODIFYWRITE]);
