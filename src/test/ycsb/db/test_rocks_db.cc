@@ -120,22 +120,12 @@ namespace ycsbc {
                 }
             }
         } else {
-            auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
+            rocksdb::ReadOptions ro;
+            std::unique_ptr<rocksdb::Iterator> it(rocksdb_->NewIterator(ro, cfhandle_));
             it->Seek(begin_key);
+
             while (it->Valid() && result.size() < 100) {
-                /*uint64_t sum = 0;
-                if (fields != nullptr) {
-                    if (inputType_ == "protobuf") {
-                        data::Row row;
-                        row.ParseFromString(it->value().ToString());
-                        sum += std::stoi(row.columns(0));
-                    } else {
-                        nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
-                        sum += std::stoi(parsedJson["field0"].get<std::string>());
-                    }
-                }*/
-                
-                result.push_back(it->value().ToString());
+                result.emplace_back(it->value().ToString());
                 it->Next();
             }
             if (result.size() >= 100) {
