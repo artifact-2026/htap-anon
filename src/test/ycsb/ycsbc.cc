@@ -88,6 +88,7 @@ struct run_result DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, 
     if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(1)) {
       td_oks.xput[i] = oks;
       td_oks.exec_time[i] = double(exectime)/double(oks);
+      //printf("Time: %d, Xput: %d\n", i, oks);
       i += 1;
       oks = 0;
       exectime = 0;
@@ -391,7 +392,7 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
     for (int i = 0; i < num_threads; ++i) {
       throughput_ops.emplace_back(std::async(std::launch::async,
         [&, i] {                    // <-- capture wls by reference (&), not by value
-          return DelegateForThroughput(db, wls[i].get(), throughput_type, /*is_loading=*/true);
+          return DelegateForThroughput(db, wls[i].get(), throughput_type, run_time);
         }));
     }
     assert((int)throughput_ops.size() == num_threads);
@@ -414,28 +415,33 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throu
       exec_times[k] /= throughput_ops.size();
     }
 
-    double mean = std::accumulate(exec_times.begin(), exec_times.end(), 0.0) / exec_times.size();
-    double sum_of_squares = std::accumulate(exec_times.begin(), exec_times.end(), 0.0, 
+    int skip=60;
+    if (exec_times.size() <= 60 || xputs.size() <= 60) {
+      skip = 0;
+    }
+    double mean = std::accumulate(exec_times.begin()+skip, exec_times.end(), 0.0) / (exec_times.size()-skip);
+    double sum_of_squares = std::accumulate(exec_times.begin()+skip, exec_times.end(), 0.0, 
         [mean](double acc, int value) {
             return acc + std::pow(value - mean, 2);
         });
-    double stddev = std::sqrt(sum_of_squares / exec_times.size());
+    double stddev = std::sqrt(sum_of_squares / (exec_times.size()-skip));
 
-    double mean_xput = std::accumulate(xputs.begin(), xputs.end(), 0.0) / xputs.size();
-    double sum_of_squares_xput = std::accumulate(xputs.begin(), xputs.end(), 0.0, 
+    double mean_xput = std::accumulate(xputs.begin()+skip, xputs.end(), 0.0) / (xputs.size()-skip);
+    double sum_of_squares_xput = std::accumulate(xputs.begin()+skip, xputs.end(), 0.0, 
         [mean_xput](double acc, int value) {
             return acc + std::pow(value - mean_xput, 2);
         });
-    double stddev_xput = std::sqrt(sum_of_squares_xput / xputs.size());
+    double stddev_xput = std::sqrt(sum_of_squares_xput / (xputs.size()-skip));
 
     printf("********** throughput result **********\n");
 
-    printf("latency raw data: \n");
-    printf("latency size: %ld \n", exec_times.size());
+    //printf("latency raw data: \n");
+    //printf("latency size: %ld \n", exec_times.size());
 
     /*int timesec = 1;
     for (auto th : xputs) {
-      file << timesec << "," << th << std::endl;
+      //file << timesec << "," << th << std::endl;
+      printf("Time (sec): %d, Xput: %ld", timesec, th);
       timesec++;
     }*/
     printf("throughput mean:%lf  stddev: %lf, average latency: %lf, stddev: %lf\n", 
