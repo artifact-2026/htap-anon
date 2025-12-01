@@ -40,6 +40,7 @@ bool StrStartWith(const char *str, const char *pre);
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props);
 void Init(utils::Properties &props);
 void PrintInfo(utils::Properties &props);
+void write_csv_row(const std::vector<double>& rr, const std::string& filename);
 void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls);
 void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls);
 
@@ -360,10 +361,15 @@ void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool prin
   assert((int)actual_ops.size() == num_threads);
 
   int sum = 0;
+  int mth = 0; 
   for (auto &n : actual_ops) {
     assert(n.valid());
     struct run_result loadres = n.get();
+    if (mth == 1) {
+      write_csv_row(loadres.exec_time, "exec_time.csv");
+    }
     sum += loadres.oks;
+    mth += 1;
   }
   uint64_t load_end = get_now_micros();
   uint64_t use_time = load_end - load_start;
@@ -729,4 +735,24 @@ void PrintInfo(utils::Properties &props) {
   printf("%s", props.DebugString().c_str());
   printf("----------------------------------------\n");
   fflush(stdout);
+}
+
+void write_csv_row(const std::vector<double>& rr, const std::string& filename) {
+    std::ofstream out(filename);
+    if (!out) {
+        throw std::runtime_error("Failed to open " + filename);
+    }
+
+    std::size_t write_size = 5000;
+    if (rr.size() < write_size) {
+      write_size = rr.size();
+    }
+
+    for (std::size_t i = 0; i < write_size; ++i) {
+        out << rr[i];
+        if (i + 1 < write_size) {
+            out << ',';   // separator
+        }
+    }
+    out << '\n';
 }
