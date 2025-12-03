@@ -96,3 +96,22 @@ sudo apt-get install sysstat dstat procps iotop htop -y
  > "/holly/transformation_logs/split_stdout.log" 2> "/holly/transformation_logs/split_stderr.log"
 
 ### c++ -std=c++17 -O2 -Wall split_column_groups.cc data.pb.cc -o split_column_groups `pkg-config --cflags --libs protobuf` -pthread
+
+### To use Arrow
+% sudo apt-get update
+% sudo apt-get install -y \
+  git cmake ninja-build g++ \
+  zlib1g-dev liblz4-dev libzstd-dev libsnappy-dev \
+  libssl-dev
+% git clone https://github.com/apache/arrow.git
+% cd arrow/cpp; mkdir -p build; cd build
+% cmake .. \
+  -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DARROW_BUILD_SHARED=ON \
+  -DARROW_BUILD_STATIC=OFF \
+  -DARROW_PARQUET=OFF \
+  -DARROW_CSV=ON \
+  -DARROW_JSON=ON
+% ninja -j"$(nproc)"
+% sudo ninja install
