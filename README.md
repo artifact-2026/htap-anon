@@ -57,6 +57,7 @@ git submodule update --init --recursive
 ##### building with debug, tools, db_bench, and AddressSanitizer
 % cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=address -g" -S .. -B . -G Ninja
 % cmake -DWITH_BENCHMARK_TOOLS=on -DWITH_TOOLS=on -S .. -B . -G Ninja
+% cmake -S .. -B . -G Ninja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 % cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=thread -g" -S .. -B . -G Ninja
 % echo 'setenv PATH ${PATH}:/holly/htap/build/src/mycelium/tools' >> ~/.tcshrc
 % source ~/.tcshrc
@@ -109,11 +110,16 @@ echo "$PRETTY_NAME ($VERSION_CODENAME)"      // should see "jammy"
       gnupg \
       dirmngr \
       pkg-config
-3. sudo mkdir -p /etc/apt/sources.list.d
 
-% echo "deb [signed-by=/usr/share/keyrings/apache-arrow-archive-keyring.gpg] \
-https://apache.jfrog.io/artifactory/arrow/ubuntu $(lsb_release -cs) main" \
-| sudo tee /etc/apt/sources.list.d/apache-arrow.list
+  mkdir -p ~/.gnupg
+  chmod 700 ~/.gnupg
+
+3. sudo mkdir -p /etc/apt/sources.list.d
+   set CODENAME=`lsb_release -cs`
+   echo "deb [signed-by=/usr/share/keyrings/apache-arrow-archive-keyring.gpg] \
+     https://apache.jfrog.io/artifactory/arrow/ubuntu $CODENAME main" \
+     | sudo tee /etc/apt/sources.list.d/apache-arrow.list
+
 4. sudo gpg --no-default-keyring \
   --keyring /usr/share/keyrings/apache-arrow-archive-keyring.gpg \
   --keyserver keyserver.ubuntu.com \
