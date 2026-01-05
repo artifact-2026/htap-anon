@@ -97,6 +97,38 @@ sudo apt-get install sysstat dstat procps iotop htop -y
 
 ### c++ -std=c++17 -O2 -Wall split_column_groups.cc data.pb.cc -o split_column_groups `pkg-config --cflags --libs protobuf` -pthread
 
+### To install Arrow
+1. . /etc/os-release
+echo "$PRETTY_NAME ($VERSION_CODENAME)"      // should see "jammy"
+2. sudo apt-get update
+   sudo apt-get install -y \
+      ca-certificates \
+      lsb-release \
+      wget \
+      curl \
+      gnupg \
+      dirmngr \
+      pkg-config
+3. sudo mkdir -p /etc/apt/sources.list.d
+
+% echo "deb [signed-by=/usr/share/keyrings/apache-arrow-archive-keyring.gpg] \
+https://apache.jfrog.io/artifactory/arrow/ubuntu $(lsb_release -cs) main" \
+| sudo tee /etc/apt/sources.list.d/apache-arrow.list
+4. sudo gpg --no-default-keyring \
+  --keyring /usr/share/keyrings/apache-arrow-archive-keyring.gpg \
+  --keyserver keyserver.ubuntu.com \
+  --recv-keys 9CBA4EF977CA20B8
+
+  To verify: 
+  sudo gpg --no-default-keyring \
+  --keyring /usr/share/keyrings/apache-arrow-archive-keyring.gpg \
+  --list-keys --keyid-format LONG
+  must see: key 9CBA4EF977CA20B8
+5. sudo apt-get update
+   sudo apt-get install -y \
+     libarrow-dev \
+     libparquet-dev
+
 ### To use Arrow
 % sudo apt-get update
 % sudo apt-get install -y \
