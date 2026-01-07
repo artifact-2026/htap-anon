@@ -22,7 +22,8 @@ git submodule update --init --recursive
 
 #### - Prepare the dependencies  
 % sudo apt-get update
-% sudo apt-get install -y cmake libgflags-dev protobuf-compiler ninja-build g++ libboost-dev libboost-system-dev libsnappy-dev zlib1g-dev libbz2-dev flatbuffers-compiler flatbuffers-compiler-dev libflatbuffers-dev libzstd-dev liblz4-dev libre2-dev libjsoncpp-dev nlohmann-json3-dev libavro-dev
+% sudo apt-get install -y cmake libgflags-dev protobuf-compiler ninja-build g++ libboost-dev libboost-system-dev libsnappy-dev zlib1g-dev libbz2-dev flatbuffers-compiler flatbuffers-compiler-dev libflatbuffers-dev libzstd-dev liblz4-dev libre2-dev libjsoncpp-dev nlohmann-json3-dev libavro-dev 
+rapidjson-dev
 
 % cd /tmp
 % git clone https://github.com/apache/avro.git
