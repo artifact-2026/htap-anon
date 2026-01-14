@@ -189,6 +189,7 @@ class CoreWorkload {
   std::string request_distribution() const { return request_distribution_; }
   std::string column_data_type() const { return column_data_type_; }
   std::string input_data_format() const { return input_data_format_; }
+  int field_count() const { return field_count_; }
 
   void prepareJsonValues(int num_ints, std::string type);
 

@@ -17,10 +17,10 @@ namespace ycsbc {
 
         std::vector<rocksdb::FieldSchema> in_schema; 
         for (int i = 0; i < num_cols; i++) {
-            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "binary", i+1});
+            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "fixedbin64", i});
         }
         options.schemaDescriptors.push_back(std::make_shared<rocksdb::MynooperSchema>(
-            rocksdb::InputOutputDataType::UNKNOWN, std::move(in_schema)
+            rocksdb::InputOutputDataType::FIXEDBIN64, std::move(in_schema)
         ));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1);

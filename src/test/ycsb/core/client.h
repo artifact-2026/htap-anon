@@ -56,9 +56,9 @@ inline bool Client::DoInsert() {
     std::string serializedValue;
     value.SerializeToString(&serializedValue);
     return (db_.Insert(workload_.NextTable(), key, serializedValue) == DB::kOK);
-  } else if (fmt == "fixedbin") {
+  } else if (fmt == "fixedbin64") {
     // Fastest-to-Arrow encoding: packed fixed-width fields.
-    std::string val = workload_.BuildFixedBinaryRecord(/*num_cols=*/10);
+    std::string val = workload_.BuildFixedBinaryRecord(/*num_cols=*/workload_.field_count());
     return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
   } else {
     // Unknown format
