@@ -45,16 +45,25 @@ class Client {
 
 inline bool Client::DoInsert() {
   const std::string key = workload_.NextSequenceKey();
-  if (workload_.input_data_format() == "json") {
+  const auto& fmt = workload_.input_data_format();
+
+  if (fmt == "json") {
     std::string val = workload_.BuildJsonRecord(workload_.column_data_type());
     return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
-  } else {
+  } else if (fmt == "protobuf") {
     data::ByteRow value;
     workload_.BuildProtoRecord(value);
     std::string serializedValue;
     value.SerializeToString(&serializedValue);
     return (db_.Insert(workload_.NextTable(), key, serializedValue) == DB::kOK);
-  } 
+  } else if (fmt == "fixedbin") {
+    // Fastest-to-Arrow encoding: packed fixed-width fields.
+    std::string val = workload_.BuildFixedBinaryRecord(/*num_cols=*/10);
+    return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
+  } else {
+    // Unknown format
+    return false;
+  }
 }
 
 inline bool Client::DoRead() {

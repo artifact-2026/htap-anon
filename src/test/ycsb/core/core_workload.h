@@ -168,6 +168,7 @@ class CoreWorkload {
   virtual void BuildProtoColumn(data::ByteRow &update, std::string name);
   virtual std::string BuildJsonRecord(std::string type);
   virtual std::string BuildJsonColumn(std::string type);
+  virtual std::string BuildFixedBinaryRecord(int num_cols);
   virtual std::string BuildMaxKey();
   virtual size_t GetRecordLength();
 

@@ -9,11 +9,19 @@ using namespace std;
 namespace ycsbc {
     TestMynoop::TestMynoop(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
+        int num_cols = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
         options.transformers.push_back(std::make_shared<rocksdb::Mynooper>());
-        options.schemaDescriptors.push_back(std::make_shared<rocksdb::MynooperSchema>());
+
+        std::vector<rocksdb::FieldSchema> in_schema; 
+        for (int i = 0; i < num_cols; i++) {
+            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "binary", i+1});
+        }
+        options.schemaDescriptors.push_back(std::make_shared<rocksdb::MynooperSchema>(
+            rocksdb::InputOutputDataType::UNKNOWN, std::move(in_schema)
+        ));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1);
     }

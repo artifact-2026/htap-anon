@@ -268,6 +268,31 @@ std::string CoreWorkload::BuildJsonColumn(std::string type) {
   return jsonString;
 }
 
+static inline void AppendFixed64LE(std::string* out, std::uint64_t v) {
+  char buf[8];
+  // Encode little-endian explicitly
+  buf[0] = static_cast<char>( v        & 0xFF);
+  buf[1] = static_cast<char>((v >>  8) & 0xFF);
+  buf[2] = static_cast<char>((v >> 16) & 0xFF);
+  buf[3] = static_cast<char>((v >> 24) & 0xFF);
+  buf[4] = static_cast<char>((v >> 32) & 0xFF);
+  buf[5] = static_cast<char>((v >> 40) & 0xFF);
+  buf[6] = static_cast<char>((v >> 48) & 0xFF);
+  buf[7] = static_cast<char>((v >> 56) & 0xFF);
+  out->append(buf, 8);
+}
+
+std::string CoreWorkload::BuildFixedBinaryRecord(int num_cols) {
+  std::string out;
+  out.reserve(static_cast<size_t>(num_cols) * 8);
+
+  for (int i = 0; i < num_cols; ++i) {
+    std::uint64_t v = static_cast<std::uint64_t>(utils::RandomPrintInt());
+    AppendFixed64LE(&out, v);
+  }
+  return out;
+}
+
 size_t CoreWorkload::GetRecordLength() {
   return record_count_;
 }
