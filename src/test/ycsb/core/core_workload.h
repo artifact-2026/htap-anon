@@ -166,7 +166,7 @@ class CoreWorkload {
   
   virtual void BuildProtoRecord(data::ByteRow &value);
   virtual void BuildProtoColumn(data::ByteRow &update, std::string name);
-  virtual std::string BuildJsonRecord(std::string type);
+  virtual std::string BuildJsonRecord(int num_cols);
   virtual std::string BuildJsonColumn(std::string type);
   virtual std::string BuildFixedBinaryRecord(int num_cols);
   virtual std::string BuildMaxKey();
@@ -236,6 +236,8 @@ class CoreWorkload {
   size_t total_record_count_;
   int max_scan_len_;
   std::once_flag random_ints_once_;
+  std::atomic<uint64_t> json_next_{0};
+  int json_cols_built_for_ = -1;
 };
 
 inline std::string CoreWorkload::NextSequenceKey() {

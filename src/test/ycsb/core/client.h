@@ -48,7 +48,7 @@ inline bool Client::DoInsert() {
   const auto& fmt = workload_.input_data_format();
 
   if (fmt == "json") {
-    std::string val = workload_.BuildJsonRecord(workload_.column_data_type());
+    std::string val = workload_.BuildJsonRecord(workload_.field_count());
     return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
   } else if (fmt == "protobuf") {
     data::ByteRow value;
@@ -142,7 +142,7 @@ inline int Client::TransactionReadModifyWrite() {
   }
   
   if (workload_.input_data_format() == "json") {
-    std::string val = workload_.BuildJsonRecord(workload_.column_data_type());
+    std::string val = workload_.BuildJsonRecord(workload_.field_count());
     return db_.Update(table, key, val);
   } else {
     data::ByteRow columns;
@@ -182,7 +182,7 @@ inline int Client::TransactionUpdate() {
 
   if (workload_.input_data_format() == "json") {
     std::string val;
-    val = workload_.BuildJsonRecord(workload_.column_data_type());
+    val = workload_.BuildJsonRecord(workload_.field_count());
     return db_.Update(table, key, val);
   } else {
     data::ByteRow columns;
@@ -198,7 +198,7 @@ inline int Client::TransactionInsert() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextSequenceKey();
   if (workload_.input_data_format() == "json") {
-    std::string val = workload_.BuildJsonRecord(workload_.column_data_type());
+    std::string val = workload_.BuildJsonRecord(workload_.field_count());
     return db_.Insert(table, key, val);
   } else {
     data::ByteRow columns;

@@ -215,6 +215,71 @@ void CoreWorkload::BuildProtoRecord(data::ByteRow &value) {
   }
 }
 
+// Format x as a zero-padded 10-digit decimal string, digits only.
+inline std::string To10DigitString(uint64_t x) {
+  static constexpr uint64_t kMod = 10000000000ULL; // 10^10
+  x %= kMod;
+
+  char buf[10];
+  // Fill from the end
+  for (int i = 9; i >= 0; --i) {
+    buf[i] = static_cast<char>('0' + (x % 10));
+    x /= 10;
+  }
+  return std::string(buf, 10);
+}
+
+std::string CoreWorkload::BuildJsonRecord(int num_cols) {
+  if (num_cols <= 0) return "{}";
+  int json_pool_size_ = 100;
+
+  std::call_once(random_ints_once_, [this, num_cols, json_pool_size_] {
+    json_cols_built_for_ = num_cols;
+
+    json_values_.clear();
+    json_values_.reserve(static_cast<size_t>(json_pool_size_));
+
+    // Prebuild json_pool_size_ distinct records.
+    for (int r = 0; r < json_pool_size_; ++r) {
+      // Rough reserve to avoid repeated reallocations.
+      // Each column contributes roughly: ,"colX":"0123456789"
+      std::string out;
+      out.reserve(static_cast<size_t>(2 + num_cols * 24));
+
+      out.push_back('{');
+      for (int i = 0; i < num_cols; ++i) {
+        if (i) out.push_back(',');
+
+        // Key: "col<i>"
+        out += "\"col";
+        out += std::to_string(i);
+        out += "\":\"";
+
+        // Value: 10-digit numeric string
+        // Make it unique per record and per column.
+        uint64_t v = static_cast<uint64_t>(r) * 1000003ULL + static_cast<uint64_t>(i);
+        out += To10DigitString(v);
+
+        out += '"';
+      }
+      out.push_back('}');
+      json_values_.push_back(std::move(out));
+    }
+
+    if (json_values_.empty()) {
+      json_values_.push_back("{}");
+    }
+  });
+
+  // Optional safety: fail loudly if called with a different num_cols later.
+  if (json_cols_built_for_ != num_cols) {
+    throw std::runtime_error("BuildJsonRecord called with different num_cols than initial build");
+  }
+
+  uint64_t k = json_next_.fetch_add(1, std::memory_order_relaxed);
+  return json_values_[static_cast<size_t>(k % json_values_.size())];
+}
+/*
 void CoreWorkload::prepareJsonValues(int num_ints, std::string type) {
   json_values_.clear();
   json_values_.reserve(static_cast<size_t>(num_ints));
@@ -247,7 +312,7 @@ std::string CoreWorkload::BuildJsonRecord(std::string type) {
   });
 
   return json_values_[rand() % 10];
-}
+}*/
 
 void CoreWorkload::BuildProtoColumn(data::ByteRow &value, std::string name) {
   auto* c = value.add_values();

@@ -10,6 +10,13 @@ namespace ycsbc {
     TestMynoop::TestMynoop(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int num_cols = utils::StrToInt(props.GetProperty("fieldcount", "1"));
+        std::string input_format = props.GetProperty("inputdataformat", "protobuf");
+        rocksdb::InputOutputDataType input_type = rocksdb::InputOutputDataType::PROTOBUF;
+        if (input_format == "json") {
+            input_type = rocksdb::InputOutputDataType::JSON;
+        } else if (input_format == "fixedbin64") {
+            input_type = rocksdb::InputOutputDataType::FIXEDBIN64;
+        }
         
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
@@ -20,7 +27,7 @@ namespace ycsbc {
             in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "fixedbin64", i});
         }
         options.schemaDescriptors.push_back(std::make_shared<rocksdb::MynooperSchema>(
-            rocksdb::InputOutputDataType::FIXEDBIN64, std::move(in_schema)
+            input_type, std::move(in_schema)
         ));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1);
