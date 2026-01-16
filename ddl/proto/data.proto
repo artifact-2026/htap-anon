@@ -12,6 +12,10 @@ message ByteRow {
   repeated ByteColumn values = 1;   // All fields for this row
 }
 
+message BytesRow {
+  repeated bytes col = 1;
+}
+
 message Int32Column {
   int32 value = 1;
 }
