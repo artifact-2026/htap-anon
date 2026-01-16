@@ -35,11 +35,15 @@ namespace ycsbc {
                 std::make_shared<rocksdb::ProtobufDistributorSchema>(2, 
                     std::move(input_proto), std::move(output_protos)));
 
-        std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::ByteRow>();
-        const flatbuffers::TypeTable* fb_type_table = flat::RowTypeTable();
         options.schemaDescriptors.push_back(
-                std::make_shared<rocksdb::Protobuf2FlatbuffersSchema>(
-                    std::move(input_proto_template), fb_type_table));
+                std::make_shared<rocksdb::ProtobufDistributorSchema>(2, 
+                    std::move(input_proto), std::move(output_protos)));
+
+        //std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::ByteRow>();
+        //const flatbuffers::TypeTable* fb_type_table = flat::RowTypeTable();
+        //options.schemaDescriptors.push_back(
+        //        std::make_shared<rocksdb::Protobuf2FlatbuffersSchema>(
+        //            std::move(input_proto_template), fb_type_table));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(
                 dbname, !bootstrap, dbfilename, options, 2);

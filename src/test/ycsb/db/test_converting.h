@@ -22,7 +22,6 @@
 #include "row_generated.h"
 
 #include "db/db_helper.h"
-#include "transformer/convert/protobuf2flatbuffers_schema.h"
 
 namespace ycsbc {
 
