@@ -14,7 +14,7 @@ using namespace std;
 namespace ycsbc {
     TestFlatBuffers::TestFlatBuffers(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        int num_cols = utils::StrToInt(props.GetProperty("num_columns", "10"));
+        int num_cols = utils::StrToInt(props.GetProperty("fieldcount", "10"));
         
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
@@ -28,14 +28,6 @@ namespace ycsbc {
         auto enc = std::make_shared<rocksdb::ProtobufBytesRowEncoder>(num_cols);
         rocksdb::Codec in{parser, nullptr};
         rocksdb::Codec out{nullptr, enc};
-
-        static_assert(std::is_constructible_v<
-            rocksdb::ConvertSchemaDescriptor,
-            rocksdb::Codec,
-            rocksdb::Codec,
-            std::vector<rocksdb::FieldSchema>,
-            std::vector<std::vector<rocksdb::FieldSchema>>
-        >);
 
         std::vector<rocksdb::FieldSchema> in_schema = parser->GetInputFieldSchema();
         std::vector<std::vector<rocksdb::FieldSchema>> out_schemas;  // empty

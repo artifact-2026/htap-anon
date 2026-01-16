@@ -12,12 +12,16 @@
 #include "rocksdb/slice.h"
 #include "transformer/distribute/distributor.h"
 #include "transformer/convert/converter.h"
+#include "transformer/common/parser/json_parser.h"
+#include "transformer/common/encoder/json_encoder.h"
+#include "transformer/common/encoder/protobuf_encoder.h"
 
 using namespace std;
 
 namespace ycsbc {
     TestFbCracker::TestFbCracker(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
+        int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "2"));
         
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
@@ -25,25 +29,39 @@ namespace ycsbc {
         options.transformers.push_back(std::make_shared<rocksdb::Distributor>());
         options.transformers.push_back(std::make_shared<rocksdb::Converter>());
 
-        auto input_proto = std::make_unique<data::ByteRow>();
-        std::vector<std::unique_ptr<google::protobuf::Message>> output_protos;
-        output_protos.emplace_back(std::make_unique<data::ByteRow>());
-        output_protos.emplace_back(std::make_unique<data::ByteRow>());
-        output_protos.emplace_back(std::make_unique<data::ByteRow>());
-        output_protos.emplace_back(std::make_unique<data::ByteRow>());
-        options.schemaDescriptors.push_back(
-                std::make_shared<rocksdb::ProtobufDistributorSchema>(2, 
-                    std::move(input_proto), std::move(output_protos)));
+        auto parser = std::make_shared<rocksdb::JsonColsParser>(fieldcount, /*expected_value_len=*/0);
+        auto enc = std::make_shared<rocksdb::JsonEncoder>();
+        rocksdb::Codec codec{parser, enc};
 
-        options.schemaDescriptors.push_back(
-                std::make_shared<rocksdb::ProtobufDistributorSchema>(2, 
-                    std::move(input_proto), std::move(output_protos)));
+        std::vector<rocksdb::FieldSchema> in_schema; 
+        for (int i = 0; i < fieldcount; i++) {
+            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "string", i});
+        }
+        std::vector<std::vector<int>> splits;
+        int mid = fieldcount/2;
+        std::vector<int> split1, split2;
+        for (int j = 0; j < mid; j++) {
+            split1.push_back(j);
+            split2.push_back(j+mid);
+        }
+        if (mid * 2 < fieldcount) {
+            split2.push_back(fieldcount-1);
+        }
+        splits.push_back(split1);
+        splits.push_back(split2);
+        options.schemaDescriptors.push_back(std::make_shared<rocksdb::DistributorSchemaDescriptor>(
+            codec, in_schema, splits));
 
-        //std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::ByteRow>();
-        //const flatbuffers::TypeTable* fb_type_table = flat::RowTypeTable();
-        //options.schemaDescriptors.push_back(
-        //        std::make_shared<rocksdb::Protobuf2FlatbuffersSchema>(
-        //            std::move(input_proto_template), fb_type_table));
+        auto parser2 = std::make_shared<rocksdb::JsonColsParser>(fieldcount/2, /*expected_value_len=*/0);
+        auto enc2 = std::make_shared<rocksdb::ProtobufBytesRowEncoder>(fieldcount/2);
+        rocksdb::Codec in{parser, nullptr};
+        rocksdb::Codec out{nullptr, enc};
+
+        std::vector<rocksdb::FieldSchema> input_schema = parser->GetInputFieldSchema();
+        std::vector<std::vector<rocksdb::FieldSchema>> output_schemas;  // empty
+        options.schemaDescriptors.push_back(
+                std::make_shared<rocksdb::ConvertSchemaDescriptor>(in, out,
+                        std::move(input_schema), std::move(output_schemas)));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(
                 dbname, !bootstrap, dbfilename, options, 2);

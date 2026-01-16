@@ -1,6 +1,8 @@
 #include "core/core_workload.h"
 #include "test_splitting.h"
 #include "transformer/distribute/distributor.h"
+#include "transformer/common/parser/json_parser.h"
+#include "transformer/common/encoder/json_encoder.h"
 
 using namespace std;
 
@@ -13,15 +15,36 @@ namespace ycsbc {
         ycsbc::DBHelper::SetOptions(options, true, props);
 
         options.transformers.push_back(std::make_shared<rocksdb::Distributor>());
-
-        auto input_proto = std::make_unique<data::ByteRow>();
-        std::vector<std::unique_ptr<google::protobuf::Message>> output_protos;
-        for (int i = 0; i < fieldcount; i++) {
-            output_protos.emplace_back(std::make_unique<data::ByteRow>());
-        }
         
-        options.schemaDescriptors.push_back(std::make_shared<rocksdb::ProtobufDistributorSchema>(
-            fieldcount, std::move(input_proto), std::move(output_protos)));
+        auto parser = std::make_shared<rocksdb::JsonColsParser>(fieldcount, /*expected_value_len=*/0);
+        auto enc = std::make_shared<rocksdb::JsonEncoder>();
+        rocksdb::Codec codec{parser, enc};
+
+        std::vector<rocksdb::FieldSchema> in_schema; 
+        for (int i = 0; i < fieldcount; i++) {
+            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "string", i});
+        }
+        std::vector<std::vector<int>> splits;
+        splits.reserve(2);
+        const int mid = fieldcount/2;
+
+        std::vector<int> split1;
+        split1.reserve(mid);
+        for (int j = 0; j < mid; ++j) {
+            split1.push_back(j);
+        }
+
+        std::vector<int> split2;
+        split2.reserve(fieldcount - mid);
+        for (int j = mid; j < fieldcount; ++j) {
+            split2.push_back(j);
+        }
+
+        splits.push_back(std::move(split1));
+        splits.push_back(std::move(split2));
+
+        options.schemaDescriptors.push_back(std::make_shared<rocksdb::DistributorSchemaDescriptor>(
+            codec, in_schema, splits));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 2);
     }
