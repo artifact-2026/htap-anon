@@ -108,7 +108,7 @@ namespace ycsbc {
                         sum += std::stoi(row.values(0).value());
                     } else {
                         nlohmann::json parsedJson = nlohmann::json::parse(it->value().ToString());
-                        sum += std::stoi(parsedJson["field0"].get<std::string>());
+                        sum += std::stoi(parsedJson["col0"].get<std::string>());
                     }
                 }
                 result.push_back(it->value().ToString());
@@ -165,19 +165,27 @@ namespace ycsbc {
             }
         } else {
             nlohmann::json parsedJson = nlohmann::json::parse(values);
-            size_t grp_size = parsedJson.size()/8;
+            const size_t j_size = parsedJson.size();
+            size_t grp_size = j_size/8;
 
-            for (size_t i = 0; i < parsedJson.size(); i++) {
+            for (size_t i = 0; i < j_size; i++) {
                 nlohmann::json jsonData;
 
                 for (size_t j=0; j < grp_size; j++) {
-                    if (i+j >= parsedJson.size()) {
+                    if (i+j >= j_size) {
                         break;
                     }
-                    jsonData["field"+std::to_string(i+j)] = parsedJson["field"+std::to_string(i+j)];
+                    auto fname = "col" + std::to_string(i+j);
+                    jsonData[fname] = parsedJson.at(fname);
+                }
+                std::string cfname = table+"_colgrp_"+std::to_string(i/grp_size);
+                auto it = cfhandles_.find(cfname);
+                if (it == cfhandles_.end() || it->second == nullptr) {
+                    fprintf(stderr, "Missing/NULL CF handle for name='%s'\n", cfname.c_str());
+                    abort();
                 }
                 s = rocksdb_->Put(write_options_,
-                                  cfhandles_[table+"_colgrp_"+std::to_string(i/grp_size)],
+                                  it->second,
                                   key,
                                   jsonData.dump());
                 
