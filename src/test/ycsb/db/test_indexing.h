@@ -90,7 +90,7 @@ class Indexing : public DB{
                                         std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                                     std::vector<rocksdb::ColumnFamilyHandle*> handles);
-        rocksdb::DeriveFuncData* CreateIndexer(std::vector<int> positions);
+        std::unique_ptr<rocksdb::DeriveFuncData> CreateIndexer(std::vector<int> positions);
 };  
 
 }

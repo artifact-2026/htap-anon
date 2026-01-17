@@ -18,13 +18,13 @@ namespace ycsbc {
 
         options.paranoid_file_checks = false;
 
-        std::vector<rocksdb::DeriveFuncData*> deriveFuncs;
+        std::vector<std::unique_ptr<rocksdb::DeriveFuncData>> deriveFuncs;
         deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
         options.transformers.push_back(std::make_shared<rocksdb::Augmenter>());
 
         if (data_format == "json") {
             std::vector<std::string> index_keys;
-            index_keys.push_back("field1");
+            index_keys.push_back("col1");
             std::vector<std::vector<std::string>> indexes;
             indexes.push_back(index_keys);
             options.schemaDescriptors.push_back(std::make_shared<rocksdb::JsonAugmenterSchema>(indexes,nlohmann::json::object()));
@@ -107,27 +107,24 @@ namespace ycsbc {
         return primary_keys;
     }
 
-    rocksdb::DeriveFuncData* Indexing::CreateIndexer(std::vector<int> positions) {
-        std::function<std::string(std::vector<std::string>&)> f = [&](std::vector<std::string>& strs) -> std::string {
-            if (strs.size() == 0) {
-                return "";
-            }
-            if (strs.size() == 1) {
-                return strs[0];
-            }
-            std::string ind = strs[0];
-            size_t total_length = ind.size();
-            for (size_t i = 1; i < strs.size(); ++i) {
-                total_length += (1 + strs[i].size());       // need to add a delimiter ","
-            }
-            ind.reserve(total_length);
+    std::unique_ptr<rocksdb::DeriveFuncData> Indexing::CreateIndexer(std::vector<int> positions) {
+      auto f = [positions = std::move(positions)](std::vector<std::string>& strs) -> std::string {
+        if (strs.empty()) return "";
+        if (strs.size() == 1) return strs[0];
 
-            for (size_t i = 1; i < strs.size(); i++) {
-                ind += "," + strs[i];
-            }
-            return ind;
-        };
-        return new rocksdb::DeriveFuncData(positions, f);
+        std::string ind = strs[0];
+        size_t total_length = ind.size();
+        for (size_t i = 1; i < strs.size(); ++i) total_length += 1 + strs[i].size();
+        ind.reserve(total_length);
+
+        for (size_t i = 1; i < strs.size(); ++i) {
+            ind += ",";
+            ind += strs[i];
+        }
+        return ind;
+      };
+
+      return std::make_unique<rocksdb::DeriveFuncData>(std::move(positions), std::move(f));
     }
 
 }
