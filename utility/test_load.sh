@@ -10,7 +10,7 @@ ycsb_cmd=( ./src/test/ycsb/ycsb_test
   -db baseline
   -dbpath "/holly/test_results/baseline"
   -P "../src/test/ycsb/workloads/test_workloada.spec"
-  -inputdataformat json
+  -inputdataformat fixedbin64
   -bootstrap true
   -threads 10
   -load true
@@ -27,7 +27,7 @@ ycsb_cmd2=( ./src/test/ycsb/ycsb_test
   -db mynoop
   -dbpath "/holly/test_results/mynoop"
   -P "../src/test/ycsb/workloads/test_workloada.spec"
-  -inputdataformat json
+  -inputdataformat fixedbin64
   -bootstrap true
   -threads 10
   -load true
@@ -44,7 +44,7 @@ ycsb_cmd3=( ./src/test/ycsb/ycsb_test
   -db converting
   -dbpath "/holly/test_results/converting"
   -P "../src/test/ycsb/workloads/test_workloada.spec"
-  -inputdataformat json
+  -inputdataformat fixedbin64
   -bootstrap true
   -threads 10
   -load true
@@ -61,7 +61,7 @@ ycsb_cmd4=( ./src/test/ycsb/ycsb_test
   -db splitting
   -dbpath "/holly/test_results/splitting"
   -P "../src/test/ycsb/workloads/test_workloada.spec"
-  -inputdataformat json
+  -inputdataformat fixedbin64
   -bootstrap true
   -threads 10
   -load true
@@ -78,7 +78,7 @@ ycsb_cmd5=( ./src/test/ycsb/ycsb_test
   -db indexing
   -dbpath "/holly/test_results/indexing"
   -P "../src/test/ycsb/workloads/test_workloada.spec"
-  -inputdataformat json
+  -inputdataformat fixedbin64
   -bootstrap true
   -threads 10
   -load true
