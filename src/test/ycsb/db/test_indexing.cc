@@ -5,37 +5,42 @@
 #include "core/core_workload.h"
 #include "test_indexing.h"
 #include "lib/coding.h"
+#include "transformer/common/parser/json_parser.h"
+#include "transformer/common/encoder/json_encoder.h"
 
 using namespace std;
 
 namespace ycsbc {
     Indexing::Indexing(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
-        std::string data_format = props.GetProperty("inputdataformat","protobuf");
+        int num_cols = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
 
         options.paranoid_file_checks = false;
 
-        std::vector<std::unique_ptr<rocksdb::DeriveFuncData>> deriveFuncs;
-        deriveFuncs.push_back(CreateIndexer(std::vector<int>(3)));
-        options.transformers.push_back(std::make_shared<rocksdb::Augmenter>());
+        std::vector<std::vector<int>> indexes;
+        std::vector<int> index;
+        index.push_back(0);
+        indexes.push_back(index);
+        options.transformers.push_back(std::make_shared<rocksdb::Augmenter>(indexes));
 
-        if (data_format == "json") {
-            std::vector<std::string> index_keys;
-            index_keys.push_back("col1");
-            std::vector<std::vector<std::string>> indexes;
-            indexes.push_back(index_keys);
-            options.schemaDescriptors.push_back(std::make_shared<rocksdb::JsonAugmenterSchema>(indexes,nlohmann::json::object()));
-        } else if (data_format == "protobuf") {
-            std::vector<int> index_keys;
-            index_keys.push_back(1);
-            std::vector<std::vector<int>> indexes;
-            indexes.push_back(index_keys);
-            options.schemaDescriptors.push_back(std::make_shared<rocksdb::ProtobufAugmenterSchema>(
-                                    indexes, std::make_unique<data::ByteRow>()));
+        std::vector<rocksdb::FieldSchema> in_schema; 
+        in_schema.reserve(num_cols);
+        for (int i = 0; i < num_cols; i++) {
+            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "string", i});
         }
+        std::vector<std::vector<rocksdb::FieldSchema>> out_schemas;
+
+        auto parser = std::make_shared<rocksdb::JsonColsParser>(num_cols, /*expected_value_len=*/0);
+        auto enc = std::make_shared<rocksdb::JsonEncoder>();
+        rocksdb::Codec in_codec{parser, nullptr};
+        rocksdb::Codec out_codec{nullptr, enc};
+
+        options.schemaDescriptors.push_back(std::make_shared<rocksdb::SchemaDescriptor>(
+            in_codec, out_codec, in_schema, out_schemas
+        ));
         
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1); 
     }
@@ -105,26 +110,6 @@ namespace ycsbc {
         }
 
         return primary_keys;
-    }
-
-    std::unique_ptr<rocksdb::DeriveFuncData> Indexing::CreateIndexer(std::vector<int> positions) {
-      auto f = [positions = std::move(positions)](std::vector<std::string>& strs) -> std::string {
-        if (strs.empty()) return "";
-        if (strs.size() == 1) return strs[0];
-
-        std::string ind = strs[0];
-        size_t total_length = ind.size();
-        for (size_t i = 1; i < strs.size(); ++i) total_length += 1 + strs[i].size();
-        ind.reserve(total_length);
-
-        for (size_t i = 1; i < strs.size(); ++i) {
-            ind += ",";
-            ind += strs[i];
-        }
-        return ind;
-      };
-
-      return std::make_unique<rocksdb::DeriveFuncData>(std::move(positions), std::move(f));
     }
 
 }

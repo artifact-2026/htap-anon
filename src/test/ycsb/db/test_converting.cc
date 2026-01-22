@@ -32,7 +32,7 @@ namespace ycsbc {
         std::vector<rocksdb::FieldSchema> in_schema = parser->GetInputFieldSchema();
         std::vector<std::vector<rocksdb::FieldSchema>> out_schemas;  // empty
         options.schemaDescriptors.push_back(
-                std::make_shared<rocksdb::ConvertSchemaDescriptor>(in, out,
+                std::make_shared<rocksdb::SchemaDescriptor>(in, out,
                         std::move(in_schema), std::move(out_schemas)));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1); 

@@ -25,18 +25,7 @@ namespace ycsbc {
         
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
-        
-        options.transformers.push_back(std::make_shared<rocksdb::Distributor>());
-        options.transformers.push_back(std::make_shared<rocksdb::Converter>());
 
-        auto parser = std::make_shared<rocksdb::JsonColsParser>(fieldcount, /*expected_value_len=*/0);
-        auto enc = std::make_shared<rocksdb::JsonEncoder>();
-        rocksdb::Codec codec{parser, enc};
-
-        std::vector<rocksdb::FieldSchema> in_schema; 
-        for (int i = 0; i < fieldcount; i++) {
-            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "string", i});
-        }
         std::vector<std::vector<int>> splits;
         int mid = fieldcount/2;
         std::vector<int> split1, split2;
@@ -49,18 +38,32 @@ namespace ycsbc {
         }
         splits.push_back(split1);
         splits.push_back(split2);
-        options.schemaDescriptors.push_back(std::make_shared<rocksdb::DistributorSchemaDescriptor>(
-            codec, in_schema, splits));
+        
+        options.transformers.push_back(std::make_shared<rocksdb::Distributor>(splits));
+        options.transformers.push_back(std::make_shared<rocksdb::Converter>());
+
+        auto parser = std::make_shared<rocksdb::JsonColsParser>(fieldcount, /*expected_value_len=*/0);
+        auto enc = std::make_shared<rocksdb::JsonEncoder>();
+        rocksdb::Codec in_codec{parser, nullptr}, out_codec{nullptr, enc};
+
+        std::vector<rocksdb::FieldSchema> in_schema; 
+        for (int i = 0; i < fieldcount; i++) {
+            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "string", i});
+        }
+        std::vector<std::vector<rocksdb::FieldSchema>> out_schemas;
+        
+        options.schemaDescriptors.push_back(std::make_shared<rocksdb::SchemaDescriptor>(
+            in_codec, out_codec, in_schema, out_schemas));
 
         auto parser2 = std::make_shared<rocksdb::JsonColsParser>(fieldcount/2, /*expected_value_len=*/0);
         auto enc2 = std::make_shared<rocksdb::ProtobufBytesRowEncoder>(fieldcount/2);
-        rocksdb::Codec in{parser, nullptr};
-        rocksdb::Codec out{nullptr, enc};
+        rocksdb::Codec in2_codec{parser2, nullptr};
+        rocksdb::Codec out2_codec{nullptr, enc2};
 
         std::vector<rocksdb::FieldSchema> input_schema = parser->GetInputFieldSchema();
         std::vector<std::vector<rocksdb::FieldSchema>> output_schemas;  // empty
         options.schemaDescriptors.push_back(
-                std::make_shared<rocksdb::ConvertSchemaDescriptor>(in, out,
+                std::make_shared<rocksdb::SchemaDescriptor>(in2_codec, out2_codec,
                         std::move(input_schema), std::move(output_schemas)));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(

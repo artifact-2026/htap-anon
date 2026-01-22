@@ -22,8 +22,6 @@
 #include "data.pb.h"
 
 #include "transformer/augment/augmenter.h"
-#include "transformer/augment/json_index_schema.h"
-#include "transformer/augment/protobuf_index_schema.h"
 
 #include "db/db_helper.h"
 
@@ -90,7 +88,6 @@ class Indexing : public DB{
                                         std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
         void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
                                     std::vector<rocksdb::ColumnFamilyHandle*> handles);
-        std::unique_ptr<rocksdb::DeriveFuncData> CreateIndexer(std::vector<int> positions);
 };  
 
 }

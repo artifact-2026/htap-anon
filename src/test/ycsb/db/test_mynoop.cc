@@ -3,6 +3,8 @@
 #include "test_mynoop.h"
 #include "lib/coding.h"
 #include "transformer/identity/mynooper.h"
+#include "transformer/common/parser/json_parser.h"
+#include "transformer/common/encoder/json_encoder.h"
 
 using namespace std;
 
@@ -10,13 +12,6 @@ namespace ycsbc {
     TestMynoop::TestMynoop(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         int num_cols = utils::StrToInt(props.GetProperty("fieldcount", "1"));
-        std::string input_format = props.GetProperty("inputdataformat", "protobuf");
-        rocksdb::InputOutputDataType input_type = rocksdb::InputOutputDataType::PROTOBUF;
-        if (input_format == "json") {
-            input_type = rocksdb::InputOutputDataType::JSON;
-        } else if (input_format == "fixedbin64") {
-            input_type = rocksdb::InputOutputDataType::FIXEDBIN64;
-        }
         
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
@@ -24,10 +19,16 @@ namespace ycsbc {
 
         std::vector<rocksdb::FieldSchema> in_schema; 
         for (int i = 0; i < num_cols; i++) {
-            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "fixedbin64", i});
+            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "string", i});
         }
-        options.schemaDescriptors.push_back(std::make_shared<rocksdb::MynooperSchema>(
-            input_type, std::move(in_schema)
+        std::vector<std::vector<rocksdb::FieldSchema>> out_schemas;
+        out_schemas.push_back(in_schema);
+        auto parser = std::make_shared<rocksdb::JsonColsParser>(num_cols, /*expected_value_len=*/0);
+        auto enc = std::make_shared<rocksdb::JsonEncoder>();
+        rocksdb::Codec in_codec{parser, nullptr};
+        rocksdb::Codec out_codec{nullptr, enc};
+        options.schemaDescriptors.push_back(std::make_shared<rocksdb::SchemaDescriptor>(
+            in_codec, out_codec, std::move(in_schema), std::move(out_schemas)
         ));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1);
