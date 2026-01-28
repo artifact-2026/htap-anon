@@ -16,7 +16,6 @@ namespace ycsbc {
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
-        std::vector<rocksdb::ColumnFamilyHandle*> cf_handles;
 
         if (bootstrap) {
             rocksdb::Status s = rocksdb::DB::Open(options_, 
@@ -28,21 +27,21 @@ namespace ycsbc {
                 exit(0);
             }
 
-            s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cf_handles);
+            s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cfhandles_);
         } else {
             column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
                     rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions(options_)));
             rocksdb::Status s = rocksdb::DB::Open(options_,
                                               dbfilename,
                                               column_family_descriptors,
-                                              &cf_handles,
+                                              &cfhandles_,
                                               &rocksdb_);
             if (!s.ok()){
                 std::cerr<<"Can't open rocksdb "<<dbfilename<<" "<<s.ToString()<<std::endl;
                 exit(0);
             }
         }
-        BuildColumnFamilyHandles(column_family_descriptors, cf_handles);
+        BuildColumnFamilyHandles(column_family_descriptors, cfhandles_);
     }
 
     void TestRocksDB::GetColumnFamilyDescriptors(const std::string &dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families)
@@ -187,11 +186,13 @@ namespace ycsbc {
         options_.table_factory = std::shared_ptr<rocksdb::TableFactory>(rocksdb::NewBlockBasedTableFactory(table_options));
     }
 
-    void TestRocksDB::BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
-                                                std::vector<rocksdb::ColumnFamilyHandle *> handles)
+    void TestRocksDB::BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
+                                                std::vector<rocksdb::ColumnFamilyHandle*>& handles)
     {
         for (size_t i = 0; i < handles.size(); i++) {
-            if (column_family_descriptors[i].name != rocksdb::kDefaultColumnFamilyName) {
+            if (column_family_descriptors[i].name == rocksdb::kDefaultColumnFamilyName) {
+                default_cf_ = handles[i];
+            } else {
                 cfhandle_ = handles[i];
             }
         }

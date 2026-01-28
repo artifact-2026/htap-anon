@@ -43,18 +43,19 @@ class TestRocksDB : public DB{
         int Delete(const std::string &table, const std::string &key);
 
         ~TestRocksDB() {
-            if (rocksdb_) {
-                rocksdb::FlushOptions fo; fo.wait = true;
-                rocksdb_->Flush(fo, cfhandle_);
+            if (!rocksdb_) return;
 
-                rocksdb::CompactRangeOptions cro;
-                rocksdb_->CompactRange(cro, cfhandle_, nullptr, nullptr);
-
-                rocksdb_->DestroyColumnFamilyHandle(cfhandle_);
-                
-                delete rocksdb_;
-                rocksdb_ = nullptr;
+            for (auto* h : cfhandles_) {
+                if (h) rocksdb_->DestroyColumnFamilyHandle(h);
             }
+
+            cfhandles_.clear();
+            default_cf_ = nullptr;
+            cfhandle_ = nullptr;
+            
+            delete rocksdb_;
+            rocksdb_ = nullptr;
+          
         };
     
     private:
@@ -64,15 +65,17 @@ class TestRocksDB : public DB{
         int noResults;
         std::shared_ptr<rocksdb::Cache> cache_;
         std::shared_ptr<rocksdb::Statistics> dbstats_;
-        rocksdb::ColumnFamilyHandle* cfhandle_;
+        rocksdb::ColumnFamilyHandle* default_cf_{nullptr};
+        rocksdb::ColumnFamilyHandle* cfhandle_{nullptr};
+        std::vector<rocksdb::ColumnFamilyHandle*> cfhandles_;
         std::string inputType_;
         std::string outputType_;
         std::string columnDataType_;
 
         void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
         void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
-        void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor> &column_family_descriptors,
-                                                std::vector<rocksdb::ColumnFamilyHandle *> handles);        
+        void BuildColumnFamilyHandles(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
+                                                std::vector<rocksdb::ColumnFamilyHandle*>& handles);        
 };  
 
 }
