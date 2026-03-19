@@ -63,6 +63,31 @@ mkdir -p "$DB_PATH"
   --use_direct_io_for_flush_and_compaction \
   > "$DB_BENCH_LOG" 2>&1
 
+
+./db_bench \
+  --benchmarks="fillrandom,stats" \
+  --db=/path/to/db \
+  --wal_dir=/path/to/wal \
+  --num=50000000 \
+  --threads=16 \
+  --key_size=16 \
+  --value_size=1000 \
+  --block_size=4096 \
+  --cache_size=0 \
+  --write_buffer_size=67108864 \
+  --max_write_buffer_number=4 \
+  --target_file_size_base=67108864 \
+  --max_bytes_for_level_base=536870912 \
+  --compression_type=none \
+  --statistics \
+  --stats_interval_seconds=10 \
+  --histogram \
+  --bytes_per_sync=1048576 \
+  --report_bg_io_stats=true \
+  --disable_auto_compactions=false
+
+
+
 #./src/mycelium/db_bench \
 #  --db="$DB_PATH" \
 #  --benchmarks=compact \
