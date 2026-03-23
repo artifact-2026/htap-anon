@@ -1,29 +1,7 @@
-#include <memory>
-#include <mutex>
-#include <functional>
-#include "mycelium/transformer.h"
+#pragma once
+// Private header: used only by augmenter.cc.
+// The public class declaration lives in mycelium/augmenter.h.
+// data.pb.h is included here so augmenter.cc can reach it without adding
+// an explicit dependency on the proto-generated include path.
 #include "data.pb.h"
-
-namespace mycelium {
-
-class Augmenter : public Transformer
-{
-  public:
-    Augmenter(std::vector<std::vector<int>> ipositions) 
-        : index_positions_(ipositions) {};
-    ~Augmenter() {};
-
-    std::string Name() const override { return "Augmenter"; }
-
-    std::vector<ArrowRecord> Transform(
-      std::string_view key,
-      const ArrowRecord& input) const override;
-  
-    TransformerType Supports() const override { return TransformerType::AUGMENTER; }
-
-    const std::vector<std::vector<int>> GetPositionedIndexKeys() const { return index_positions_; }
-  private:
-    std::vector<std::vector<int>> index_positions_;
-};
-
-}
+#include "mycelium/augmenter.h"
