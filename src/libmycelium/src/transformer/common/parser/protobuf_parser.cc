@@ -24,7 +24,7 @@ InputOutputDataType ProtobufParser::InputType() const {
   return InputOutputDataType::PROTOBUF;
 } // namespace mycelium
 
-bool ProtobufParser::Validate(const rocksdb::ByteBuffer& input_data) const {
+bool ProtobufParser::Validate(const ByteBuffer& input_data) const {
   if (!template_) return false;
   auto msg = std::unique_ptr<google::protobuf::Message>(template_->New());
   return msg->ParseFromArray(input_data.data(), static_cast<int>(input_data.size()));
@@ -253,7 +253,7 @@ static inline arrow::Status AppendRepeatedField(
 
 } // namespace mycelium
 
-arrow::Result<ArrowRecord> ProtobufParser::ParseToArrow(const rocksdb::ByteBuffer& data) const {
+arrow::Result<ArrowRecord> ProtobufParser::ParseToArrow(const ByteBuffer& data) const {
   if (!template_) {
     return arrow::Status::Invalid("ProtobufParser::ParseToArrow: template_ is null");
   }

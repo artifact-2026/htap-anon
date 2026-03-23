@@ -122,7 +122,12 @@ install(TARGETS mycelium EXPORT myceliumTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(DIRECTORY include/mycelium
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(EXPORT myceliumTargets
-  FILE myceliumTargets.cmake
-  NAMESPACE mycelium::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mycelium)
+# Only export CMake targets when building libmycelium standalone; when built
+# as a subdirectory of the HTAP project the parent-defined targets
+# (flatbuffers_generated, proto_generated) are not in this export set.
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
+  install(EXPORT myceliumTargets
+    FILE myceliumTargets.cmake
+    NAMESPACE mycelium::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mycelium)
+endif()
