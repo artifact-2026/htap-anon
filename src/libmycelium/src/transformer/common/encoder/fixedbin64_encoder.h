@@ -1,16 +1,4 @@
 #pragma once
-
-#include "mycelium/transformer.h"
-
-namespace mycelium {
-
-class FixedBin64Encoder final : public Encoder {
- public:
-  InputOutputDataType OutputType() const override;
-  std::vector<ByteBuffer> SerializeFromArrow(const ArrowRecord& rec) const override;
-
- private:
-  static void AppendFixed64LE(ByteBuffer* out, std::uint64_t v);
-};
-
-}
+// Private header — used only by fixedbin64_encoder.cc.
+// Public declaration lives in mycelium/fixedbin64_encoder.h.
+#include "mycelium/fixedbin64_encoder.h"

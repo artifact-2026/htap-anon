@@ -85,9 +85,12 @@ target_include_directories(mycelium
 
 target_link_libraries(mycelium
   PUBLIC  Arrow::arrow
-  PRIVATE $<$<BOOL:${MYCELIUM_WITH_JSON}>:jsoncpp_lib>
+          # flatbuffers and protobuf are PUBLIC because their types appear in
+          # the public headers flatbuffers_parser.h and protobuf_parser.h.
+          # Any target that includes those headers needs the library include paths.
           $<$<BOOL:${MYCELIUM_WITH_FLATBUFFERS}>:flatbuffers::flatbuffers>
           $<$<BOOL:${MYCELIUM_WITH_PROTOBUF}>:protobuf::libprotobuf>
+  PRIVATE $<$<BOOL:${MYCELIUM_WITH_JSON}>:jsoncpp_lib>
 )
 
 target_compile_features(mycelium PUBLIC cxx_std_17)
@@ -98,16 +101,20 @@ if(TARGET jsoncpp_lib)
   target_link_libraries(mycelium PRIVATE jsoncpp_lib)
 endif()
 if(TARGET flatbuffers_generated)
+  # flatbuffers_generated is an INTERFACE target that sets include paths for
+  # row_generated.h and similar — needed only in our .cc files (PRIVATE).
   target_link_libraries(mycelium PRIVATE flatbuffers_generated)
 endif()
 if(TARGET proto_generated)
   target_link_libraries(mycelium PRIVATE proto_generated)
 endif()
 if(DEFINED FLATBUFFERS_LIBRARY AND FLATBUFFERS_LIBRARY)
-  target_link_libraries(mycelium PRIVATE ${FLATBUFFERS_LIBRARY})
+  # Raw library variable fallback: PUBLIC so consumers get flatbuffers headers.
+  target_link_libraries(mycelium PUBLIC ${FLATBUFFERS_LIBRARY})
 endif()
 if(DEFINED Protobuf_LIBRARIES AND Protobuf_LIBRARIES)
-  target_link_libraries(mycelium PRIVATE ${Protobuf_LIBRARIES})
+  # Raw library variable fallback: PUBLIC so consumers get protobuf headers.
+  target_link_libraries(mycelium PUBLIC ${Protobuf_LIBRARIES})
 endif()
 
 # ── Tests (populated in P3+) ─────────────────────────────────────────────────

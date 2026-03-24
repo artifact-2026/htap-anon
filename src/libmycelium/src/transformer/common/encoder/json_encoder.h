@@ -1,13 +1,4 @@
 #pragma once
-
-#include "mycelium/transformer.h"
-
-namespace mycelium {
-
-class JsonEncoder final : public Encoder {
- public:
-  InputOutputDataType OutputType() const override;
-  std::vector<ByteBuffer> SerializeFromArrow(const ArrowRecord& rec) const override;
-};
-
-}
+// Private header — used only by json_encoder.cc.
+// Public declaration lives in mycelium/json_encoder.h.
+#include "mycelium/json_encoder.h"
