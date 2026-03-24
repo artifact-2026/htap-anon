@@ -1,21 +1,20 @@
 #pragma once
-
 #include "mycelium/transformer.h"
 
 namespace mycelium {
 
-// Mynooper is the identity transformer: it passes every record through unchanged.
+// Mynooper: identity transformer — passes every record through unchanged.
 class Mynooper : public Transformer {
  public:
-  Mynooper() {}
-  ~Mynooper() {}
+  Mynooper()  = default;
+  ~Mynooper() override = default;
 
-  std::string Name() const override { return "Mycelium-NoOp"; }
+  std::string     Name()     const override { return "Mycelium-NoOp"; }
   TransformerType Supports() const override { return TransformerType::MYNOOPER; }
 
-  std::vector<ArrowRecord> Transform(
-      std::string_view key,
-      const ArrowRecord& input) const override;
+  std::vector<ParsedRow> Transform(
+      std::string_view  key,
+      const ParsedRow&  input) const override;
 };
 
 }  // namespace mycelium

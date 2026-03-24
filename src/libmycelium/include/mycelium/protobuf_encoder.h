@@ -6,7 +6,7 @@
 
 namespace mycelium {
 
-// Encodes an ArrowRecord as a raw protobuf BytesRow message
+// Encodes a ParsedRow as a raw protobuf BytesRow message:
 //   message BytesRow { repeated bytes col = 1; }
 // No protobuf library dependency in this header.
 class ProtobufBytesRowEncoder final : public Encoder {
@@ -16,8 +16,7 @@ class ProtobufBytesRowEncoder final : public Encoder {
   InputOutputDataType OutputType() const override {
     return InputOutputDataType::PROTOBUF;
   }
-
-  std::vector<ByteBuffer> SerializeFromArrow(const ArrowRecord& rec) const override;
+  std::vector<ByteBuffer> Serialize(const ParsedRow& row) const override;
 
  private:
   size_t num_cols_;

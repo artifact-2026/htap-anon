@@ -1,15 +1,12 @@
-#include <utility>
-#include <vector>
-
-#include "converter.h"
+#include "converter.h"   // → mycelium/converter.h
 
 namespace mycelium {
 
-std::vector<ArrowRecord> Converter::Transform(
-    std::string_view key,
-    const ArrowRecord& input) const {
-  (void)key;
+std::vector<ParsedRow> Converter::Transform(std::string_view /*key*/,
+                                            const ParsedRow& input) const {
+  // Converter is a pure format-change: pass the ParsedRow through unchanged.
+  // The SchemaDescriptor's output encoder re-serializes it in the target format.
   return {input};
-} // namespace mycelium
+}
 
-} // namespace mycelium
+}  // namespace mycelium

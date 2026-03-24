@@ -1,8 +1,6 @@
 #pragma once
-// FlatbuffersParser — constructors are inline (they use the FlatBuffers
-// reflection API directly), so flatbuffers headers must appear here.
-// row_generated.h is NOT included: it is only needed by flatbuffers_encoder.cc.
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include "mycelium/transformer.h"
@@ -10,11 +8,6 @@
 #include "flatbuffers/util.h"
 
 namespace mycelium {
-
-struct FlatbufPayload {
-  ByteBuffer bytes;       // owns backing buffer
-  std::string root_type;  // optional tag, can be empty
-};
 
 class FlatbuffersParser final : public Parser {
  public:
@@ -31,8 +24,7 @@ class FlatbuffersParser final : public Parser {
         [](const reflection::Schema*) { /* no-op: owned by bfbs_bytes_ */ });
     root_obj_ = schema_->root_table();
     if (!root_obj_) {
-      throw std::runtime_error(
-          "FlatbuffersParser: bfbs schema has no root_table()");
+      throw std::runtime_error("FlatbuffersParser: bfbs schema has no root_table()");
     }
   }
 
@@ -52,15 +44,14 @@ class FlatbuffersParser final : public Parser {
     }
     if (!found) {
       throw std::runtime_error(
-          "FlatbuffersParser: root object not found in schema: " +
-          root_object_name);
+          "FlatbuffersParser: root object not found in schema: " + root_object_name);
     }
     root_obj_ = found;
   }
 
-  InputOutputDataType InputType() const override;
+  InputOutputDataType InputType() const override { return InputOutputDataType::FLATBUFFERS; }
   bool Validate(const ByteBuffer& input_data) const override;
-  arrow::Result<ArrowRecord> ParseToArrow(const ByteBuffer& data) const override;
+  Result<ParsedRow> Parse(const ByteBuffer& data) const override;
 
  private:
   std::string bfbs_bytes_;

@@ -1,6 +1,5 @@
 #pragma once
 #include <cstddef>
-#include <memory>
 #include <string>
 #include <vector>
 #include "mycelium/transformer.h"
@@ -14,19 +13,18 @@ class JsonColsParser final : public Parser {
   InputOutputDataType InputType() const override { return InputOutputDataType::JSON; }
 
   bool Validate(const ByteBuffer& input_data) const override;
-  arrow::Result<ArrowRecord> ParseToArrow(const ByteBuffer& data) const override;
+  Result<ParsedRow> Parse(const ByteBuffer& data) const override;
   const std::vector<FieldSchema>& GetInputFieldSchema() const override { return input_schema_; }
 
  private:
   size_t num_cols_;
-  size_t expected_value_len_;  // 0 => no check
+  size_t expected_value_len_;   // 0 => no length check
   std::vector<FieldSchema> input_schema_;
 
   static bool ExtractStringValueForKey(const char* json, size_t n,
                                        const std::string& key,
                                        const char** out_begin,
                                        const char** out_end);
-  static inline bool IsDigit(char c) { return c >= '0' && c <= '9'; }
 };
 
 }  // namespace mycelium
