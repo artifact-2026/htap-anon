@@ -1,8 +1,8 @@
 #include "core/core_workload.h"
 #include "test_splitting.h"
-#include "transformer/distribute/distributor.h"
-#include "transformer/common/parser/json_parser.h"
-#include "transformer/common/encoder/json_encoder.h"
+#include "mycelium/distributor.h"
+#include "mycelium/json_parser.h"
+#include "mycelium/json_encoder.h"
 
 using namespace std;
 
@@ -15,7 +15,7 @@ namespace ycsbc {
         ycsbc::DBHelper::SetOptions(options, true, props);
 
         std::vector<std::vector<int>> splits;
-        std::vector<std::vector<rocksdb::FieldSchema>> out_schemas;
+        std::vector<std::vector<mycelium::FieldSchema>> out_schemas;
         if (fieldcount <= 1) {
             splits.reserve(1);
             std::vector<int> split1;
@@ -24,15 +24,15 @@ namespace ycsbc {
             splits.push_back(split1);
 
             out_schemas.reserve(1);
-            std::vector<rocksdb::FieldSchema> out_schema1;
+            std::vector<mycelium::FieldSchema> out_schema1;
             out_schema1.reserve(1);
-            out_schema1.push_back(rocksdb::FieldSchema{"col0", "string", 0});
+            out_schema1.push_back(mycelium::FieldSchema{"col0", "string", 0});
             out_schemas.push_back(out_schema1);
         } else {
             splits.reserve(2);
             std::vector<int> split1, split2;
             out_schemas.reserve(2);
-            std::vector<rocksdb::FieldSchema> out_schema1, out_schema2;
+            std::vector<mycelium::FieldSchema> out_schema1, out_schema2;
 
             const int mid = fieldcount/2;
             split2.reserve(mid);
@@ -42,11 +42,11 @@ namespace ycsbc {
 
             for (int i = 0; i < fieldcount; i++) {
                 split1.push_back(i);
-                out_schema1.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "string", i});
+                out_schema1.push_back(mycelium::FieldSchema{"col"+std::to_string(i), "string", i});
                 i += 1;
                 if (i < fieldcount) {
                     split2.push_back(i);
-                    out_schema2.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "string", i});
+                    out_schema2.push_back(mycelium::FieldSchema{"col"+std::to_string(i), "string", i});
                 }    
             }
             splits.push_back(split1);
@@ -55,20 +55,20 @@ namespace ycsbc {
             out_schemas.push_back(out_schema2);
         }
 
-        options.transformers.push_back(std::make_shared<rocksdb::Distributor>(splits));
+        options.transformers.push_back(std::make_shared<mycelium::Distributor>(splits));
         
-        auto parser = std::make_shared<rocksdb::JsonColsParser>(fieldcount, /*expected_value_len=*/0);
-        auto enc = std::make_shared<rocksdb::JsonEncoder>();
-        rocksdb::Codec codec_in{parser, nullptr};
-        rocksdb::Codec codec_out{nullptr, enc};
+        auto parser = std::make_shared<mycelium::JsonColsParser>(fieldcount, /*expected_value_len=*/0);
+        auto enc = std::make_shared<mycelium::JsonEncoder>();
+        mycelium::Codec codec_in{parser, nullptr};
+        mycelium::Codec codec_out{nullptr, enc};
 
-        std::vector<rocksdb::FieldSchema> in_schema; 
+        std::vector<mycelium::FieldSchema> in_schema; 
         in_schema.reserve(fieldcount);
         for (int i = 0; i < fieldcount; i++) {
-            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "string", i});
+            in_schema.push_back(mycelium::FieldSchema{"col"+std::to_string(i), "string", i});
         }
 
-        options.schemaDescriptors.push_back(std::make_shared<rocksdb::SchemaDescriptor>(
+        options.schemaDescriptors.push_back(std::make_shared<mycelium::SchemaDescriptor>(
             codec_in, codec_out, in_schema, out_schemas));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 2);

@@ -21,7 +21,7 @@
 #include "core/core_workload.h"
 #include "data.pb.h"
 
-#include "transformer/augment/augmenter.h"
+#include "mycelium/augmenter.h"
 
 #include "db/db_helper.h"
 

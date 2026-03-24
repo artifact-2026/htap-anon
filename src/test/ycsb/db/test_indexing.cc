@@ -5,8 +5,8 @@
 #include "core/core_workload.h"
 #include "test_indexing.h"
 #include "lib/coding.h"
-#include "transformer/common/parser/json_parser.h"
-#include "transformer/common/encoder/json_encoder.h"
+#include "mycelium/json_parser.h"
+#include "mycelium/json_encoder.h"
 
 using namespace std;
 
@@ -24,21 +24,21 @@ namespace ycsbc {
         std::vector<int> index;
         index.push_back(0);
         indexes.push_back(index);
-        options.transformers.push_back(std::make_shared<rocksdb::Augmenter>(indexes));
+        options.transformers.push_back(std::make_shared<mycelium::Augmenter>(indexes));
 
-        std::vector<rocksdb::FieldSchema> in_schema; 
+        std::vector<mycelium::FieldSchema> in_schema; 
         in_schema.reserve(num_cols);
         for (int i = 0; i < num_cols; i++) {
-            in_schema.push_back(rocksdb::FieldSchema{"col"+std::to_string(i), "string", i});
+            in_schema.push_back(mycelium::FieldSchema{"col"+std::to_string(i), "string", i});
         }
-        std::vector<std::vector<rocksdb::FieldSchema>> out_schemas;
+        std::vector<std::vector<mycelium::FieldSchema>> out_schemas;
 
-        auto parser = std::make_shared<rocksdb::JsonColsParser>(num_cols, /*expected_value_len=*/0);
-        auto enc = std::make_shared<rocksdb::JsonEncoder>();
-        rocksdb::Codec in_codec{parser, nullptr};
-        rocksdb::Codec out_codec{nullptr, enc};
+        auto parser = std::make_shared<mycelium::JsonColsParser>(num_cols, /*expected_value_len=*/0);
+        auto enc = std::make_shared<mycelium::JsonEncoder>();
+        mycelium::Codec in_codec{parser, nullptr};
+        mycelium::Codec out_codec{nullptr, enc};
 
-        options.schemaDescriptors.push_back(std::make_shared<rocksdb::SchemaDescriptor>(
+        options.schemaDescriptors.push_back(std::make_shared<mycelium::SchemaDescriptor>(
             in_codec, out_codec, in_schema, out_schemas
         ));
         

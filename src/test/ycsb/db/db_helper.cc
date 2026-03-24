@@ -6,11 +6,11 @@ using namespace std;
 
 namespace ycsbc {
 
-    rocksdb::InputOutputDataType DBHelper::mapStringToDataType(const std::string& dataType) {
-        if (dataType == "json" || dataType == "JSON") return rocksdb::InputOutputDataType::JSON;
-        if (dataType == "protobuf" || dataType == "PROTOBUF") return rocksdb::InputOutputDataType::PROTOBUF;
-        if (dataType == "flatbuffers" || dataType == "FLATBUFFERS") return rocksdb::InputOutputDataType::FLATBUFFERS;
-        return rocksdb::InputOutputDataType::UNKNOWN;
+    mycelium::InputOutputDataType DBHelper::mapStringToDataType(const std::string& dataType) {
+        if (dataType == "json" || dataType == "JSON") return mycelium::InputOutputDataType::JSON;
+        if (dataType == "protobuf" || dataType == "PROTOBUF") return mycelium::InputOutputDataType::PROTOBUF;
+        if (dataType == "flatbuffers" || dataType == "FLATBUFFERS") return mycelium::InputOutputDataType::FLATBUFFERS;
+        return mycelium::InputOutputDataType::UNKNOWN;
     }
 
     void DBHelper::SetOptions(rocksdb::Options& options_, bool logging, utils::Properties &props)

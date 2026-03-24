@@ -2,9 +2,9 @@
 #include "test_rocks_db.h"
 #include "lib/coding.h"
 #include "test_converting.h"
-#include "transformer/convert/converter.h"
-#include "transformer/common/parser/json_parser.h"
-#include "transformer/common/encoder/protobuf_encoder.h"
+#include "mycelium/converter.h"
+#include "mycelium/json_parser.h"
+#include "mycelium/protobuf_encoder.h"
 
 #include <iostream>
 #include <iomanip> // Include for std::setfill and std::setw
@@ -19,20 +19,20 @@ namespace ycsbc {
         rocksdb::Options options;
         ycsbc::DBHelper::SetOptions(options, true, props);
         
-        options.transformers.push_back(std::make_shared<rocksdb::Converter>());
+        options.transformers.push_back(std::make_shared<mycelium::Converter>());
 
         //std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::ByteRow>();
         //const flatbuffers::TypeTable* fb_type_table = flat::RowTypeTable();
 
-        auto parser = std::make_shared<rocksdb::JsonColsParser>(num_cols, /*expected_value_len=*/0);
-        auto enc = std::make_shared<rocksdb::ProtobufBytesRowEncoder>(num_cols);
-        rocksdb::Codec in{parser, nullptr};
-        rocksdb::Codec out{nullptr, enc};
+        auto parser = std::make_shared<mycelium::JsonColsParser>(num_cols, /*expected_value_len=*/0);
+        auto enc = std::make_shared<mycelium::ProtobufBytesRowEncoder>(num_cols);
+        mycelium::Codec in{parser, nullptr};
+        mycelium::Codec out{nullptr, enc};
 
-        std::vector<rocksdb::FieldSchema> in_schema = parser->GetInputFieldSchema();
-        std::vector<std::vector<rocksdb::FieldSchema>> out_schemas;  // empty
+        std::vector<mycelium::FieldSchema> in_schema = parser->GetInputFieldSchema();
+        std::vector<std::vector<mycelium::FieldSchema>> out_schemas;  // empty
         options.schemaDescriptors.push_back(
-                std::make_shared<rocksdb::SchemaDescriptor>(in, out,
+                std::make_shared<mycelium::SchemaDescriptor>(in, out,
                         std::move(in_schema), std::move(out_schemas)));
 
         mymBroker_ = std::make_unique<rocksdb::MymBroker>(dbname, !bootstrap, dbfilename, options, 1); 

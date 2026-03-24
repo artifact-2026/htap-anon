@@ -9,7 +9,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
-#include "transformer/distributor.h"
+#include "mycelium/distributor.h"
 
 using namespace std;
 
@@ -19,8 +19,8 @@ namespace ycsbc {
         int levels = utils::StrToInt(props.GetProperty("levels", "6"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         int num_splits = 2;
-        rocksdb::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
-        rocksdb::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
+        mycelium::InputOutputDataType inputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("inputdatatype", "PROTOBUF"));
+        mycelium::InputOutputDataType outputType = ycsbc::DBHelper::mapStringToDataType(props.GetProperty("outputdatatype", "PROTOBUF"));
         SetOptions(dbfilename, true, levels, fieldcount, inputType, outputType);
         options_.transformers.push_back(new rocksdb::Distributor());
 
@@ -241,7 +241,7 @@ namespace ycsbc {
     }
 
     void MyceliumWriteBoth::SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount, 
-           rocksdb::InputOutputDataType inputDataType, rocksdb::InputOutputDataType outputDataType)
+           mycelium::InputOutputDataType inputDataType, mycelium::InputOutputDataType outputDataType)
     {
         if (!logging) {
             options_.info_log_level = rocksdb::InfoLogLevel::FATAL_LEVEL;
