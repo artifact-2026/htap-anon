@@ -3,6 +3,8 @@
 #include "test_rocks_db.h"
 #include "lib/coding.h"
 
+#include <rocksdb/statistics.h>
+
 using namespace std;
 
 namespace ycsbc {
@@ -13,6 +15,18 @@ namespace ycsbc {
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         columnDataType_ = props.GetProperty("columndatatype", "numeric");
         SetOptions(props, true, levels, fieldcount);
+
+        // Attach the compaction metrics listener when a CSV output path is given.
+        // To enable, set "metrics_output=/path/to/compaction_metrics.csv" in
+        // the workload .spec file or on the command line (-P key=value).
+        const std::string metrics_path = props.GetProperty("metrics_output", "");
+        if (!metrics_path.empty()) {
+            metrics_listener_ = std::make_shared<CompactionMetricsListener>(
+                metrics_path, dbstats_);
+            options_.listeners.push_back(metrics_listener_);
+            std::cout << "[CompactionMetricsListener] writing to: "
+                      << metrics_path << "\n";
+        }
 
         std::vector<rocksdb::ColumnFamilyDescriptor> column_family_descriptors;
         GetColumnFamilyDescriptors(dbname, column_family_descriptors);
@@ -167,19 +181,29 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
         options_.max_open_files = -1;
-	    options_.max_background_compactions = 32;	    
+	    options_.max_background_compactions = 32;
         options_.max_background_jobs = 64;
 
 	    options_.max_subcompactions = 16;
 
         options_.num_columns = fieldcount;
-        
+
         options_.compaction_style = rocksdb::kCompactionStyleLevel;
         options_.write_buffer_size = 32 * 1024 * 1024;
-    
+
         //options_.IncreaseParallelism(24);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
+
+        // Enable per-compaction I/O timing so CompactionJobStats.file_write_nanos
+        // and related fields are populated (used by CompactionMetricsListener).
+        options_.report_bg_io_stats = true;
+
+        // Create a Statistics object so STALL_MICROS and other tickers are
+        // tracked. The same shared_ptr is passed to CompactionMetricsListener.
+        dbstats_ = rocksdb::CreateDBStatistics();
+        options_.statistics = dbstats_;
+
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024);
         table_options.filter_policy.reset(rocksdb::NewBloomFilterPolicy(10, false));

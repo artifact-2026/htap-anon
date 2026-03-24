@@ -4,6 +4,7 @@ set(ycsb_srcs
     ycsbc.cc
     db/db_factory.cc
     db/db_helper.cc
+    db/compaction_metrics_listener.cc
     db/test_rocks_db.cc
     db/test_splitting.cc
     db/test_indexing.cc

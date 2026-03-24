@@ -18,6 +18,7 @@
 #include "data.pb.h"
 
 #include "db/db_helper.h"
+#include "db/compaction_metrics_listener.h"
 
 namespace ycsbc {
 
@@ -71,6 +72,9 @@ class TestRocksDB : public DB{
         std::string inputType_;
         std::string outputType_;
         std::string columnDataType_;
+
+        // Compaction metrics collection (enabled via "metrics_output" property)
+        std::shared_ptr<CompactionMetricsListener> metrics_listener_;
 
         void SetOptions(utils::Properties &props, bool logging, int levels, int fieldcount);
         void GetColumnFamilyDescriptors(const std::string& dbname, std::vector<rocksdb::ColumnFamilyDescriptor>& column_families);
