@@ -107,6 +107,11 @@ class TransformScheduler {
   int FilesAdmitted() const { return files_admitted_; }
   int FilesSkipped()  const { return files_skipped_;  }
 
+  // De-duplicated list of input SST file numbers whose transforms were deferred.
+  // Passed as the [file_numbers] hint to DeferCallback::ScheduleDeferred() so
+  // the engine can narrow the catch-up compaction range.
+  std::vector<uint64_t> DeferredFileNumbers() const;
+
  private:
   const AdmissionPolicy*    policy_;
   CompactionSlackEstimator* estimator_;
@@ -122,6 +127,10 @@ class TransformScheduler {
   // Accumulated deferred CF names across all files (may have duplicates;
   // de-dup happens in DeferredCFs()).
   std::vector<std::string>  all_deferred_cfs_;
+
+  // Accumulated deferred SST file numbers (may have duplicates;
+  // de-dup happens in DeferredFileNumbers()).
+  std::vector<uint64_t>     all_deferred_file_numbers_;
 
   int files_admitted_ = 0;
   int files_skipped_  = 0;

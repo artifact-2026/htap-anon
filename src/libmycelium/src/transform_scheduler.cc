@@ -86,10 +86,12 @@ void TransformScheduler::BeginFile(
   } else {
     current_decision_ = Decision::kDefer;
     files_skipped_++;
-    // Pre-populate deferred CFs so even files with zero KVs are captured.
+    // Pre-populate deferred CFs and file numbers so even files with zero KVs
+    // are captured.
     for (const auto& cf : dest_cf_names) {
       all_deferred_cfs_.push_back(cf);
     }
+    all_deferred_file_numbers_.push_back(file_number);
   }
 }
 
@@ -110,14 +112,27 @@ void TransformScheduler::OnApplied(uint64_t cpu_ns) {
   estimator_->RecordTransform(cpu_ns, 1);
 }
 
-void TransformScheduler::OnDeferred(uint64_t /*sst_file_number*/) {
+void TransformScheduler::OnDeferred(uint64_t sst_file_number) {
   for (const auto& cf : current_dest_cfs_) {
     all_deferred_cfs_.push_back(cf);
+  }
+  // sst_file_number == current_file_number_ in the normal flow; record it so
+  // per-KV defers (if any) are also captured.  De-dup happens in
+  // DeferredFileNumbers().
+  if (sst_file_number != 0) {
+    all_deferred_file_numbers_.push_back(sst_file_number);
   }
 }
 
 std::vector<std::string> TransformScheduler::DeferredCFs() const {
   std::vector<std::string> result = all_deferred_cfs_;
+  std::sort(result.begin(), result.end());
+  result.erase(std::unique(result.begin(), result.end()), result.end());
+  return result;
+}
+
+std::vector<uint64_t> TransformScheduler::DeferredFileNumbers() const {
+  std::vector<uint64_t> result = all_deferred_file_numbers_;
   std::sort(result.begin(), result.end());
   result.erase(std::unique(result.begin(), result.end()), result.end());
   return result;
