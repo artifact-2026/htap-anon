@@ -70,7 +70,7 @@ const string CoreWorkload::COLUMN_DATA_TYPE_PROPERTY = "columndatatype";
 const string CoreWorkload::COLUMN_DATA_TYPE_DEFAULT = "mixed";
 
 const string CoreWorkload::INPUT_DATA_FORMAT_PROPERTY = "inputdataformat";
-const string CoreWorkload::INPUT_DATA_FORMAT_DEFAULT = "protobuf";
+const string CoreWorkload::INPUT_DATA_FORMAT_DEFAULT = "raw";
 
 const string CoreWorkload::MAX_SCAN_LENGTH_PROPERTY = "maxscanlength";
 const string CoreWorkload::MAX_SCAN_LENGTH_DEFAULT = "1000";
@@ -213,6 +213,20 @@ void CoreWorkload::BuildProtoRecord(data::ByteRow &value) {
     std::string s(field_len_generator_->Next(), utils::RandomPrintChar());
     c->set_value(s);
   }
+}
+
+// Flat binary record: field_count_ fields concatenated with no framing.
+// Total size = sum of field_len_generator_->Next() bytes per field.
+// For constant field lengths (the common case) this is exactly
+// field_count_ * field_length bytes — the same payload volume as the
+// protobuf path but with zero serialization overhead.
+std::string CoreWorkload::BuildRawRecord() {
+  std::string out;
+  for (int i = 0; i < field_count_; ++i) {
+    uint64_t len = field_len_generator_->Next();
+    out.append(len, utils::RandomPrintChar());
+  }
+  return out;
 }
 
 // Format x as a zero-padded 10-digit decimal string, digits only.

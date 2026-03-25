@@ -267,7 +267,7 @@ namespace ycsbc {
         options_.max_write_buffer_number = 8;
         options_.level0_file_num_compaction_trigger = 4;
         options_.level0_slowdown_writes_trigger = 20;
-        options_.level0_stop_writes_trigger = 32;
+        options_.level0_stop_writes_trigger = 36;
         options_.IncreaseParallelism(24);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;

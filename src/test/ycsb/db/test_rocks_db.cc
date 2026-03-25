@@ -11,7 +11,7 @@ namespace ycsbc {
     TestRocksDB::TestRocksDB(const std::string& dbname, const char *dbfilename, utils::Properties &props) {
         bool bootstrap = utils::StrToBool(props.GetProperty("bootstrap","false"));
         noResults = 0;
-        int levels = utils::StrToInt(props.GetProperty("levels", "6"));
+        int levels = utils::StrToInt(props.GetProperty("levels", "7"));
         int fieldcount = utils::StrToInt(props.GetProperty("fieldcount", "1"));
         columnDataType_ = props.GetProperty("columndatatype", "numeric");
         SetOptions(props, true, levels, fieldcount);
@@ -181,17 +181,27 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
         options_.max_open_files = -1;
-	    options_.max_background_compactions = 32;
-        options_.max_background_jobs = 64;
-
-	    options_.max_subcompactions = 16;
+        // Background thread pool: covers both compaction and flush.
+        // 8 is a good default for NVMe servers; increase if compaction lags.
+        options_.max_background_jobs = 8;
+        // Allow up to 4 parallel sub-compactions per compaction job on NVMe.
+        options_.max_subcompactions = 4;
 
         options_.num_columns = fieldcount;
 
         options_.compaction_style = rocksdb::kCompactionStyleLevel;
-        options_.write_buffer_size = 32 * 1024 * 1024;
+        // 64 MB memtable (RocksDB default); keep 4 in memory before stalling.
+        options_.write_buffer_size = 64 * 1024 * 1024;
+        options_.max_write_buffer_number = 4;
+        // L0 triggers (values below are RocksDB defaults; shown for visibility).
+        // trigger=4: compaction starts at 4×64MB=256MB L0 (= max_bytes_for_level_base)
+        // slowdown=20: write throttle at 20×64MB=1.28GB L0
+        // stop=36:    hard write stop at 36×64MB=2.3GB L0
+        //options_.level0_file_num_compaction_trigger = 4;
+        //options_.level0_slowdown_writes_trigger = 20;
+        //options_.level0_stop_writes_trigger = 36;
 
-        //options_.IncreaseParallelism(24);
+        options_.IncreaseParallelism(24);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
 

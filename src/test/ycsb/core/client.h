@@ -47,8 +47,14 @@ inline bool Client::DoInsert() {
   const std::string key = workload_.NextSequenceKey();
   const auto& fmt = workload_.input_data_format();
 
-  if (fmt == "json") {
+  if (fmt == "raw") {
+    std::string val = workload_.BuildRawRecord();
+    return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
+  } else if (fmt == "json") {
     std::string val = workload_.BuildJsonRecord(workload_.field_count());
+    return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
+  } else if (fmt == "fixedbin64") {
+    std::string val = workload_.BuildFixedBinaryRecord(workload_.field_count());
     return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
   } else if (fmt == "protobuf") {
     data::ByteRow value;
@@ -56,13 +62,8 @@ inline bool Client::DoInsert() {
     std::string serializedValue;
     value.SerializeToString(&serializedValue);
     return (db_.Insert(workload_.NextTable(), key, serializedValue) == DB::kOK);
-  } else if (fmt == "fixedbin64") {
-    // Fastest-to-Arrow encoding: packed fixed-width fields.
-    std::string val = workload_.BuildFixedBinaryRecord(/*num_cols=*/workload_.field_count());
-    return (db_.Insert(workload_.NextTable(), key, val) == DB::kOK);
   } else {
-    // Unknown format
-    return false;
+    throw utils::Exception("Unknown inputdataformat: " + fmt);
   }
 }
 
@@ -141,8 +142,15 @@ inline int Client::TransactionReadModifyWrite() {
     db_.Read(table, key, NULL, workload_.request_distribution(), workload_.index_access(), result);
   }
   
-  if (workload_.input_data_format() == "json") {
+  const auto& wfmt = workload_.input_data_format();
+  if (wfmt == "raw") {
+    std::string val = workload_.BuildRawRecord();
+    return db_.Update(table, key, val);
+  } else if (wfmt == "json") {
     std::string val = workload_.BuildJsonRecord(workload_.field_count());
+    return db_.Update(table, key, val);
+  } else if (wfmt == "fixedbin64") {
+    std::string val = workload_.BuildFixedBinaryRecord(workload_.field_count());
     return db_.Update(table, key, val);
   } else {
     data::ByteRow columns;
@@ -180,14 +188,19 @@ inline int Client::TransactionUpdate() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextTransactionKey();
 
-  if (workload_.input_data_format() == "json") {
-    std::string val;
-    val = workload_.BuildJsonRecord(workload_.field_count());
+  const auto& ufmt = workload_.input_data_format();
+  if (ufmt == "raw") {
+    std::string val = workload_.BuildRawRecord();
+    return db_.Update(table, key, val);
+  } else if (ufmt == "json") {
+    std::string val = workload_.BuildJsonRecord(workload_.field_count());
+    return db_.Update(table, key, val);
+  } else if (ufmt == "fixedbin64") {
+    std::string val = workload_.BuildFixedBinaryRecord(workload_.field_count());
     return db_.Update(table, key, val);
   } else {
     data::ByteRow columns;
     workload_.BuildProtoRecord(columns);
-    
     std::string serializedColumns;
     columns.SerializeToString(&serializedColumns);
     return db_.Update(table, key, serializedColumns);
@@ -197,8 +210,16 @@ inline int Client::TransactionUpdate() {
 inline int Client::TransactionInsert() {
   const std::string &table = workload_.NextTable();
   const std::string &key = workload_.NextSequenceKey();
-  if (workload_.input_data_format() == "json") {
+
+  const auto& ifmt = workload_.input_data_format();
+  if (ifmt == "raw") {
+    std::string val = workload_.BuildRawRecord();
+    return db_.Insert(table, key, val);
+  } else if (ifmt == "json") {
     std::string val = workload_.BuildJsonRecord(workload_.field_count());
+    return db_.Insert(table, key, val);
+  } else if (ifmt == "fixedbin64") {
+    std::string val = workload_.BuildFixedBinaryRecord(workload_.field_count());
     return db_.Insert(table, key, val);
   } else {
     data::ByteRow columns;

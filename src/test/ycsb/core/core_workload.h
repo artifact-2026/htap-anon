@@ -164,6 +164,11 @@ class CoreWorkload {
   ///
   virtual void Init(const utils::Properties &p);
   
+  // Default record builder: flat concatenation of field_count_ random-byte
+  // fields, no serialization overhead.  Format selectable via inputdataformat=
+  // (raw | json | protobuf | fixedbin64).
+  virtual std::string BuildRawRecord();
+
   virtual void BuildProtoRecord(data::ByteRow &value);
   virtual void BuildProtoColumn(data::ByteRow &update, std::string name);
   virtual std::string BuildJsonRecord(int num_cols);
