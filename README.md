@@ -55,6 +55,12 @@ rapidjson-dev
 ( checking device)
 % iostat -dx -N -t -y 1 3
 
+( To find the disk IO bandwidth )
+% fio --name=mixedrw \
+    --filename=/holly/htap/build/fio_tmp \
+    --rw=rw --bs=128k --size=8G \
+    --direct=1 --numjobs=4 --group_reporting
+
 ##### building with debug, tools, db_bench, and AddressSanitizer
 % cmake -DWITH_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-fsanitize=address -g" -S .. -B . -G Ninja
 % cmake -DWITH_BENCHMARK_TOOLS=on -DWITH_TOOLS=on -S .. -B . -G Ninja

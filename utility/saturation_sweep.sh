@@ -38,11 +38,14 @@ WORKLOAD_DIR="$SRC_ROOT/test/ycsb/workloads"
 # ── Experiment knobs ──────────────────────────────────────────────────────────
 
 # Value layout for saturation characterization.
-# 16 fields × 256 B = 4096 B total per record (+ 16 B key).
-# Matches Mycelium's chunk granularity so baseline and Mycelium runs are
-# directly comparable: baseline issues 1 Put of ~4096 B; Mycelium will
-# issue 16 Puts of 256 B each for the same logical record.
-FIELD_LENGTH="${FIELD_LENGTH:-256}"
+# 16 fields × 128 B = 4096 B total per record (+ 16 B key).
+# YCSB concatenates all fields into a single value before calling Put, so the
+# baseline always issues 1 Put of (FIELD_COUNT * FIELD_LENGTH) bytes per logical
+# record write.  Set these to match Mycelium's field granularity so that the
+# total record size is the same across baseline and Mycelium runs.  Mycelium
+# will issue FIELD_COUNT separate Puts of FIELD_LENGTH bytes each for the same
+# logical record; the difference in Put fanout is exactly what is being measured.
+FIELD_LENGTH="${FIELD_LENGTH:-128}"
 FIELD_COUNT="${FIELD_COUNT:-16}"
 
 # Thread counts to sweep.  The script continues past the detected knee so you
@@ -59,6 +62,16 @@ RECORD_COUNT="${RECORD_COUNT:-5000000}"
 
 # Block device for disk I/O monitoring.  Find yours with: lsblk / df -h <dbpath>
 DISK_DEVICE="${DISK_DEVICE:-nvme0c0n1}"
+
+# NVMe mixed read+write bandwidth ceiling — used to draw a saturation reference
+# line on the disk I/O panel.  Measure with a simultaneous read+write fio run,
+# which reflects how compaction actually uses the device (reads SST inputs and
+# writes merged outputs at the same time):
+#   fio --name=mixedrw --filename=<dbpath>/fio_tmp --rw=rw \
+#       --bs=128k --size=8G --direct=1 --numjobs=4 --group_reporting
+# Sum the reported read BW + write BW and pass that value here.
+# Leave at 0 to omit the reference line.
+DISK_IO_MAX_BANDWIDTH="${DISK_IO_MAX_BANDWIDTH:-0}"
 
 # Warmup seconds to skip when computing CPU/disk stats from the system CSV.
 # Must match YCSB's internal skip (hardcoded 60 s in runXput).
@@ -207,7 +220,7 @@ load_db() {
         -bootstrap true -threads 8 \
         -load true -run false -throughput false \
         -throughputtype 2 -runtime 0 \
-        -levels 6 -table baseline \
+        -levels 7 -table baseline \
         2>&1 | tee "$(dirname "$dbpath")/load.log"
     log "Load complete."
 }
@@ -233,7 +246,7 @@ run_one() {
         -bootstrap false -threads "$threads" \
         -load false -run false -throughput true \
         -throughputtype 2 -runtime "$RUNTIME_SECS" \
-        -levels 6 -table baseline \
+        -levels 7 -table baseline \
         2>&1 | tee "$log_file"
     stop_monitor
 
@@ -431,8 +444,12 @@ def parse_compaction_csv(csv_path):
         print(f"  [skip compaction csv] {csv_path}: {e}")
         return None
 
-RUNTIME_SECS  = int(sys.argv[5])
-WARMUP_SKIP   = int(sys.argv[2])   # already defined above, reuse
+RUNTIME_SECS          = int(sys.argv[5])
+WARMUP_SKIP           = int(sys.argv[2])   # already defined above, reuse
+field_length          = int(sys.argv[3])
+field_count           = int(sys.argv[4])
+total_bytes           = field_count * field_length
+disk_io_max_bandwidth = float(sys.argv[6]) if len(sys.argv) > 6 else 0
 
 print()
 print("── Compaction diagnostics ───────────────────────────────────────────────────")
@@ -468,7 +485,7 @@ plt.rcParams.update({
     'ytick.labelsize':   10,
 })
 
-fig = plt.figure(figsize=(13, 11))
+fig = plt.figure(figsize=(10, 14))
 gs  = gridspec.GridSpec(3, 1, hspace=0.45)
 
 ax_xput = fig.add_subplot(gs[0])
@@ -480,8 +497,8 @@ threads = df['threads'].values
 # ── Panel 1: write throughput ─────────────────────────────────────────────────
 
 ax_xput.errorbar(threads, df['xput_mean'], yerr=df['xput_std'],
-                 fmt='o-', color='steelblue', linewidth=2, markersize=7,
-                 capsize=5, capthick=1.5, elinewidth=1.5,
+                 fmt='o-', color='steelblue', linewidth=3, markersize=8,
+                 capsize=5, capthick=2, elinewidth=1.5,
                  label='Write throughput (ops/s)')
 ax_xput.set_ylabel('Write throughput\n(ops / sec)')
 ax_xput.set_title('Write throughput vs client threads  (± 1 σ over steady-state window)')
@@ -497,21 +514,33 @@ if knee_threads is not None:
         arrowprops=dict(arrowstyle='->', color='crimson', lw=1.4))
 ax_xput.legend(fontsize=9, loc='lower right')
 
-# ── Panel 2: disk read + write MB/s ──────────────────────────────────────────
-# Both matter: compaction reads SST input files (read I/O) and writes new ones
-# (write I/O).  The true bandwidth pressure is the sum of both.
+# ── Panel 2: combined disk I/O (primary) + breakdown read/write (secondary) ───
+# Compaction simultaneously reads SST input files and writes merged output files,
+# so the relevant saturation metric is combined read+write bandwidth, not either
+# direction alone.  Individual read/write are shown faintly for breakdown context.
 
+disk_combined_mean = df['disk_write_mean'] + df['disk_read_mean']
+disk_combined_std  = np.sqrt(df['disk_write_std']**2 + df['disk_read_std']**2)
+
+ax_disk.errorbar(threads, disk_combined_mean, yerr=disk_combined_std,
+                 fmt='o-', color='steelblue', linewidth=3, markersize=8,
+                 capsize=5, capthick=2, elinewidth=1.5,
+                 label='Combined I/O (read + write, MB/s)')
 ax_disk.errorbar(threads, df['disk_write_mean'], yerr=df['disk_write_std'],
-                 fmt='s-', color='darkorange', linewidth=2, markersize=7,
-                 capsize=5, capthick=1.5, elinewidth=1.5,
-                 label='Disk write (MB/s)')
+                 fmt='s--', color='darkorange', linewidth=1.2, markersize=5,
+                 capsize=3, capthick=1, elinewidth=1, alpha=0.55,
+                 label='  Disk write (MB/s)')
 ax_disk.errorbar(threads, df['disk_read_mean'], yerr=df['disk_read_std'],
-                 fmt='D--', color='saddlebrown', linewidth=2, markersize=6,
-                 capsize=5, capthick=1.5, elinewidth=1.5,
-                 label='Disk read (MB/s)')
+                 fmt='D--', color='saddlebrown', linewidth=1.2, markersize=5,
+                 capsize=3, capthick=1, elinewidth=1, alpha=0.55,
+                 label='  Disk read (MB/s)')
 ax_disk.set_ylabel('Disk I/O\n(MB / sec)')
-ax_disk.set_title('Disk read + write bandwidth vs client threads  (± 1 σ)')
+ax_disk.set_title('Disk I/O vs client threads  (± 1 σ)  —  combined is the saturation metric')
 
+if disk_io_max_bandwidth > 0:
+    ax_disk.axhline(disk_io_max_bandwidth, color='steelblue', linestyle=':',
+                    linewidth=1.8, alpha=0.85,
+                    label=f'Mixed I/O ceiling {disk_io_max_bandwidth:,.0f} MB/s')
 if knee_threads is not None:
     ax_disk.axvline(knee_threads, color='crimson', linestyle='--', alpha=0.7)
 ax_disk.legend(fontsize=9, loc='lower right')
@@ -519,8 +548,8 @@ ax_disk.legend(fontsize=9, loc='lower right')
 # ── Panel 3: CPU active % ────────────────────────────────────────────────────
 
 ax_cpu.errorbar(threads, df['cpu_active_mean'], yerr=df['cpu_active_std'],
-                fmt='^-', color='forestgreen', linewidth=2, markersize=7,
-                capsize=5, capthick=1.5, elinewidth=1.5,
+                fmt='^-', color='forestgreen', linewidth=3, markersize=8,
+                capsize=5, capthick=2, elinewidth=1.5,
                 label='CPU active (100 − idle) %')
 ax_cpu.set_ylabel('CPU utilization\n(100 − idle, %)')
 ax_cpu.set_title('System CPU utilization vs client threads  (± 1 σ)')
@@ -538,9 +567,6 @@ ax_cpu.set_xticks(threads)
 plt.setp(ax_xput.get_xticklabels(), visible=False)
 plt.setp(ax_disk.get_xticklabels(), visible=False)
 
-field_length = int(sys.argv[3])
-field_count  = int(sys.argv[4])
-total_bytes  = field_count * field_length
 fig.suptitle(
     f'RocksDB write saturation characterization  '
     f'({field_count} fields × {field_length} B = {total_bytes} B / record)',
@@ -557,7 +583,8 @@ run_plotter() {
     sep
     log "Generating saturation plots..."
     write_plotter
-    python3 "$PLOTTER_SCRIPT" "$OUTPUT_DIR" "$WARMUP_SKIP_S" "$FIELD_LENGTH" "$FIELD_COUNT" "$RUNTIME_SECS"
+    python3 "$PLOTTER_SCRIPT" "$OUTPUT_DIR" "$WARMUP_SKIP_S" "$FIELD_LENGTH" "$FIELD_COUNT" "$RUNTIME_SECS" \
+        "$DISK_IO_MAX_BANDWIDTH"
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────

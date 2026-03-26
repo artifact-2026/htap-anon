@@ -181,27 +181,45 @@ namespace ycsbc {
         options_.create_if_missing = true;
         options_.enable_pipelined_write = true;
         options_.max_open_files = -1;
-        // Background thread pool: covers both compaction and flush.
-        // 8 is a good default for NVMe servers; increase if compaction lags.
-        options_.max_background_jobs = 8;
-        // Allow up to 4 parallel sub-compactions per compaction job on NVMe.
-        options_.max_subcompactions = 4;
+
+        // IncreaseParallelism sets max_background_jobs, configures the LOW
+        // (compaction) and HIGH (flush) thread pools, and enables adaptive
+        // write-thread yielding.  The explicit max_background_jobs line is
+        // intentionally omitted — IncreaseParallelism is the single source of
+        // truth for thread counts.
+        options_.IncreaseParallelism(32);
+
+        // Allow up to 8 parallel sub-compactions per compaction job.
+        // With 32 background threads and a fast NVMe, this keeps each L0→L1
+        // job shorter so the L0 file count stays low between compactions.
+        options_.max_subcompactions = 8;
 
         options_.num_columns = fieldcount;
 
         options_.compaction_style = rocksdb::kCompactionStyleLevel;
-        // 64 MB memtable (RocksDB default); keep 4 in memory before stalling.
-        options_.write_buffer_size = 64 * 1024 * 1024;
-        options_.max_write_buffer_number = 4;
-        // L0 triggers (values below are RocksDB defaults; shown for visibility).
-        // trigger=4: compaction starts at 4×64MB=256MB L0 (= max_bytes_for_level_base)
-        // slowdown=20: write throttle at 20×64MB=1.28GB L0
-        // stop=36:    hard write stop at 36×64MB=2.3GB L0
-        //options_.level0_file_num_compaction_trigger = 4;
-        //options_.level0_slowdown_writes_trigger = 20;
-        //options_.level0_stop_writes_trigger = 36;
-
-        options_.IncreaseParallelism(24);
+        // 256 MB memtable — 4× the default.  At a typical write rate of
+        // ~70 MB/s per thread, this means one thread creates an L0 file only
+        // every ~3.6 s instead of every ~0.9 s with 64 MB.  Four threads
+        // therefore produce L0 files at roughly the same rate as one thread
+        // did with the 64 MB setting, keeping compaction from being
+        // overwhelmed until a meaningfully higher thread count.
+        options_.write_buffer_size = 256 * 1024 * 1024;
+        // 8 write buffers: up to 2 GB of memtables in flight, giving the
+        // flush pipeline enough slack to absorb bursts without stalling.
+        options_.max_write_buffer_number = 8;
+        // L0 triggers — at 256 MB/file, slowdown fires at 40×256MB = 10 GB L0
+        // and the hard stop at 64×256MB = 16 GB L0.  This ensures the
+        // steady-state window is never inside a stall at low thread counts.
+        options_.level0_file_num_compaction_trigger = 4;
+        options_.level0_slowdown_writes_trigger = 40;
+        options_.level0_stop_writes_trigger = 64;
+        // max_bytes_for_level_base must track write_buffer_size:
+        //   recommended = write_buffer_size × level0_file_num_compaction_trigger
+        //   = 256 MB × 4 = 1 GB
+        // Without this, L1 is 4× too small for the new file sizes and every
+        // L0→L1 compaction immediately triggers an L1→L2 cascade, negating
+        // the benefit of the larger write buffer.
+        options_.max_bytes_for_level_base = 1ull * 1024 * 1024 * 1024;
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
 
