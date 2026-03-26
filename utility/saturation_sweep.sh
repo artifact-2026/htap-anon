@@ -67,11 +67,24 @@ THREAD_COUNTS="${THREAD_COUNTS:-1 2 4 8 12 16 20 24 32 48}"
 RUNTIME_SECS="${RUNTIME_SECS:-120}"
 
 # Block device for disk I/O monitoring.  Find yours with: lsblk / df -h <dbpath>
-DISK_DEVICE="${DISK_DEVICE:-nvme0c0n1}"
+# Use the block device name as it appears in /proc/diskstats (e.g. nvme0n1, sda).
+# NOTE: nvme0n1 is the block device; nvme0c0n1 is the NVMe character device and
+#       will NOT appear in /proc/diskstats — do not use the c0 form here.
+DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
+
+# Peak sequential mixed-RW bandwidth of the device in MB/s (measured with fio).
+# Used to compute disk_util_pct = (read+write) / DISK_IO_MAX_BANDWIDTH.
+# Set to 0 to skip normalization (raw MB/s will be written to summary.csv instead).
+DISK_IO_MAX_BANDWIDTH="${DISK_IO_MAX_BANDWIDTH:-0}"
 
 # Warmup seconds to skip when computing CPU/disk/memory stats from the system CSV.
 # Must match YCSB's internal skip (hardcoded 60 s in runXput).
 WARMUP_SKIP_S="${WARMUP_SKIP_S:-60}"
+
+# Drop the OS page cache before every run so that disk reads are not silently
+# served from RAM.  Requires passwordless sudo for tee /proc/sys/vm/drop_caches,
+# or run the script as root.  Set to false to skip (reads may show as 0 MB/s).
+DROP_CACHES="${DROP_CACHES:-true}"
 
 # =============================================================================
 # Internals
@@ -199,6 +212,25 @@ stop_monitor() {
     }
 }
 
+# ── Page-cache flush ──────────────────────────────────────────────────────────
+# Without this, the kernel serves RocksDB reads from the OS page cache (populated
+# during the load phase) so /proc/diskstats never sees any read I/O.
+# sync first to flush dirty pages so drop_caches doesn't lose data.
+
+drop_page_cache() {
+    if [[ "$DROP_CACHES" != "true" ]]; then
+        return
+    fi
+    log "  Dropping OS page cache (sync + drop_caches=3) ..."
+    sync
+    if echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null 2>&1; then
+        log "  Page cache dropped."
+    else
+        log "  WARNING: drop_caches failed (need sudo or root). Disk reads may still be 0."
+        log "           Re-run as root or grant passwordless sudo for tee /proc/sys/vm/drop_caches."
+    fi
+}
+
 # ── Spec builder ──────────────────────────────────────────────────────────────
 # Always makes a fresh temp copy of WORKLOAD_SPEC so that load_db's
 # "rm -f $spec" never deletes the original file.  fieldcount, fieldlength,
@@ -243,6 +275,7 @@ run_one() {
 
     local spec; spec=$(create_spec "metrics_output=${cmp_csv}")
 
+    drop_page_cache
     log "  Running $threads thread(s) for ${RUNTIME_SECS}s ..."
     start_monitor "$sys_csv"
     "$BINARY" \
@@ -284,8 +317,10 @@ disk_read_mean          : mean disk read bandwidth (MB/s)
 disk_read_std
 disk_write_mean         : mean disk write bandwidth (MB/s)
 disk_write_std
-disk_total_mean         : disk_read_mean + disk_write_mean
-disk_total_std          : sqrt(read_std^2 + write_std^2)
+disk_util_pct           : (disk_read_mean + disk_write_mean) / DISK_IO_MAX_BANDWIDTH * 100%
+                          if DISK_IO_MAX_BANDWIDTH > 0, else raw total MB/s
+disk_util_std           : sqrt(read_std^2 + write_std^2) / DISK_IO_MAX_BANDWIDTH * 100%
+                          (or raw total std if bandwidth not set)
 mem_used_mean           : mean memory used (GiB)  — system-wide, from /proc/meminfo
 mem_used_std
 mem_avail_mean          : mean memory available (GiB)
@@ -308,10 +343,11 @@ import sys, os, re, glob
 import pandas as pd
 import numpy as np
 
-sweep_dir      = sys.argv[1]
-output_csv     = sys.argv[2]
-warmup_skip    = int(sys.argv[3])
-workload_label = sys.argv[4]
+sweep_dir             = sys.argv[1]
+output_csv            = sys.argv[2]
+warmup_skip           = int(sys.argv[3])
+workload_label        = sys.argv[4]
+disk_io_max_bandwidth = float(sys.argv[5]) if len(sys.argv) > 5 else 0.0
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -408,6 +444,20 @@ for rd in run_dirs:
     disk_rs = sys_stats['disk_read_std']
     disk_ws = sys_stats['disk_write_std']
 
+    disk_total      = (disk_r  if not np.isnan(disk_r)  else 0) \
+                    + (disk_w  if not np.isnan(disk_w)  else 0)
+    disk_total_std  = np.sqrt(
+                        (disk_rs**2 if not np.isnan(disk_rs) else 0) +
+                        (disk_ws**2 if not np.isnan(disk_ws) else 0))
+
+    if disk_io_max_bandwidth > 0:
+        disk_util_pct = disk_total     / disk_io_max_bandwidth * 100
+        disk_util_std = disk_total_std / disk_io_max_bandwidth * 100
+    else:
+        # No ceiling provided — store raw MB/s so the column is still useful.
+        disk_util_pct = disk_total
+        disk_util_std = disk_total_std
+
     # Block cache hit rate — nan if stats were not printed.
     if not (np.isnan(cache_hits) or np.isnan(cache_misses)):
         total_accesses = cache_hits + cache_misses
@@ -426,11 +476,8 @@ for rd in run_dirs:
         disk_read_std        = disk_rs,
         disk_write_mean      = disk_w,
         disk_write_std       = disk_ws,
-        disk_total_mean      = (disk_r  if not np.isnan(disk_r)  else 0)
-                             + (disk_w  if not np.isnan(disk_w)  else 0),
-        disk_total_std       = np.sqrt(
-                               (disk_rs**2 if not np.isnan(disk_rs) else 0) +
-                               (disk_ws**2 if not np.isnan(disk_ws) else 0)),
+        disk_util_pct        = disk_util_pct,
+        disk_util_std        = disk_util_std,
         mem_used_mean        = sys_stats['mem_used_mean'],
         mem_used_std         = sys_stats['mem_used_std'],
         mem_avail_mean       = sys_stats['mem_avail_mean'],
@@ -447,7 +494,7 @@ if not rows:
 df = pd.DataFrame(rows).sort_values('threads').reset_index(drop=True)
 df.to_csv(output_csv, index=False)
 print(f'summary.csv written → {output_csv}')
-print(df[['threads', 'xput_mean', 'cpu_active_mean', 'disk_total_mean',
+print(df[['threads', 'xput_mean', 'cpu_active_mean', 'disk_util_pct',
           'mem_used_pct_mean', 'block_cache_hit_rate']].to_string(index=False))
 PYSUM
 }
@@ -460,7 +507,8 @@ run_summarizer() {
         "$OUTPUT_DIR/sweep" \
         "$OUTPUT_DIR/summary.csv" \
         "$WARMUP_SKIP_S" \
-        "$WORKLOAD_LABEL"
+        "$WORKLOAD_LABEL" \
+        "$DISK_IO_MAX_BANDWIDTH"
     log "  → $OUTPUT_DIR/summary.csv"
 }
 

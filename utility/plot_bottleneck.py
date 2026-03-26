@@ -44,7 +44,7 @@ Expected CSV columns (produced by saturation_sweep.sh)
 workload_label, threads,
 xput_mean, xput_std,
 cpu_active_mean, cpu_active_std,
-disk_total_mean, disk_total_std,
+disk_util_pct, disk_util_std,
 disk_read_mean, disk_read_std, disk_write_mean, disk_write_std,
 mem_used_pct_mean,
 block_cache_hits, block_cache_misses, block_cache_hit_rate
@@ -124,7 +124,7 @@ def load_csv(spec: str):
     # Ensure all expected columns exist.
     for col in ['xput_mean', 'xput_std',
                 'cpu_active_mean', 'cpu_active_std',
-                'disk_total_mean', 'disk_total_std',
+                'disk_util_pct', 'disk_util_std',
                 'disk_read_mean', 'disk_read_std',
                 'disk_write_mean', 'disk_write_std',
                 'mem_used_pct_mean',
@@ -230,8 +230,8 @@ def build_figure(datasets, args):
                    color, label, lw, ms, args.no_bands)
         _knee_vline(ax_xput, knee, color)
 
-        # Disk I/O — total bandwidth (R+W)
-        _plot_line(ax_disk, x, df['disk_total_mean'], df['disk_total_std'],
+        # Disk I/O — utilization (total R+W normalized to device ceiling, or raw MB/s)
+        _plot_line(ax_disk, x, df['disk_util_pct'], df['disk_util_std'],
                    color, label, lw, ms, args.no_bands)
         _knee_vline(ax_disk, knee, color)
 
@@ -264,11 +264,21 @@ def build_figure(datasets, args):
     ax_xput.set_ylabel('ops / sec')
     ax_xput.set_ylim(bottom=0)
 
-    # Disk I/O
-    ax_disk.set_title('Disk I/O (read + write)', fontweight='bold')
-    ax_disk.set_ylabel('MB / sec')
+    # Disk I/O — detect whether values are utilization fractions or raw MB/s.
+    # If any dataset has disk_util_pct <= 1.05 it was normalized; otherwise raw.
+    _disk_normalized = any(
+        df['disk_util_pct'].dropna().max() <= 1.05
+        for _, df in datasets
+        if df['disk_util_pct'].notna().any()
+    )
+    ax_disk.set_title('Disk I/O utilization' if _disk_normalized else 'Disk I/O (read + write)',
+                      fontweight='bold')
+    ax_disk.set_ylabel('Utilization  (0 – 1)' if _disk_normalized else 'MB / sec')
     ax_disk.set_ylim(bottom=0)
-    if args.disk_ceiling > 0:
+    if _disk_normalized:
+        ax_disk.set_ylim(0, 1.05)
+        ax_disk.axhline(1.0, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
+    elif args.disk_ceiling > 0:
         ax_disk.axhline(args.disk_ceiling, color='black', linestyle=':',
                         linewidth=0.9, alpha=0.7,
                         label=f'Device ceiling ({args.disk_ceiling:,.0f} MB/s)')
