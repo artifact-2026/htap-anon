@@ -200,21 +200,16 @@ stop_monitor() {
 }
 
 # ── Spec builder ──────────────────────────────────────────────────────────────
-# Copies the user's workload spec and appends infra overrides so they win over
-# anything the spec file might set for fieldcount, fieldlength, etc.
+# Always makes a fresh temp copy of WORKLOAD_SPEC so that load_db's
+# "rm -f $spec" never deletes the original file.  fieldcount, fieldlength,
+# recordcount, and operationcount come entirely from the spec itself.
+# Callers may append extra key=value pairs as positional arguments
+# (e.g. create_spec "metrics_output=/path/to/file").
 
 create_spec() {
-    # If no extra key=value pairs are passed, just use WORKLOAD_SPEC directly.
-    if [ "$#" -eq 0 ]; then
-        echo "$WORKLOAD_SPEC"
-        return
-    fi
-
-    # Otherwise, make a temp copy of WORKLOAD_SPEC and append only the extras.
     TMPSPEC=$(mktemp /tmp/sat_spec_XXXXX.spec)
     cp "$WORKLOAD_SPEC" "$TMPSPEC"
     printf '\n' >> "$TMPSPEC"
-    
     for kv in "$@"; do printf '%s\n' "$kv" >> "$TMPSPEC"; done
     echo "$TMPSPEC"
 }
@@ -223,7 +218,8 @@ create_spec() {
 
 load_db() {
     local dbpath="$1"
-    log "Loading $recordcount records into $dbpath ..."
+    local rc; rc=$(grep -E '^recordcount\s*=' "$WORKLOAD_SPEC" | tail -1 | cut -d= -f2 | tr -d ' ')
+    log "Loading ${rc:-unknown} records into $dbpath ..."
     local spec; spec=$(create_spec)
     "$BINARY" \
         -db baseline -dbpath "$dbpath" -P "$spec" \
