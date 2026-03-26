@@ -42,7 +42,7 @@ void Init(utils::Properties &props);
 void PrintInfo(utils::Properties &props);
 void write_csv_row(const std::vector<double>& rr, const std::string& filename);
 void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls);
-void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls);
+void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int run_time, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls);
 
 struct run_result DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
     bool is_loading) {
@@ -74,12 +74,16 @@ struct run_result DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const i
   return rr;
 }
 
-struct run_result DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int throughputType, int runTime) {
+// DelegateForThroughput: time-bounded throughput measurement that follows the
+// workload spec's operation mix (read/update/insert/scan/rmw proportions) rather
+// than issuing only reads or only inserts.  The throughputtype parameter has been
+// removed; call client.DoTransaction() to honour NextOperation().
+struct run_result DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, int runTime) {
   ycsbc::Client client(*db, *wl);
   struct run_result td_oks(0, runTime, runTime);
 
   int oks = 0;
-  uint64_t exectime = 0.0;
+  uint64_t exectime = 0;
   int i = 0;
   std::chrono::time_point start = std::chrono::steady_clock::now();
   std::chrono::time_point step = start;
@@ -88,8 +92,7 @@ struct run_result DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, 
   while (i < runTime) {
     if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(1)) {
       td_oks.xput[i] = oks;
-      td_oks.exec_time[i] = double(exectime)/double(oks);
-      //printf("Time: %d, Xput: %d\n", i, oks);
+      td_oks.exec_time[i] = (oks > 0) ? double(exectime)/double(oks) : 0.0;
       i += 1;
       oks = 0;
       exectime = 0;
@@ -97,11 +100,8 @@ struct run_result DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, 
     }
 
     exec_start = get_now_micros();
-    if (throughputType == 1) {
-      oks += client.DoRead();
-    } else if (throughputType == 2) {
-      oks += client.DoInsert();
-    }
+    // Follow the workload spec's operation mix (read/update/insert/scan/rmw).
+    oks += client.DoTransaction();
     exectime += (get_now_micros() - exec_start);
   }
   return td_oks;
@@ -126,7 +126,6 @@ int main( const int argc, const char *argv[]) {
   const int num_threads = stoi(props.GetProperty("threadcount", "1"));
   const bool print_stats = utils::StrToBool(props["dbstatistics"]);
   const bool wait_for_balance = utils::StrToBool(props["dbwaitforbalance"]);
-  const int throughput_type = stoi(props.GetProperty("throughputtype", "1"));
   const int run_time = stoi(props.GetProperty("runtime", "600"));
   const int total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
 
@@ -159,7 +158,7 @@ int main( const int argc, const char *argv[]) {
   }
 
   if( throughput ) {
-    runXput(props, num_threads, db, throughput_type, run_time, print_stats, wls);
+    runXput(props, num_threads, db, run_time, print_stats, wls);
   }
 
   if( run ) {
@@ -384,21 +383,13 @@ void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool prin
   }
 }
 
-void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int throughput_type, int run_time, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls) {
+void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int run_time, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls) {
     vector<future<struct run_result>> throughput_ops;
-
-    /*const std::string filename = "throughput_data.csv";
-    std::ofstream file(filename, std::ios::app);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open file: " << filename << std::endl;
-        return;
-    }
-    file << "Time (s),Throughput (ops/s) for num_threads = " << num_threads << std::endl;*/
 
     for (int i = 0; i < num_threads; ++i) {
       throughput_ops.emplace_back(std::async(std::launch::async,
-        [&, i] {                    // <-- capture wls by reference (&), not by value
-          return DelegateForThroughput(db, wls[i].get(), throughput_type, run_time);
+        [&, i] {
+          return DelegateForThroughput(db, wls[i].get(), run_time);
         }));
     }
     assert((int)throughput_ops.size() == num_threads);
@@ -537,14 +528,6 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("levels", argv[argindex]);
       argindex++;
-    } else if (strcmp(argv[argindex], "-throughputtype") == 0) {
-      argindex++;
-      if (argindex >= argc) {
-        UsageMessage(argv[0]);
-        exit(0);
-      }
-      props.SetProperty("throughputtype", argv[argindex]);
-      argindex++;  
     } else if (strcmp(argv[argindex], "-db") == 0) {
       argindex++;
       if (argindex >= argc) {
@@ -718,7 +701,6 @@ void Init(utils::Properties &props){
   props.SetProperty("runtime", "600");
   props.SetProperty("threadcount","1");
   props.SetProperty("throughput","false");
-  props.SetProperty("throughputtype", "1");
   props.SetProperty("fieldcount","0");
   props.SetProperty("levels", "7");
   props.SetProperty("dboption","0");

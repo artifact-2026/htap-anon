@@ -220,8 +220,8 @@ namespace ycsbc {
         // L0→L1 compaction immediately triggers an L1→L2 cascade, negating
         // the benefit of the larger write buffer.
         options_.max_bytes_for_level_base = 1ull * 1024 * 1024 * 1024;
-        options_.use_direct_reads = true;
-        options_.use_direct_io_for_flush_and_compaction = true;
+        options_.use_direct_reads = false;
+        options_.use_direct_io_for_flush_and_compaction = false;
 
         // Enable per-compaction I/O timing so CompactionJobStats.file_write_nanos
         // and related fields are populated (used by CompactionMetricsListener).
