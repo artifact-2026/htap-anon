@@ -89,7 +89,7 @@ TRANSFORMS_PER_WORKER="${TRANSFORMS_PER_WORKER:-1000}"
 
 # ── Experiment timing ─────────────────────────────────────────────────────────
 
-RUNTIME_SECS="${RUNTIME_SECS:-120}"
+RUNTIME_SECS="${RUNTIME_SECS:-300}"
 RECORD_COUNT="${RECORD_COUNT:-5000000}"
 DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
 
@@ -365,15 +365,17 @@ EOF
 # ── Load phase ────────────────────────────────────────────────────────────────
 
 load_db() {
-    local dbpath="$1" spec="$2"
-    log "Loading $RECORD_COUNT records into $dbpath ..."
+    local dbpath="$1"
+    local rc; rc=$(grep -E '^recordcount\s*=' "$WORKLOAD_SPEC" | tail -1 | cut -d= -f2 | tr -d ' ')
+    log "Loading ${rc:-unknown} records into $dbpath ..."
+    local spec; spec=$(create_spec)
     "$BINARY" \
         -db baseline -dbpath "$dbpath" -P "$spec" \
         -bootstrap true -threads 8 \
         -load true -run false -throughput false \
-        -throughputtype 2 -runtime 0 \
-        -levels 6 -table baseline \
-        2>&1 | tee "$(dirname "$dbpath")/load.log"
+        -runtime 0 \
+        -levels 7 -table baseline \
+        2>&1 | tee "$OUTPUT_DIR/load2.log"
     log "Load complete."
 }
 
@@ -403,8 +405,8 @@ run_one() {
         -db baseline -dbpath "$dbpath" -P "$spec" \
         -bootstrap false -threads "$KNEE_THREADS" \
         -load false -run false -throughput true \
-        -throughputtype 2 -runtime "$RUNTIME_SECS" \
-        -levels 6 -table baseline \
+        -runtime "$RUNTIME_SECS" \
+        -levels 7 -table baseline \
         2>&1 | tee "$log_file"
 
     stop_monitor

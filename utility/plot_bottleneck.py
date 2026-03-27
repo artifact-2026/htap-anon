@@ -2,10 +2,10 @@
 """
 plot_bottleneck.py — RocksDB workload bottleneck characterization figure
 
-Produces a 2×2 figure where each panel shows one metric (throughput, disk I/O,
-CPU, block-cache hit rate) and each workload is a distinct colored line.  All
-panels share the same X-axis (client thread count).  A single shared legend
-identifies the workloads by color.
+Produces a 4×1 figure (four panels stacked vertically) where each panel shows
+one metric (throughput, disk I/O, CPU, block-cache hit rate) and each workload
+is a distinct colored line.  All panels share the same X-axis (client thread
+count).  A single shared legend identifies the workloads by color.
 
 Usage
 -----
@@ -35,7 +35,7 @@ Options
                      (useful when sweeps used different thread sets).
 --width  INCHES      Figure width.  Default: 7.0 (double-column IEEE/ACM).
                      Use 3.5 for single-column.
---height INCHES      Figure height.  Default: auto (~0.9 × width for 2×2).
+--height INCHES      Figure height.  Default: auto (~2.0 × width for 4×1).
 --dpi    INT         Raster DPI (ignored for PDF/SVG).  Default: 300.
 --font-size INT      Base font size.  Default: 8.
 
@@ -46,8 +46,9 @@ xput_mean, xput_std,
 cpu_active_mean, cpu_active_std,
 disk_util_pct, disk_util_std,
 disk_read_mean, disk_read_std, disk_write_mean, disk_write_std,
-mem_used_pct_mean,
-block_cache_hits, block_cache_misses, block_cache_hit_rate
+mem_used_pct_mean, mem_used_pct_std,
+block_cache_hits, block_cache_misses, block_cache_hit_rate,
+block_cache_hit_rate_std
 """
 
 import argparse
@@ -80,7 +81,7 @@ _PALETTE = [
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description='Plot RocksDB workload bottleneck characterization (2×2 figure).')
+        description='Plot RocksDB workload bottleneck characterization (4×1 figure).')
     p.add_argument('--csv', metavar='[LABEL:]PATH', action='append', required=True,
                    dest='csvs',
                    help='Workload summary CSV. May be repeated.')
@@ -94,7 +95,7 @@ def parse_args():
                    help='Restrict X-axis to thread counts common to all workloads.')
     p.add_argument('--width',  type=float, default=7.0,  metavar='INCHES')
     p.add_argument('--height', type=float, default=None, metavar='INCHES',
-                   help='Figure height. Default: 0.88 × width.')
+                   help='Figure height. Default: 2.0 × width.')
     p.add_argument('--dpi',       type=int, default=300)
     p.add_argument('--font-size', type=int, default=8, dest='font_size')
     return p.parse_args()
@@ -127,8 +128,9 @@ def load_csv(spec: str):
                 'disk_util_pct', 'disk_util_std',
                 'disk_read_mean', 'disk_read_std',
                 'disk_write_mean', 'disk_write_std',
-                'mem_used_pct_mean',
-                'block_cache_hits', 'block_cache_misses', 'block_cache_hit_rate']:
+                'mem_used_pct_mean', 'mem_used_pct_std',
+                'block_cache_hits', 'block_cache_misses',
+                'block_cache_hit_rate', 'block_cache_hit_rate_std']:
         if col not in df.columns:
             df[col] = np.nan
 
@@ -145,22 +147,27 @@ def find_knee(df: pd.DataFrame):
 # ── Drawing helpers ───────────────────────────────────────────────────────────
 
 def _plot_line(ax, x, mean, std, color, label, lw, ms, no_bands):
-    """Plot a mean line with either a shaded std band or thin error bars."""
+    """Plot a mean line with std-dev error bars at every point.
+
+    Default (no_bands=False): draws the mean line + markers, vertical error-bar
+    whiskers with caps at every data point, *and* a translucent ±1σ shaded band.
+    With --no-bands: shaded band is omitted; only the error bars are shown.
+    """
     mean = np.asarray(mean, dtype=float)
     std  = np.asarray(std,  dtype=float)
     std  = np.where(np.isnan(std), 0, std)
 
-    if no_bands:
-        ax.errorbar(x, mean, yerr=std,
-                    color=color, linewidth=lw, markersize=ms,
-                    marker='o', linestyle='-',
-                    capsize=2, capthick=0.6, elinewidth=0.6,
-                    label=label)
-    else:
-        ax.plot(x, mean, color=color, linewidth=lw, markersize=ms,
-                marker='o', linestyle='-', label=label)
+    # Always draw the mean line with markers and ±1σ vertical whiskers.
+    ax.errorbar(x, mean, yerr=std,
+                color=color, linewidth=lw, markersize=ms,
+                marker='o', linestyle='-',
+                capsize=3, capthick=0.8, elinewidth=0.8,
+                label=label, zorder=3)
+
+    # Shaded ±1σ band (skipped with --no-bands).
+    if not no_bands:
         ax.fill_between(x, mean - std, mean + std,
-                        color=color, alpha=0.12, linewidth=0)
+                        color=color, alpha=0.12, linewidth=0, zorder=2)
 
 def _knee_vline(ax, knee, color):
     if knee is not None:
@@ -174,7 +181,7 @@ def build_figure(datasets, args):
     lw    = 1.5     # line width
     ms    = 4       # marker size
     fsz   = args.font_size
-    fig_h = args.height if args.height else round(args.width * 0.88, 2)
+    fig_h = args.height if args.height else round(args.width * 1.6, 2)
 
     plt.rcParams.update({
         'font.size':         fsz,
@@ -191,12 +198,12 @@ def build_figure(datasets, args):
     })
 
     fig = plt.figure(figsize=(args.width, fig_h))
-    gs  = gridspec.GridSpec(2, 2, figure=fig, hspace=0.42, wspace=0.32)
+    gs  = gridspec.GridSpec(4, 1, figure=fig, hspace=0.25, height_ratios=[1, 1, 1, 0.6])
 
-    ax_xput = fig.add_subplot(gs[0, 0])
-    ax_disk = fig.add_subplot(gs[0, 1])
-    ax_cpu  = fig.add_subplot(gs[1, 0])
-    ax_mem  = fig.add_subplot(gs[1, 1])
+    ax_xput = fig.add_subplot(gs[0])
+    ax_disk = fig.add_subplot(gs[1], sharex=ax_xput)
+    ax_cpu  = fig.add_subplot(gs[2], sharex=ax_xput)
+    ax_mem  = fig.add_subplot(gs[3], sharex=ax_xput)
 
     # ── Determine X-axis domain ───────────────────────────────────────────────
     if args.normalize_x:
@@ -207,7 +214,7 @@ def build_figure(datasets, args):
         x_domain = sorted(common) if common else []
     else:
         all_threads = sorted({int(t) for _, df in datasets
-                               for t in df['threads'].dropna()})
+                               for t in df['threads'].iloc[:18].dropna()})
         x_domain = all_threads
 
     # ── Per-workload lines ────────────────────────────────────────────────────
@@ -243,12 +250,12 @@ def build_figure(datasets, args):
         # Block cache hit rate (memory panel)
         if df['block_cache_hit_rate'].notna().any():
             _plot_line(ax_mem, x, df['block_cache_hit_rate'],
-                       pd.Series(np.zeros(len(df))),   # no std — cumulative counter
+                       df['block_cache_hit_rate_std'],   # std if available, else NaN→0
                        color, label, lw, ms, args.no_bands)
         elif df['mem_used_pct_mean'].notna().any():
             # Fallback: show RAM used % scaled to 0–1 for a comparable axis.
-            _plot_line(ax_mem, x, df['mem_used_pct_mean'] / 100,
-                       pd.Series(np.zeros(len(df))),
+            _plot_line(ax_mem, x, df['mem_used_pct_mean'],
+                       df['mem_used_pct_std'],
                        color, label, lw, ms, args.no_bands)
         _knee_vline(ax_mem, knee, color)
 
@@ -267,7 +274,7 @@ def build_figure(datasets, args):
     # Disk I/O — detect whether values are utilization fractions or raw MB/s.
     # If any dataset has disk_util_pct <= 1.05 it was normalized; otherwise raw.
     _disk_normalized = any(
-        df['disk_util_pct'].dropna().max() <= 1.05
+        df['disk_util_pct'].dropna().max() <= 105
         for _, df in datasets
         if df['disk_util_pct'].notna().any()
     )
@@ -276,7 +283,7 @@ def build_figure(datasets, args):
     ax_disk.set_ylabel('Utilization  (0 – 1)' if _disk_normalized else 'MB / sec')
     ax_disk.set_ylim(bottom=0)
     if _disk_normalized:
-        ax_disk.set_ylim(0, 1.05)
+        ax_disk.set_ylim(0, 105)
         ax_disk.axhline(1.0, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
     elif args.disk_ceiling > 0:
         ax_disk.axhline(args.disk_ceiling, color='black', linestyle=':',
@@ -299,8 +306,8 @@ def build_figure(datasets, args):
         ax_mem.axhline(1.0, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
     else:
         ax_mem.set_title('Memory used %  (RAM)', fontweight='bold')
-        ax_mem.set_ylabel('RAM used %  (scaled ÷ 100)')
-        ax_mem.set_ylim(0, 1.05)
+        ax_mem.set_ylabel('RAM used % ')
+        ax_mem.set_ylim(0, 12)
         ax_mem.axhline(1.0, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
 
     # ── X-axis ticks & labels ─────────────────────────────────────────────────
@@ -308,12 +315,12 @@ def build_figure(datasets, args):
         ax.set_xticks(x_domain)
         ax.tick_params(axis='x', labelrotation=45 if len(x_domain) > 8 else 0)
 
-    ax_cpu.set_xlabel('Client threads')
-    ax_mem.set_xlabel('Client threads')
-
-    # Hide x tick labels on top row to reduce clutter.
-    plt.setp(ax_xput.get_xticklabels(), visible=False)
-    plt.setp(ax_disk.get_xticklabels(), visible=False)
+    # Only the bottom panel gets an x-axis label; the others hide tick labels
+    # (sharex keeps the ticks themselves aligned).
+    ax_mem.set_xlabel('Client threads', fontsize=10)
+    for ax in (ax_xput, ax_disk, ax_cpu):
+        plt.setp(ax.get_xticklabels(), visible=False)
+    ax_mem.tick_params(axis='x', labelsize=9)
 
     # ── Knee annotation note ──────────────────────────────────────────────────
     # Add a small "⊳ knee" label only in the throughput panel to avoid clutter.
@@ -346,14 +353,14 @@ def build_figure(datasets, args):
     fig.legend(handles=legend_handles,
                loc='lower center',
                ncol=min(n_wl + 1, 5),
-               fontsize=fsz - 1,
+               fontsize=fsz + 1,
                framealpha=0.85,
                borderpad=0.5,
                columnspacing=1.0,
-               bbox_to_anchor=(0.5, -0.04))
+               bbox_to_anchor=(0.5, 0.02))
 
     fig.suptitle('RocksDB Workload Bottleneck Characterization',
-                 fontsize=fsz + 1, fontweight='bold', y=1.01)
+                 fontsize=fsz + 1, fontweight='bold', y=0.92)
 
     return fig
 
@@ -365,6 +372,7 @@ def main():
     datasets = []
     for spec in args.csvs:
         label, df = load_csv(spec)
+        df = df.iloc[:-2].copy()
         datasets.append((label, df))
         print(f'Loaded: {label!r}  ({len(df)} thread-count points)')
 
