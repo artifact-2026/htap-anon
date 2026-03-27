@@ -231,6 +231,7 @@ namespace ycsbc {
         // tracked. The same shared_ptr is passed to CompactionMetricsListener.
         dbstats_ = rocksdb::CreateDBStatistics();
         options_.statistics = dbstats_;
+        options_.compression = rocksdb::kNoCompression;
 
         rocksdb::BlockBasedTableOptions table_options;
         table_options.block_cache = rocksdb::NewLRUCache(512 * 1024 * 1024);
