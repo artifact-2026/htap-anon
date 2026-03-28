@@ -9,7 +9,7 @@
 #
 # Usage:
 #   bash ../utility/calibrate_transform_rate.sh <phase1_output_dir> \
-#        [--compaction-threads N]  [--field-count N]  [--field-length N]
+#        [--compaction-threads N] [--workload-spec <spec>]
 #
 # The --compaction-threads value must match the max_background_compactions
 # setting used in the Phase 1 RocksDB instance.  If you did not set it
@@ -29,20 +29,20 @@ COMPACTION_THREADS=1       # default: RocksDB default (max_background_jobs/2 = 1
 FIELD_COUNT=16             # must match saturation_sweep.sh defaults
 FIELD_LENGTH=256
 KEY_LENGTH=16
+WORKLOAD_SPEC=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --compaction-threads) COMPACTION_THREADS="$2"; shift 2 ;;
-        --field-count)        FIELD_COUNT="$2";        shift 2 ;;
-        --field-length)       FIELD_LENGTH="$2";       shift 2 ;;
         --key-length)         KEY_LENGTH="$2";         shift 2 ;;
+        --workload-spec)      WORKLOAD_SPEC="$2";      shift 2 ;;
         -*)  echo "Unknown option: $1" >&2; exit 1 ;;
         *)   PHASE1_DIR="$1"; shift ;;
     esac
 done
 
 [[ -n "$PHASE1_DIR" ]] || {
-    echo "Usage: $0 <phase1_output_dir> [--compaction-threads N] [--field-count N] [--field-length N]"
+    echo "Usage: $0 <phase1_output_dir> [--compaction-threads N] [--workload-spec <spec>]"
     echo ""
     echo "  phase1_output_dir   directory written by saturation_sweep.sh"
     echo "                      (contains plots/saturation_summary.csv)"
@@ -62,7 +62,7 @@ ENV_OUT="$PHASE1_DIR/phase2_config.env"
 # ── Embedded Python analysis ──────────────────────────────────────────────────
 
 python3 - "$SUMMARY_CSV" "$ENV_OUT" \
-          "$COMPACTION_THREADS" "$FIELD_COUNT" "$FIELD_LENGTH" "$KEY_LENGTH" << 'PYEOF'
+          "$COMPACTION_THREADS" "$WORKLOAD_SPEC" << 'PYEOF'
 import sys, math
 import pandas as pd
 import numpy as np
@@ -70,14 +70,29 @@ import numpy as np
 summary_csv       = sys.argv[1]
 env_out           = sys.argv[2]
 compaction_threads= int(sys.argv[3])
-field_count       = int(sys.argv[4])
-field_length      = int(sys.argv[5])
-key_length        = int(sys.argv[6])
+workload_spec     = sys.argv[4]
 
+def get_spec_value(path: str, key: str) -> str | None:
+    value = None
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+
+            lhs, rhs = line.split("=", 1)
+            if lhs.strip() == key:
+                value = rhs.strip()   # keeps the last matching entry
+    return value
+
+field_count = int(get_spec_value(workload_spec, "fieldcount"))
+field_length = int(get_spec_value(workload_spec, "fieldlength"))
+key_length   = int(get_spec_value(workload_spec, "keylength"))
 record_size = field_count * field_length + key_length   # bytes per record
 
 # ── Load summary and find knee ────────────────────────────────────────────────
-
 df = pd.read_csv(summary_csv)
 df = df.sort_values('threads').reset_index(drop=True)
 
@@ -166,11 +181,6 @@ read_low_warning = disk_read_mbs < 0.5 * user_write_mbs
 max_workers = max(16, int(math.ceil(4.0 * (100.0 / max(1, cpu_active_pct - 50)))))
 max_workers = min(max_workers, 32)   # cap for sanity
 
-# Build a set of worker counts: 0, 1, 2, then doubles up to max, then a couple extra.
-wcs = sorted(set([0, 1, 2] + [2**i for i in range(1, 6) if 2**i <= max_workers]
-                 + [max_workers, max_workers + 4]))
-sweep_str = " ".join(str(w) for w in wcs)
-
 # ── Print derivation ──────────────────────────────────────────────────────────
 
 SEP = "─" * 62
@@ -225,9 +235,6 @@ print(f"  │  (conservative lower-bound; each worker ≈ one           │")
 print(f"  │  compaction thread's worth of record processing)         │")
 print(f"  └─────────────────────────────────────────────────────────┘")
 print()
-print(f"  Suggested TRANSFORM_WORKER_COUNTS sweep:")
-print(f"    \"{sweep_str}\"")
-print()
 print(f"  Written to: {env_out}")
 print(f"  Source before running cpu_slack_sweep.sh:")
 print(f"    source {env_out}")
@@ -245,10 +252,7 @@ with open(env_out, 'w') as f:
     f.write(f"# Knee:\n")
     f.write(f"export KNEE_THREADS={knee_threads}\n")
     f.write(f"export KNEE_XPUT={knee_xput:.0f}\n")
-    f.write("#\n")
-    f.write(f"# Value layout (must match Phase 1):\n")
-    f.write(f"export FIELD_COUNT={field_count}\n")
-    f.write(f"export FIELD_LENGTH={field_length}\n")
+    f.write(f"export WORKLOAD_SPEC={workload_spec}\n")
     f.write("#\n")
     f.write(f"# Transform rate calibration:\n")
     f.write(f"#   user_write_mbs         = {user_write_mbs:.1f} MB/s\n")
@@ -258,8 +262,5 @@ with open(env_out, 'w') as f:
     f.write(f"#   write_side_lower_bound = {compaction_write_lower_mbs:.1f} MB/s  (disk_write - 2*user_write)\n")
     f.write(f"#   per_thread_rate        = {comp_per_thread:.0f} records/s/thread (upper bound)\n")
     f.write(f"export TRANSFORMS_PER_WORKER={recommended_rate}\n")
-    f.write("#\n")
-    f.write(f"# Suggested sweep (covers 0× to ~{max_workers} workers):\n")
-    f.write(f'export TRANSFORM_WORKER_COUNTS="{sweep_str}"\n')
 
 PYEOF

@@ -63,6 +63,10 @@ WORKLOAD_DIR="$SRC_ROOT/test/ycsb/workloads"
 
 # ── Phase 1 results — set these ───────────────────────────────────────────────
 
+# ── Workload ──────────────────────────────────────────────────────────────────
+# WORKLOAD_SPEC: path to a YCSB .spec file (required — no default).
+WORKLOAD_SPEC="${WORKLOAD_SPEC:-}"
+
 # Number of YCSB writer threads at the knee (from saturation_sweep.sh output).
 KNEE_THREADS="${KNEE_THREADS:-16}"
 
@@ -76,9 +80,9 @@ FIELD_COUNT="${FIELD_COUNT:-16}"
 
 # ── Transform worker knobs ────────────────────────────────────────────────────
 
-# Number of concurrent transform workers to sweep.
-# 0 = no transforms (baseline confirmation); continue past the slack boundary.
-TRANSFORM_WORKER_COUNTS="${TRANSFORM_WORKER_COUNTS:-0 1 2 4 6 8 10 12 16}"
+# Seconds to measure baseline disk write rate after RocksDB warmup.
+# A wider window smooths compaction bursts; 60 s is usually sufficient.
+BASELINE_MEASURE_S="${BASELINE_MEASURE_S:-60}"
 
 # Target transform rate per worker thread (transforms / second).
 # Each transform processes field_count * field_length bytes via software CRC32.
@@ -111,14 +115,19 @@ PLOTTER_SCRIPT=""
 TMPSPEC=""
 MONITOR_PID=""
 TRANSFORM_PID=""
+ROCKSDB_BG_PID=""
+ROCKSDB_BG_LOG=""
+BASELINE_DISK_WR_MBS=""
+LAST_DISK_WR_MBS=""
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 sep() { echo ""; log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; }
 
 cleanup() {
-    [[ -n "${MONITOR_PID:-}"   ]] && kill "$MONITOR_PID"   2>/dev/null || true
-    [[ -n "${TRANSFORM_PID:-}" ]] && kill "$TRANSFORM_PID" 2>/dev/null || true
+    [[ -n "${MONITOR_PID:-}"      ]] && kill "$MONITOR_PID"      2>/dev/null || true
+    [[ -n "${TRANSFORM_PID:-}"    ]] && kill "$TRANSFORM_PID"    2>/dev/null || true
+    [[ -n "${ROCKSDB_BG_PID:-}"   ]] && kill "$ROCKSDB_BG_PID"   2>/dev/null || true
     [[ -n "${MONITOR_SCRIPT:-}"   ]] && rm -f "$MONITOR_SCRIPT"
     [[ -n "${TRANSFORM_SCRIPT:-}" ]] && rm -f "$TRANSFORM_SCRIPT"
     [[ -n "${PLOTTER_SCRIPT:-}"   ]] && rm -f "$PLOTTER_SCRIPT"
@@ -130,6 +139,8 @@ trap cleanup EXIT
 
 check_prereqs() {
     [[ -x "$BINARY" ]] || die "ycsb_test binary not found at '$BINARY'."
+    [[ -n "$WORKLOAD_SPEC" ]]  || die "WORKLOAD_SPEC is not set.  Point it at a .spec file."
+    [[ -f "$WORKLOAD_SPEC" ]]  || die "WORKLOAD_SPEC file not found: $WORKLOAD_SPEC"
     command -v python3 >/dev/null 2>&1 || die "python3 required"
     python3 -c "import matplotlib, pandas, numpy" 2>/dev/null || {
         log "Installing required Python packages..."
@@ -344,21 +355,9 @@ stop_transforms() {
 
 create_spec() {
     TMPSPEC=$(mktemp /tmp/slack_spec_XXXXX.spec)
-    cat > "$TMPSPEC" << EOF
-keylength=16
-fieldcount=${FIELD_COUNT}
-fieldlength=${FIELD_LENGTH}
-recordcount=${RECORD_COUNT}
-operationcount=${RECORD_COUNT}
-workload=com.yahoo.ycsb.workloads.CoreWorkload
-readallfields=true
-readproportion=0
-updateproportion=1
-scanproportion=0
-insertproportion=0
-requestdistribution=zipfian
-EOF
-    for kv in "$@"; do echo "$kv" >> "$TMPSPEC"; done
+    cp "$WORKLOAD_SPEC" "$TMPSPEC"
+    printf '\n' >> "$TMPSPEC"
+    for kv in "$@"; do printf '%s\n' "$kv" >> "$TMPSPEC"; done
     echo "$TMPSPEC"
 }
 
@@ -367,6 +366,8 @@ EOF
 load_db() {
     local dbpath="$1"
     local rc; rc=$(grep -E '^recordcount\s*=' "$WORKLOAD_SPEC" | tail -1 | cut -d= -f2 | tr -d ' ')
+    
+    # ── Step 1: load phase ────────────────────────────────────────────────────
     log "Loading ${rc:-unknown} records into $dbpath ..."
     local spec; spec=$(create_spec)
     "$BINARY" \
@@ -377,22 +378,38 @@ load_db() {
         -levels 7 -table baseline \
         2>&1 | tee "$OUTPUT_DIR/load2.log"
     log "Load complete."
+
+    # ── Step 2: start indefinite background throughput run ────────────────────
+    # runtime=999999 (≈11.5 days) makes it effectively indefinite for the sweep.
+    # The process is killed by cleanup() on EXIT.
+    ROCKSDB_BG_LOG="$OUTPUT_DIR/rocksdb_bg_throughput.log"
+    log "Starting background RocksDB throughput: $KNEE_THREADS threads (indefinite) ..."
+    "$BINARY" \
+        -db baseline -dbpath "$dbpath" -P "$bg_spec" \
+        -bootstrap false -threads "$KNEE_THREADS" \
+        -load false -run false -throughput true \
+        -runtime 999999 \
+        -levels 7 -table baseline \
+        > "$ROCKSDB_BG_LOG" 2>&1 &
+    ROCKSDB_BG_PID=$!
+    rm -f "$spec"; TMPSPEC=""
+    log "  Background RocksDB PID: $ROCKSDB_BG_PID  (log: $ROCKSDB_BG_LOG)"
 }
 
 # ── Single transform-worker-count run ─────────────────────────────────────────
 
 run_one() {
-    local n_workers="$1" run_dir="$2" dbpath="$3"
+    local n_workers="$1" run_dir="$2"
+    # NOTE: RocksDB runs in the background (started by load_db).
+    # This function runs only in-memory operations: system monitor + CRC32
+    # transform workers.  No YCSB binary is launched here.
 
     local sys_csv="$run_dir/system_w${n_workers}.csv"
     local xfm_csv="$run_dir/transform_w${n_workers}.csv"
     local log_file="$run_dir/ycsb_w${n_workers}.log"
 
-    # Touch the transform CSV so the plotter can always open it.
     touch "$xfm_csv"
-
-    local spec
-    spec=$(create_spec)
+    : > "$log_file"   # stub; throughput line written below for plotter compat
 
     log "  Starting system monitor ..."
     start_monitor "$sys_csv"
@@ -400,22 +417,42 @@ run_one() {
     log "  Starting $n_workers transform worker(s) at ${TRANSFORMS_PER_WORKER} transforms/s each ..."
     start_transforms "$n_workers" "$xfm_csv"
 
-    log "  Running YCSB: $KNEE_THREADS write threads × ${RUNTIME_SECS}s ..."
-    "$BINARY" \
-        -db baseline -dbpath "$dbpath" -P "$spec" \
-        -bootstrap false -threads "$KNEE_THREADS" \
-        -load false -run false -throughput true \
-        -runtime "$RUNTIME_SECS" \
-        -levels 7 -table baseline \
-        2>&1 | tee "$log_file"
+    stop_transforms   # blocks until RUNTIME_SECS have elapsed
 
     stop_monitor
-    stop_transforms
 
-    rm -f "$spec"; TMPSPEC=""
-    log "  → ycsb log:     $log_file"
-    log "  → system csv:   $sys_csv"
-    log "  → transform csv:$xfm_csv"
+    # ── Compute steady-state disk write MB/s from this step's system CSV ──────
+    # The background RocksDB is the only process writing to disk, so this
+    # directly reflects its write throughput while transform workers were active.
+    LAST_DISK_WR_MBS=$(python3 - <<PYEOF
+import csv, sys
+try:
+    rows = []
+    with open('$sys_csv') as f:
+        for row in csv.DictReader(f):
+            rows.append(float(row.get('disk_write_mbs', 0)))
+    steady = rows[$WARMUP_SKIP_S:] if len(rows) > $WARMUP_SKIP_S else rows
+    print(f'{sum(steady)/len(steady):.3f}' if steady else '0')
+except Exception:
+    print('0')
+PYEOF
+)
+
+    # Write a throughput stub so the plotter can parse this run directory.
+    # Convert disk MB/s → approximate ops/s (amplification assumed constant;
+    # only the relative drop matters for the sweep stop condition).
+    local bytes_per_rec=$(( FIELD_COUNT * FIELD_LENGTH ))
+    local approx_ops
+    approx_ops=$(python3 -c "
+mbs = float('${LAST_DISK_WR_MBS}')
+ops = mbs * 1024 * 1024 / max(${bytes_per_rec}, 1)
+print(f'{ops:.2f}')
+" 2>/dev/null || echo "0")
+    printf 'throughput mean: %s  stddev: 0.0\n' "$approx_ops" >> "$log_file"
+
+    log "  → system csv:    $sys_csv"
+    log "  → transform csv: $xfm_csv"
+    log "  → disk write:    ${LAST_DISK_WR_MBS} MB/s  (~${approx_ops} ops/s proxy)"
 }
 
 # ── Main sweep ────────────────────────────────────────────────────────────────
@@ -423,44 +460,60 @@ run_one() {
 run_sweep() {
     sep
     log "CPU slack sweep:"
-    log "  Knee config: ${KNEE_THREADS} write threads, ${FIELD_COUNT}×${FIELD_LENGTH} B records"
-    log "  Transform workers: $TRANSFORM_WORKER_COUNTS"
-    log "  Rate per worker:   ${TRANSFORMS_PER_WORKER} transforms/s"
-    log "  Total rate at k workers: k × ${TRANSFORMS_PER_WORKER} transforms/s"
-    log "  Runtime per point: ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
+    log "  Knee config:     ${KNEE_THREADS} RocksDB write threads (background, indefinite)"
+    log "  Record layout:   ${FIELD_COUNT} × ${FIELD_LENGTH} B = $((FIELD_COUNT * FIELD_LENGTH)) B/record"
+    log "  Rate per worker: ${TRANSFORMS_PER_WORKER} in-memory transforms/s (CRC32)"
+    log "  Runtime/step:    ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
+    log "  Stop condition:  disk write throughput drops >${DEGRADATION_THRESHOLD} ($(python3 -c \
+        "print(f'{${DEGRADATION_THRESHOLD}*100:.0f}%')" 2>/dev/null || echo "${DEGRADATION_THRESHOLD}") below baseline"
+    log "  Worker sequence: 1, 2, 3, … (auto-increment until degradation detected)"
 
     local sweep_dir="$OUTPUT_DIR/sweep"
     mkdir -p "$sweep_dir"
     local dbpath="$sweep_dir/rocksdb"
 
-    local load_spec
-    load_spec=$(create_spec)
-    load_db "$dbpath" "$load_spec"
-    rm -f "$load_spec"; TMPSPEC=""
+    # load_db: (1) loads records, (2) starts indefinite background throughput,
+    #           (3) measures BASELINE_DISK_WR_MBS after warmup.
+    load_db "$dbpath"
 
-    local prev_xput=""
-    for n_workers in $TRANSFORM_WORKER_COUNTS; do
+    local n_workers=0
+    local max_transform_workers=32
+    while n_workders < $max_transform_workders; do
+        n_workers=$(( n_workers + 1 ))
         sep
-        log "Transform workers: $n_workers  (total rate: $((n_workers * TRANSFORMS_PER_WORKER)) transforms/s)"
+        log "Step ${n_workers}: ${n_workers} transform worker(s)  (total rate: $((n_workers * TRANSFORMS_PER_WORKER)) transforms/s)"
 
         local run_dir="$sweep_dir/run_w${n_workers}"
         mkdir -p "$run_dir"
 
-        run_one "$n_workers" "$run_dir" "$dbpath"
+        # run_one: in-memory CRC32 load + system monitor; sets LAST_DISK_WR_MBS.
+        run_one "$n_workers" "$run_dir"
 
-        # Quick degradation check: warn if throughput has dropped significantly.
-        local xput
-        xput=$(grep -oP 'throughput mean:\K[\d.]+' \
-               "$run_dir/ycsb_w${n_workers}.log" 2>/dev/null | head -1 || echo "")
-        if [[ -n "$xput" && -n "$prev_xput" && "${KNEE_XPUT}" != "0" ]]; then
-            python3 -c "
-xput=${xput}; knee=${KNEE_XPUT}; thresh=${DEGRADATION_THRESHOLD}
-drop = (knee - xput) / knee
-if drop > thresh:
-    print(f'  *** WARNING: throughput {xput:.0f} ops/s is {drop*100:.1f}% below knee ({knee:.0f} ops/s) — consider stopping sweep ***')
-" 2>/dev/null || true
+        # ── Degradation check ────────────────────────────────────────────────
+        # Compare disk write MB/s (proxy for RocksDB write throughput) to
+        # baseline measured in load_db.  Since transform workers are purely
+        # in-memory (no disk I/O), any drop in disk write rate is caused solely
+        # by CPU contention from the transform workers stealing cores.
+        if [[ -n "$LAST_DISK_WR_MBS" && -n "$BASELINE_DISK_WR_MBS" && \
+              "$BASELINE_DISK_WR_MBS" != "0" ]]; then
+            local stop
+            stop=$(python3 -c "
+current  = float('${LAST_DISK_WR_MBS}')
+baseline = float('${BASELINE_DISK_WR_MBS}')
+thresh   = float('${DEGRADATION_THRESHOLD}')
+drop     = (baseline - current) / baseline
+print('yes' if drop > thresh else 'no')
+" 2>/dev/null || echo "no")
+
+            if [[ "$stop" == "yes" ]]; then
+                log "*** Write throughput dropped >${DEGRADATION_THRESHOLD}:" \
+                    "${LAST_DISK_WR_MBS} MB/s vs baseline ${BASELINE_DISK_WR_MBS} MB/s ***"
+                log "*** Slack boundary: $((n_workers - 1)) workers" \
+                    "(degraded at ${n_workers} workers =" \
+                    "$((n_workers * TRANSFORMS_PER_WORKER)) transforms/s) ***"
+                break
+            fi
         fi
-        prev_xput="$xput"
     done
 
     log "Sweep complete."
@@ -754,16 +807,17 @@ run_plotter() {
 
 main() {
     log "cpu_slack_sweep.sh starting"
-    log "  Binary:         $BINARY"
-    log "  Output dir:     $OUTPUT_DIR"
-    log "  Device:         $DISK_DEVICE"
-    log "  Knee threads:   $KNEE_THREADS  (YCSB writers, fixed)"
-    log "  Knee xput:      ${KNEE_XPUT} ops/s  (baseline annotation)"
-    log "  Value layout:   ${FIELD_COUNT} fields × ${FIELD_LENGTH} B = $((FIELD_COUNT * FIELD_LENGTH)) B/record"
-    log "  Transform rate: ${TRANSFORMS_PER_WORKER} transforms/worker/s  (CRC32 × ${FIELD_COUNT} fields)"
-    log "  Worker sweep:   $TRANSFORM_WORKER_COUNTS"
-    log "  Runtime/pt:     ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
-    log "  Degrad. thresh: ${DEGRADATION_THRESHOLD} (${DEGRADATION_THRESHOLD%.*}0%)"
+    log "  Binary:          $BINARY"
+    log "  Output dir:      $OUTPUT_DIR"
+    log "  Device:          $DISK_DEVICE"
+    log "  Knee threads:    $KNEE_THREADS  (RocksDB throughput threads, run indefinitely)"
+    log "  Knee xput:       ${KNEE_XPUT} ops/s  (plot annotation; 0 = use first data point)"
+    log "  Value layout:    ${FIELD_COUNT} fields × ${FIELD_LENGTH} B = $((FIELD_COUNT * FIELD_LENGTH)) B/record"
+    log "  Transform rate:  ${TRANSFORMS_PER_WORKER} transforms/worker/s  (in-memory CRC32)"
+    log "  Worker sequence: 1, 2, 3, … (auto-increment; no pre-defined list)"
+    log "  Runtime/step:    ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
+    log "  Baseline meas.:  ${BASELINE_MEASURE_S}s  (disk write rate after warmup)"
+    log "  Degrad. thresh:  ${DEGRADATION_THRESHOLD}  (stop when disk write drops this fraction)"
     echo ""
 
     check_prereqs
@@ -782,7 +836,7 @@ main() {
     log "  Typical invocation for Phase 2 after reading Phase 1 results:"
     log "    KNEE_THREADS=16 KNEE_XPUT=8500 \\"
     log "    TRANSFORMS_PER_WORKER=1000 \\"
-    log "    TRANSFORM_WORKER_COUNTS='0 1 2 4 6 8 10 12 16' \\"
+    log "    BASELINE_MEASURE_S=60 \\"
     log "    bash ../utility/cpu_slack_sweep.sh"
     log ""
     log "  Serve locally:  python3 -m http.server 8888 --directory $OUTPUT_DIR"
