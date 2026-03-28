@@ -87,7 +87,20 @@ if valid.empty:
     sys.exit(1)
 
 peak_xput = valid['xput_mean'].max()
-knee_row  = valid[valid['xput_mean'] >= 0.95 * peak_xput].iloc[0]
+
+# Knee = first row where the marginal throughput gain over the previous row
+# drops below 10%.  Walk the sorted rows pairwise; the knee is the later of
+# the two rows that form the first sub-10%-gain step.
+# Fall back to the peak row if every step exceeds 10% (unlikely but safe).
+xput_vals = valid['xput_mean'].values
+knee_idx  = len(valid) - 1          # default: last (peak) row
+for i in range(1, len(xput_vals)):
+    prev, curr = xput_vals[i - 1], xput_vals[i]
+    gain = (curr - prev) / prev if prev > 0 else 0.0
+    if gain < 0.075:
+        knee_idx = i
+        break
+knee_row = valid.iloc[knee_idx-1]
 
 knee_threads     = int(knee_row['threads'])
 knee_xput        = float(knee_row['xput_mean'])
