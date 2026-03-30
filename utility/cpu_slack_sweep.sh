@@ -5,9 +5,9 @@
 # Story: at the knee operating point found by saturation_sweep.sh, run YCSB
 # writers at the knee thread count while concurrently increasing the load from
 # rate-limited transform worker threads.  Each worker simulates one Mycelium
-# mRoutine pipeline: it processes one record-worth of data (field_count ×
-# field_length bytes) per transform using software CRC32, sleeping between
-# transforms to hit a fixed rate target.  The sweep is over the number of
+# mRoutine pipeline: it performs field_count × (field_length / 8) rounds of
+# pure integer arithmetic (Murmur3-style mix) per transform, sleeping between
+# transforms to hit a fixed rate target.  No buffers, no memory or disk I/O.  The sweep is over the number of
 # concurrent worker threads.
 #
 # Because transforms in production fire once per compacted record, the per-
@@ -238,13 +238,25 @@ setup_transform_script() {
     cat > "$TRANSFORM_SCRIPT" << 'PYTRANS'
 #!/usr/bin/env python3
 """
-Rate-limited transform workers simulating Mycelium mRoutine pipelines.
+Rate-limited transform workers simulating Mycelium mRoutine pipeline CPU cost.
+
+Each transform performs field_count rounds of pure integer arithmetic
+(a Murmur3-style mix of multiplications, XORs, and bit-rotations) seeded
+from the previous round's output.  No buffers are allocated, no memory is
+read or written beyond a handful of local integer variables — the work
+stays entirely in CPU registers so it cannot contaminate RocksDB's disk
+or memory I/O measurements.
+
+The amount of arithmetic per transform scales with field_count × field_length
+(the same parameters that govern record layout), so the CPU budget per
+transform remains proportional to real mRoutine work even though no actual
+data bytes are processed.
 
 Usage:
   python3 <script> <n_workers> <transforms_per_worker_per_sec>
                    <field_count> <field_length> <duration_s> <out_csv>
 """
-import sys, time, threading, binascii, csv
+import sys, time, threading, csv
 
 n_workers    = int(sys.argv[1])
 rate_per_wkr = int(sys.argv[2])   # transforms/sec per worker
@@ -253,7 +265,21 @@ field_length = int(sys.argv[4])
 duration_s   = int(sys.argv[5])
 out_csv      = sys.argv[6]
 
-record_size = field_count * field_length
+# Number of arithmetic rounds per transform = field_count × (field_length // 8).
+# Each round: one 64-bit multiply + two XOR-shifts, matching the cost of
+# hashing an 8-byte word.  field_length // 8 rounds per field keeps the
+# total work proportional to record size without touching any buffer.
+ROUNDS_PER_TRANSFORM = field_count * max(1, field_length // 8)
+
+_M1 = 0xFF51AFD7ED558CCD   # Murmur3 mix constants
+_M2 = 0xC4CEB9FE1A85EC53
+_MASK = 0xFFFFFFFFFFFFFFFF
+
+def _mix(x):
+    """One Murmur3-style 64-bit integer finalisation round (register-only)."""
+    x = ((x ^ (x >> 33)) * _M1) & _MASK
+    x = ((x ^ (x >> 33)) * _M2) & _MASK
+    return x ^ (x >> 33)
 
 # Per-second counter shared across threads (one bucket per second).
 # Pre-allocate for the full run duration + a small buffer.
@@ -264,12 +290,10 @@ count_lock = threading.Lock()
 start_time = time.perf_counter()
 
 def worker(wid, rate, dur):
-    """Single mRoutine pipeline: CRC32 over each field chunk, rate-limited."""
-    # Give each worker a private buffer — avoids false sharing.
-    buf = bytearray(record_size)
-    # Fill with pseudo-random bytes so CRC32 does real work.
-    for i in range(record_size):
-        buf[i] = (wid * 7 + i * 13) & 0xFF
+    """Single mRoutine pipeline: pure integer hash chain, rate-limited, no I/O."""
+    # Seed is unique per worker; updated each transform so the loop cannot be
+    # optimised away and each round depends on the previous result.
+    state = wid * 0x9E3779B97F4A7C15 & _MASK
 
     interval = 1.0 / rate   # target seconds between transforms
     end      = start_time + dur
@@ -280,11 +304,14 @@ def worker(wid, rate, dur):
         if now >= end:
             break
 
-        # ── one transform: CRC32 over each field chunk ──
-        offset = 0
-        for _ in range(field_count):
-            binascii.crc32(buf, offset)   # hardware-accelerated if available
-            offset += field_length
+        # ── one transform: ROUNDS_PER_TRANSFORM mix rounds ──
+        # Each round is a multiply + two XOR-shifts, purely in registers.
+        # The chain is data-dependent (each round feeds the next) to prevent
+        # the compiler / interpreter from collapsing the loop.
+        x = state
+        for _ in range(ROUNDS_PER_TRANSFORM):
+            x = _mix(x)
+        state = x   # carry forward so successive transforms are independent
 
         # ── record into the per-second bucket ──
         elapsed_s = int(time.perf_counter() - start_time)
@@ -456,6 +483,27 @@ run_sweep() {
 
     # Load the DB once; each run_one() opens it read-write via -bootstrap false.
     load_db "$dbpath"
+
+    # ── Warm-up run: bring DB to steady state before measuring baseline ────────
+    # After load_db the LSM tree has a compaction backlog (many L0 files, unflushed
+    # memtables).  Without this warm-up, Step 0 measures throughput while compaction
+    # is still catching up, producing an artificially low baseline.  Step 1 then
+    # inherits a cleaner tree from Step 0's runtime and appears faster, even though
+    # the transform workers should be adding CPU pressure.
+    sep
+    log "Warm-up: running ${RUNTIME_SECS}s at ${KNEE_THREADS} threads to let DB reach steady state ..."
+    local warmup_dir="$sweep_dir/run_warmup"
+    mkdir -p "$warmup_dir"
+    local warmup_spec; warmup_spec=$(create_spec)
+    "$BINARY" \
+        -db baseline -dbpath "$dbpath" -P "$warmup_spec" \
+        -bootstrap false -threads "$KNEE_THREADS" \
+        -load false -run false -throughput true \
+        -runtime "$RUNTIME_SECS" \
+        -levels 7 -table baseline \
+        2>&1 | tee "$warmup_dir/ycsb_warmup.log"
+    rm -f "$warmup_spec"; TMPSPEC=""
+    log "  Warm-up complete — DB compaction should now be at steady state."
 
     # ── k=0 baseline: no transform workers ────────────────────────────────────
     sep
