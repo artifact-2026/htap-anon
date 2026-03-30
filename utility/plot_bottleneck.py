@@ -2,10 +2,11 @@
 """
 plot_bottleneck.py — RocksDB workload bottleneck characterization figure
 
-Produces a 4×1 figure (four panels stacked vertically) where each panel shows
-one metric (throughput, disk I/O, CPU, block-cache hit rate) and each workload
-is a distinct colored line.  All panels share the same X-axis (client thread
-count).  A single shared legend identifies the workloads by color.
+Produces a 5×1 figure (five panels stacked vertically) where each panel shows
+one metric (throughput, disk bandwidth %, IOPS %, CPU, block-cache hit rate)
+and each workload is a distinct colored line.  All panels share the same
+X-axis (client thread count).  A single shared legend identifies the workloads
+by color.
 
 Usage
 -----
@@ -35,7 +36,7 @@ Options
                      (useful when sweeps used different thread sets).
 --width  INCHES      Figure width.  Default: 7.0 (double-column IEEE/ACM).
                      Use 3.5 for single-column.
---height INCHES      Figure height.  Default: auto (~2.0 × width for 4×1).
+--height INCHES      Figure height.  Default: auto (~2.0 × width for 5×1).
 --dpi    INT         Raster DPI (ignored for PDF/SVG).  Default: 300.
 --font-size INT      Base font size.  Default: 8.
 
@@ -44,11 +45,11 @@ Expected CSV columns (produced by saturation_sweep.sh)
 workload_label, threads,
 xput_mean, xput_std,
 cpu_active_mean, cpu_active_std,
-disk_util_pct, disk_util_std,
-disk_read_mean, disk_read_std, disk_write_mean, disk_write_std,
-mem_used_pct_mean, mem_used_pct_std,
-block_cache_hits, block_cache_misses, block_cache_hit_rate,
-block_cache_hit_rate_std
+disk_read_mb/s, disk_read_std, disk_write_mb/s, disk_write_std,
+r/s, r/s_std, w/s, w/s_std,
+disk_bandwidth_pct, disk_bandwidth_pct_std, iops_pct, iops_pct_std,
+mem_used_mean, mem_used_std, mem_avail_mean, mem_used_pct_mean,
+block_cache_hits, block_cache_misses, block_cache_hit_rate
 """
 
 import argparse
@@ -81,7 +82,7 @@ _PALETTE = [
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description='Plot RocksDB workload bottleneck characterization (4×1 figure).')
+        description='Plot RocksDB workload bottleneck characterization (5×1 figure).')
     p.add_argument('--csv', metavar='[LABEL:]PATH', action='append', required=True,
                    dest='csvs',
                    help='Workload summary CSV. May be repeated.')
@@ -125,12 +126,15 @@ def load_csv(spec: str):
     # Ensure all expected columns exist.
     for col in ['xput_mean', 'xput_std',
                 'cpu_active_mean', 'cpu_active_std',
-                'disk_util_pct', 'disk_util_std',
-                'disk_read_mean', 'disk_read_std',
-                'disk_write_mean', 'disk_write_std',
-                'mem_used_pct_mean', 'mem_used_pct_std',
+                'disk_read_mb/s', 'disk_read_std',
+                'disk_write_mb/s', 'disk_write_std',
+                'r/s', 'r/s_std', 'w/s', 'w/s_std',
+                'disk_bandwidth_pct', 'disk_bandwidth_pct_std',
+                'iops_pct', 'iops_pct_std',
+                'mem_used_mean', 'mem_used_std',
+                'mem_avail_mean', 'mem_used_pct_mean',
                 'block_cache_hits', 'block_cache_misses',
-                'block_cache_hit_rate', 'block_cache_hit_rate_std']:
+                'block_cache_hit_rate']:
         if col not in df.columns:
             df[col] = np.nan
 
@@ -181,7 +185,7 @@ def build_figure(datasets, args):
     lw    = 1.5     # line width
     ms    = 4       # marker size
     fsz   = args.font_size
-    fig_h = args.height if args.height else round(args.width * 1.6, 2)
+    fig_h = args.height if args.height else round(args.width * 2.0, 2)
 
     plt.rcParams.update({
         'font.size':         fsz,
@@ -198,12 +202,14 @@ def build_figure(datasets, args):
     })
 
     fig = plt.figure(figsize=(args.width, fig_h))
-    gs  = gridspec.GridSpec(4, 1, figure=fig, hspace=0.25, height_ratios=[1, 1, 1, 0.6])
+    gs  = gridspec.GridSpec(5, 1, figure=fig, hspace=0.25,
+                            height_ratios=[1, 1, 1, 1, 0.6])
 
     ax_xput = fig.add_subplot(gs[0])
     ax_disk = fig.add_subplot(gs[1], sharex=ax_xput)
-    ax_cpu  = fig.add_subplot(gs[2], sharex=ax_xput)
-    ax_mem  = fig.add_subplot(gs[3], sharex=ax_xput)
+    ax_iops = fig.add_subplot(gs[2], sharex=ax_xput)
+    ax_cpu  = fig.add_subplot(gs[3], sharex=ax_xput)
+    ax_mem  = fig.add_subplot(gs[4], sharex=ax_xput)
 
     # ── Determine X-axis domain ───────────────────────────────────────────────
     if args.normalize_x:
@@ -237,10 +243,15 @@ def build_figure(datasets, args):
                    color, label, lw, ms, args.no_bands)
         _knee_vline(ax_xput, knee, color)
 
-        # Disk I/O — utilization (total R+W normalized to device ceiling, or raw MB/s)
-        _plot_line(ax_disk, x, df['disk_util_pct'], df['disk_util_std'],
+        # Disk bandwidth utilization %
+        _plot_line(ax_disk, x, df['disk_bandwidth_pct'], df['disk_bandwidth_pct_std'],
                    color, label, lw, ms, args.no_bands)
         _knee_vline(ax_disk, knee, color)
+
+        # IOPS utilization %
+        _plot_line(ax_iops, x, df['iops_pct'], df['iops_pct_std'],
+                   color, label, lw, ms, args.no_bands)
+        _knee_vline(ax_iops, knee, color)
 
         # CPU utilization
         _plot_line(ax_cpu, x, df['cpu_active_mean'], df['cpu_active_std'],
@@ -250,12 +261,12 @@ def build_figure(datasets, args):
         # Block cache hit rate (memory panel)
         if df['block_cache_hit_rate'].notna().any():
             _plot_line(ax_mem, x, df['block_cache_hit_rate'],
-                       df['block_cache_hit_rate_std'],   # std if available, else NaN→0
+                       np.zeros(len(df)),   # block_cache_hit_rate_std removed in new format
                        color, label, lw, ms, args.no_bands)
         elif df['mem_used_pct_mean'].notna().any():
-            # Fallback: show RAM used % scaled to 0–1 for a comparable axis.
+            # Fallback: show RAM used %
             _plot_line(ax_mem, x, df['mem_used_pct_mean'],
-                       df['mem_used_pct_std'],
+                       np.zeros(len(df)),
                        color, label, lw, ms, args.no_bands)
         _knee_vline(ax_mem, knee, color)
 
@@ -271,24 +282,21 @@ def build_figure(datasets, args):
     ax_xput.set_ylabel('ops / sec')
     ax_xput.set_ylim(bottom=0)
 
-    # Disk I/O — detect whether values are utilization fractions or raw MB/s.
-    # If any dataset has disk_util_pct <= 1.05 it was normalized; otherwise raw.
-    _disk_normalized = any(
-        df['disk_util_pct'].dropna().max() <= 105
-        for _, df in datasets
-        if df['disk_util_pct'].notna().any()
-    )
-    ax_disk.set_title('Disk I/O utilization' if _disk_normalized else 'Disk I/O (read + write)',
-                      fontweight='bold')
-    ax_disk.set_ylabel('Utilization  (0 – 1)' if _disk_normalized else 'MB / sec')
-    ax_disk.set_ylim(bottom=0)
-    if _disk_normalized:
-        ax_disk.set_ylim(0, 105)
-        ax_disk.axhline(1.0, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
-    elif args.disk_ceiling > 0:
+    # Disk bandwidth %
+    ax_disk.set_title('Disk bandwidth utilization', fontweight='bold')
+    ax_disk.set_ylabel('Bandwidth %')
+    ax_disk.set_ylim(0, 105)
+    ax_disk.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
+    if args.disk_ceiling > 0:
         ax_disk.axhline(args.disk_ceiling, color='black', linestyle=':',
                         linewidth=0.9, alpha=0.7,
                         label=f'Device ceiling ({args.disk_ceiling:,.0f} MB/s)')
+
+    # IOPS %
+    ax_iops.set_title('IOPS utilization', fontweight='bold')
+    ax_iops.set_ylabel('IOPS %')
+    ax_iops.set_ylim(0, 105)
+    ax_iops.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
 
     # CPU
     ax_cpu.set_title('CPU utilization', fontweight='bold')
@@ -306,19 +314,19 @@ def build_figure(datasets, args):
         ax_mem.axhline(1.0, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
     else:
         ax_mem.set_title('Memory used %  (RAM)', fontweight='bold')
-        ax_mem.set_ylabel('RAM used % ')
+        ax_mem.set_ylabel('RAM used %')
         ax_mem.set_ylim(0, 12)
         ax_mem.axhline(1.0, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
 
     # ── X-axis ticks & labels ─────────────────────────────────────────────────
-    for ax in (ax_xput, ax_disk, ax_cpu, ax_mem):
+    for ax in (ax_xput, ax_disk, ax_iops, ax_cpu, ax_mem):
         ax.set_xticks(x_domain)
         ax.tick_params(axis='x', labelrotation=45 if len(x_domain) > 8 else 0)
 
     # Only the bottom panel gets an x-axis label; the others hide tick labels
     # (sharex keeps the ticks themselves aligned).
     ax_mem.set_xlabel('Client threads', fontsize=10)
-    for ax in (ax_xput, ax_disk, ax_cpu):
+    for ax in (ax_xput, ax_disk, ax_iops, ax_cpu):
         plt.setp(ax.get_xticklabels(), visible=False)
     ax_mem.tick_params(axis='x', labelsize=9)
 
