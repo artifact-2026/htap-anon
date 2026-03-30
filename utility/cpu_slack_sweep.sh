@@ -56,12 +56,16 @@ if [[ -n "${PHASE2_CONFIG:-}" ]]; then
 fi
 
 BINARY="${BINARY:-./src/test/ycsb/ycsb_test}"
-DB_BASE_PATH="${DB_BASE_PATH:-/holly/slack_exp_db}"
 OUTPUT_DIR="${OUTPUT_DIR:-./slack_results_$(date +%Y%m%d_%H%M%S)}"
 SRC_ROOT="${SRC_ROOT:-$(dirname "$0")/../src}"
 WORKLOAD_DIR="$SRC_ROOT/test/ycsb/workloads"
 
-# ── Phase 1 results — set these ───────────────────────────────────────────────
+# ── Phase 1 results — set these (or source phase2_config.env) ─────────────────
+
+# Path to the RocksDB directory written by saturation_sweep.sh Phase 1.
+# Typically: <sat_results_dir>/sweep/rocksdb
+# The DB is reused as-is; no loading step is performed here.
+DB_PATH="${DB_PATH:-}"
 
 # ── Workload ──────────────────────────────────────────────────────────────────
 # WORKLOAD_SPEC: path to a YCSB .spec file (required — no default).
@@ -70,7 +74,8 @@ WORKLOAD_SPEC="${WORKLOAD_SPEC:-}"
 # Number of YCSB writer threads at the knee (from saturation_sweep.sh output).
 KNEE_THREADS="${KNEE_THREADS:-16}"
 
-# Knee throughput in ops/sec (used only for the baseline annotation in the plot).
+# Knee throughput in ops/sec (from Phase 1 / calibrate_transform_rate.sh).
+# Used as the degradation baseline — no Step 0 measurement is performed.
 KNEE_XPUT="${KNEE_XPUT:-0}"
 
 # ── Value layout — must match saturation_sweep.sh ─────────────────────────────
@@ -81,15 +86,13 @@ FIELD_COUNT="${FIELD_COUNT:-16}"
 # ── Transform worker knobs ────────────────────────────────────────────────────
 
 # Target transform rate per worker thread (transforms / second).
-# Each transform processes field_count * field_length bytes via software CRC32.
-# At 16 × 256 B = 4096 B/transform and 1000 transforms/s per worker,
-# one worker reads ~4 MB/s of in-memory data — realistic for a single
-# mRoutine pipeline.  Set relative to your measured compaction output rate.
+# Each transform performs field_count × (field_length / 8) Murmur3-style integer
+# mix rounds — pure CPU register work, no memory or disk I/O.
+# Set relative to your measured compaction output rate from Phase 1.
 TRANSFORMS_PER_WORKER="${TRANSFORMS_PER_WORKER:-1000}"
 
 # ── Experiment timing ─────────────────────────────────────────────────────────
 
-RECORD_COUNT="${RECORD_COUNT:-5000000}"
 DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
 
 # Total seconds each run_one() YCSB instance runs.
@@ -143,6 +146,10 @@ check_prereqs() {
     [[ -x "$BINARY" ]] || die "ycsb_test binary not found at '$BINARY'."
     [[ -n "$WORKLOAD_SPEC" ]]  || die "WORKLOAD_SPEC is not set.  Point it at a .spec file."
     [[ -f "$WORKLOAD_SPEC" ]]  || die "WORKLOAD_SPEC file not found: $WORKLOAD_SPEC"
+    [[ -n "$DB_PATH" ]]        || die "DB_PATH is not set.  Point it at the Phase 1 RocksDB directory (e.g. <sat_results_dir>/sweep/rocksdb)."
+    [[ -d "$DB_PATH" ]]        || die "DB_PATH directory not found: $DB_PATH"
+    python3 -c "v=float('${KNEE_XPUT}'); exit(0 if v > 0 else 1)" 2>/dev/null \
+        || die "KNEE_XPUT must be a positive number (got '${KNEE_XPUT}').  Source phase2_config.env or set it manually."
     command -v python3 >/dev/null 2>&1 || die "python3 required"
     python3 -c "import matplotlib, pandas, numpy" 2>/dev/null || {
         log "Installing required Python packages..."
@@ -369,25 +376,6 @@ create_spec() {
     echo "$TMPSPEC"
 }
 
-# ── Load phase ────────────────────────────────────────────────────────────────
-
-load_db() {
-    local dbpath="$1"
-    local rc; rc=$(grep -E '^recordcount\s*=' "$WORKLOAD_SPEC" | tail -1 | cut -d= -f2 | tr -d ' ')
-
-    log "Loading ${rc:-unknown} records into $dbpath ..."
-    local load_spec; load_spec=$(create_spec)
-    "$BINARY" \
-        -db baseline -dbpath "$dbpath" -P "$load_spec" \
-        -bootstrap true -threads 8 \
-        -load true -run false -throughput false \
-        -runtime 0 \
-        -levels 7 -table baseline \
-        2>&1 | tee "$OUTPUT_DIR/load.log"
-    rm -f "$load_spec"; TMPSPEC=""
-    log "Load complete."
-}
-
 # ── Single transform-worker-count run ─────────────────────────────────────────
 #
 # run_one <n_workers> <run_dir> <dbpath>
@@ -470,53 +458,24 @@ run_one() {
 run_sweep() {
     sep
     log "CPU slack sweep:"
+    log "  Phase 1 DB:      ${DB_PATH}"
     log "  Knee config:     ${KNEE_THREADS} RocksDB write threads"
+    log "  Knee throughput: ${KNEE_XPUT} ops/s  (Phase 1 baseline — no Step 0 run)"
     log "  Record layout:   ${FIELD_COUNT} × ${FIELD_LENGTH} B = $((FIELD_COUNT * FIELD_LENGTH)) B/record"
-    log "  Rate per worker: ${TRANSFORMS_PER_WORKER} in-memory transforms/s (CRC32)"
+    log "  Rate per worker: ${TRANSFORMS_PER_WORKER} integer-mix transforms/s (no I/O)"
     log "  Run time:        ${RUNTIME_SECS}s per step (binary measures [${WARMUP_SKIP_S}, ${RUNTIME_SECS}]s)"
-    log "  Stop condition:  client write throughput drops >${DEGRADATION_THRESHOLD} below baseline"
-    log "  Worker sequence: 0 (baseline), 1, 2, 3, … (fresh YCSB instance each step)"
+    log "  Stop condition:  client write throughput drops >${DEGRADATION_THRESHOLD} below KNEE_XPUT"
 
     local sweep_dir="$OUTPUT_DIR/sweep"
     mkdir -p "$sweep_dir"
-    local dbpath="$sweep_dir/rocksdb"
 
-    # Load the DB once; each run_one() opens it read-write via -bootstrap false.
-    load_db "$dbpath"
+    # Reuse the Phase 1 DB directly — it is already at compaction steady state.
+    # No load or warm-up step needed.
+    local dbpath="$DB_PATH"
 
-    # ── Warm-up run: bring DB to steady state before measuring baseline ────────
-    # After load_db the LSM tree has a compaction backlog (many L0 files, unflushed
-    # memtables).  Without this warm-up, Step 0 measures throughput while compaction
-    # is still catching up, producing an artificially low baseline.  Step 1 then
-    # inherits a cleaner tree from Step 0's runtime and appears faster, even though
-    # the transform workers should be adding CPU pressure.
-    sep
-    log "Warm-up: running ${RUNTIME_SECS}s at ${KNEE_THREADS} threads to let DB reach steady state ..."
-    local warmup_dir="$sweep_dir/run_warmup"
-    mkdir -p "$warmup_dir"
-    local warmup_spec; warmup_spec=$(create_spec)
-    "$BINARY" \
-        -db baseline -dbpath "$dbpath" -P "$warmup_spec" \
-        -bootstrap false -threads "$KNEE_THREADS" \
-        -load false -run false -throughput true \
-        -runtime "$RUNTIME_SECS" \
-        -levels 7 -table baseline \
-        2>&1 | tee "$warmup_dir/ycsb_warmup.log"
-    rm -f "$warmup_spec"; TMPSPEC=""
-    log "  Warm-up complete — DB compaction should now be at steady state."
-
-    # ── k=0 baseline: no transform workers ────────────────────────────────────
-    sep
-    log "Step 0 (baseline): 0 transform workers — measuring clean write throughput ..."
-    local baseline_dir="$sweep_dir/run_w0"
-    mkdir -p "$baseline_dir"
-    run_one 0 "$baseline_dir" "$dbpath"
-
-    if [[ -z "$LAST_XPUT_OPS" ]]; then
-        die "Baseline run produced no throughput reading — check $baseline_dir/ycsb_w0.log"
-    fi
-    BASELINE_XPUT_OPS="$LAST_XPUT_OPS"
-    log "  Baseline throughput: ${BASELINE_XPUT_OPS} ops/s"
+    # KNEE_XPUT from Phase 1 is the degradation reference — no Step 0 needed.
+    BASELINE_XPUT_OPS="$KNEE_XPUT"
+    log "  Baseline (from Phase 1): ${BASELINE_XPUT_OPS} ops/s"
 
     # ── Sweep: add 1 worker per step, check for degradation ──────────────────
     local n_workers=0
