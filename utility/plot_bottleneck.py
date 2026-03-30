@@ -354,13 +354,13 @@ def build_figure(datasets, args):
     # ── Shared legend ─────────────────────────────────────────────────────────
     # Place below the figure so it doesn't eat into panel space.
     # Also add the knee marker key.
-    legend_handles.append(
-        Line2D([0], [0], color='gray', linestyle='--', linewidth=0.7,
-               label='Saturation knee'))
+    #legend_handles.append(
+    #    Line2D([0], [0], color='gray', linestyle='--', linewidth=0.7,
+    #           label='Saturation knee'))
 
     fig.legend(handles=legend_handles,
                loc='lower center',
-               ncol=min(n_wl + 1, 5),
+               ncol=min(n_wl + 1, 3),
                fontsize=fsz + 1,
                framealpha=0.85,
                borderpad=0.5,

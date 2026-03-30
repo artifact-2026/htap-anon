@@ -45,12 +45,12 @@ done
     echo "Usage: $0 <phase1_output_dir> [--compaction-threads N] [--workload-spec <spec>]"
     echo ""
     echo "  phase1_output_dir   directory written by saturation_sweep.sh"
-    echo "                      (contains plots/saturation_summary.csv)"
+    echo "                      (contains summary.csv)"
     echo "  --compaction-threads N   RocksDB max_background_compactions (default: 1)"
     exit 1
 }
 
-SUMMARY_CSV="$PHASE1_DIR/plots/saturation_summary.csv"
+SUMMARY_CSV="$PHASE1_DIR/summary.csv"
 [[ -f "$SUMMARY_CSV" ]] || {
     echo "ERROR: summary CSV not found: $SUMMARY_CSV"
     echo "  Run saturation_sweep.sh first and pass its output directory."
@@ -119,8 +119,8 @@ knee_row = valid.iloc[knee_idx-1]
 
 knee_threads     = int(knee_row['threads'])
 knee_xput        = float(knee_row['xput_mean'])
-disk_write_mbs   = float(knee_row['disk_write_mean'])
-disk_read_mbs    = float(knee_row['disk_read_mean'])
+disk_write_mbs   = float(knee_row['disk_write_mb/s'])
+disk_read_mbs    = float(knee_row['disk_read_mb/s'])
 cpu_active_pct   = float(knee_row['cpu_active_mean'])
 
 # ── Derivation ────────────────────────────────────────────────────────────────
