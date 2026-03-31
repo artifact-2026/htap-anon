@@ -44,7 +44,9 @@ Expected CSV columns (produced by saturation_sweep.sh)
 ------------------------------------------------------
 workload_label, threads,
 xput_mean, xput_std,
-cpu_active_mean, cpu_active_std,
+cpu_compute_mean, cpu_active_std,   # 100 - idle - iowait  (pure compute)
+cpu_busy_mean,                       # 100 - idle            (incl. iowait)
+cpu_iowait_mean,                     # iowait %  (gap between the two)
 disk_read_mb/s, disk_read_std, disk_write_mb/s, disk_write_std,
 r/s, r/s_std, w/s, w/s_std,
 disk_bandwidth_pct, disk_bandwidth_pct_std, iops_pct, iops_pct_std,
@@ -125,7 +127,8 @@ def load_csv(spec: str):
 
     # Ensure all expected columns exist.
     for col in ['xput_mean', 'xput_std',
-                'cpu_active_mean', 'cpu_active_std',
+                'cpu_compute_mean', 'cpu_active_std',
+                'cpu_busy_mean', 'cpu_iowait_mean',
                 'disk_read_mb/s', 'disk_read_std',
                 'disk_write_mb/s', 'disk_write_std',
                 'r/s', 'r/s_std', 'w/s', 'w/s_std',
@@ -150,21 +153,24 @@ def find_knee(df: pd.DataFrame):
 
 # ── Drawing helpers ───────────────────────────────────────────────────────────
 
-def _plot_line(ax, x, mean, std, color, label, lw, ms, no_bands):
+def _plot_line(ax, x, mean, std, color, label, lw, ms, no_bands, linestyle='-'):
     """Plot a mean line with std-dev error bars at every point.
 
     Default (no_bands=False): draws the mean line + markers, vertical error-bar
     whiskers with caps at every data point, *and* a translucent ±1σ shaded band.
     With --no-bands: shaded band is omitted; only the error bars are shown.
+    linestyle: passed through to errorbar (default '-'; use '--' for secondary lines).
     """
     mean = np.asarray(mean, dtype=float)
     std  = np.asarray(std,  dtype=float)
     std  = np.where(np.isnan(std), 0, std)
 
+    marker = 'o' if linestyle == '-' else 's'
+
     # Always draw the mean line with markers and ±1σ vertical whiskers.
     ax.errorbar(x, mean, yerr=std,
                 color=color, linewidth=lw, markersize=ms,
-                marker='o', linestyle='-',
+                marker=marker, linestyle=linestyle,
                 capsize=3, capthick=0.8, elinewidth=0.8,
                 label=label, zorder=3)
 
@@ -253,9 +259,14 @@ def build_figure(datasets, args):
                    color, label, lw, ms, args.no_bands)
         _knee_vline(ax_iops, knee, color)
 
-        # CPU utilization
-        _plot_line(ax_cpu, x, df['cpu_active_mean'], df['cpu_active_std'],
-                   color, label, lw, ms, args.no_bands)
+        # CPU utilization — two lines per workload, same color, different style.
+        # Solid  = cpu_compute (100 − idle − iowait): pure compute, matches `top`.
+        # Dashed = cpu_busy    (100 − idle):           includes iowait, matches iostat.
+        # The gap between them is the iowait component.
+        _plot_line(ax_cpu, x, df['cpu_compute_mean'], df['cpu_active_std'],
+                   color, label, lw, ms, args.no_bands, linestyle='-')
+        _plot_line(ax_cpu, x, df['cpu_busy_mean'], df['cpu_active_std'],
+                   color, None, lw, ms, args.no_bands, linestyle='--')
         _knee_vline(ax_cpu, knee, color)
 
         # Block cache hit rate (memory panel)
@@ -298,11 +309,20 @@ def build_figure(datasets, args):
     ax_iops.set_ylim(0, 105)
     ax_iops.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
 
-    # CPU
-    ax_cpu.set_title('CPU utilization', fontweight='bold')
-    ax_cpu.set_ylabel('Active %  (100 − idle)')
+    # CPU — style legend: solid = compute, dashed = busy
+    ax_cpu.set_title('CPU utilization  (solid = compute, dashed = busy)', fontweight='bold')
+    ax_cpu.set_ylabel('CPU %')
     ax_cpu.set_ylim(0, 105)
     ax_cpu.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
+    # Inset style key so the reader knows what the two line styles mean.
+    style_handles = [
+        Line2D([0], [0], color='gray', linestyle='-',  linewidth=lw, marker='o',
+               markersize=ms, label='cpu_compute  (100−idle−iowait)'),
+        Line2D([0], [0], color='gray', linestyle='--', linewidth=lw, marker='s',
+               markersize=ms, label='cpu_busy  (100−idle, incl. iowait)'),
+    ]
+    ax_cpu.legend(handles=style_handles, fontsize=fsz - 2,
+                  loc='upper left', framealpha=0.7)
 
     # Memory / cache hit rate
     has_hit_rate = any(df['block_cache_hit_rate'].notna().any()
@@ -380,7 +400,7 @@ def main():
     datasets = []
     for spec in args.csvs:
         label, df = load_csv(spec)
-        df = df.iloc[:-2].copy()
+        #df = df.iloc[:-2].copy()
         datasets.append((label, df))
         print(f'Loaded: {label!r}  ({len(df)} thread-count points)')
 

@@ -7,8 +7,11 @@
 #include <cstring>
 #include <string>
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include <future>
+#include <numeric>
+#include <cmath>
 #include <unistd.h>
 #include <atomic>
 #include <chrono>
@@ -441,9 +444,33 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int run_t
       printf("Time (sec): %d, Xput: %ld", timesec, th);
       timesec++;
     }*/
-    printf("throughput mean:%lf  stddev: %lf, average latency: %lf, stddev: %lf\n", 
+    printf("throughput mean:%lf  stddev: %lf, average latency: %lf, stddev: %lf\n",
         mean_xput, stddev_xput, mean, stddev);
     printf("*********************************\n");
+
+    // Write per-window throughput stats to CSV
+    int xput_window = stoi(props.GetProperty("xputwindow", "10"));
+    std::string xput_file = props.GetProperty("xputfile", "xput_stats.csv");
+
+    if (xput_window > 0) {
+      std::ofstream out(xput_file);
+      if (!out) {
+        fprintf(stderr, "Warning: could not open xput output file '%s'\n", xput_file.c_str());
+      } else {
+        out << "window_start_sec,avg_throughput,stddev_throughput\n";
+        for (int w = skip; w + xput_window <= run_time_in_units; w += xput_window) {
+          double wmean = 0.0;
+          for (int k = w; k < w + xput_window; ++k) wmean += xputs[k];
+          wmean /= xput_window;
+          double wsq = 0.0;
+          for (int k = w; k < w + xput_window; ++k) wsq += std::pow(double(xputs[k]) - wmean, 2);
+          double wstddev = std::sqrt(wsq / xput_window);
+          out << w << "," << wmean << "," << wstddev << "\n";
+        }
+        printf("Per-window throughput stats written to '%s' (window=%ds, skip=%ds)\n",
+               xput_file.c_str(), xput_window, skip);
+      }
+    }
 
     if ( print_stats ) {
       printf("-------------- db statistics --------------\n");
@@ -640,6 +667,22 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
       }
       props.SetProperty("dbwaitforbalance",argv[argindex]);
       argindex++;
+    } else if(strcmp(argv[argindex],"-xputwindow")==0){
+      argindex++;
+      if(argindex >= argc){
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("xputwindow",argv[argindex]);
+      argindex++;
+    } else if(strcmp(argv[argindex],"-xputfile")==0){
+      argindex++;
+      if(argindex >= argc){
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("xputfile",argv[argindex]);
+      argindex++;
     } else if(strcmp(argv[argindex],"-morerun")==0){
       argindex++;
       if(argindex >= argc){
@@ -718,6 +761,8 @@ void Init(utils::Properties &props){
   props.SetProperty("createdb", "false");
   props.SetProperty("columndatatype", "0");
   props.SetProperty("inputdataformat", "protobuf");
+  props.SetProperty("xputwindow", "10");
+  props.SetProperty("xputfile", "xput_stats.csv");
 }
 
 void PrintInfo(utils::Properties &props) {
