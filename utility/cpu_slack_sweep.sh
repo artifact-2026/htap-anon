@@ -92,6 +92,24 @@ FIELD_COUNT="${FIELD_COUNT:-16}"
 # Set relative to your measured compaction output rate from Phase 1.
 TRANSFORMS_PER_WORKER="${TRANSFORMS_PER_WORKER:-1000}"
 
+# CPU intensity multiplier — scales the number of arithmetic rounds per
+# transform without changing the logical rate (transforms/sec).
+#
+# Duty cycle per worker ≈ (ROUNDS_PER_TRANSFORM × ~300 ns) × rate.
+# With the defaults (512 rounds, 1000 Hz) that is only ~15 %, meaning each
+# worker sleeps ~85 % of the time and barely registers on CPU.
+#
+# The crossover to a busy loop (100 % duty cycle) happens when:
+#   WORKER_ROUNDS_MULTIPLIER ≥ 1 / (base_rounds × ~300 ns × rate)
+#                            ≈ 1 / (512 × 300e-9 × 1000) ≈ 6.5
+#
+# Recommended starting points:
+#   4  → ~60 % duty cycle per worker  (light pressure)
+#   8  → ~100 % duty cycle (saturates one core per worker; sweet spot)
+#   16 → 100 % duty cycle with head room for faster hardware
+# Values beyond ~8 have no additional effect once the worker is a busy loop.
+WORKER_ROUNDS_MULTIPLIER="${WORKER_ROUNDS_MULTIPLIER:-8}"
+
 # ── Experiment timing ─────────────────────────────────────────────────────────
 
 DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
@@ -277,17 +295,20 @@ Usage:
 """
 import sys, time, multiprocessing, csv
 
-n_workers    = int(sys.argv[1])
-rate_per_wkr = int(sys.argv[2])   # transforms/sec per worker
-field_count  = int(sys.argv[3])
-field_length = int(sys.argv[4])
-duration_s   = int(sys.argv[5])
-out_csv      = sys.argv[6]
+n_workers        = int(sys.argv[1])
+rate_per_wkr     = int(sys.argv[2])   # transforms/sec per worker
+field_count      = int(sys.argv[3])
+field_length     = int(sys.argv[4])
+duration_s       = int(sys.argv[5])
+out_csv          = sys.argv[6]
+rounds_multiplier = int(sys.argv[7]) if len(sys.argv) > 7 else 1
 
-# Number of arithmetic rounds per transform = field_count × (field_length // 8).
-# Each round: one 64-bit multiply + two XOR-shifts, matching the cost of
-# hashing an 8-byte word.
-ROUNDS_PER_TRANSFORM = field_count * max(1, field_length // 8)
+# Base rounds = field_count × (field_length // 8): one hash word per 8 bytes
+# of field payload.  The multiplier scales this up so each transform burns
+# more CPU without changing the logical transform rate.  At multiplier=1 each
+# worker sleeps ~85 % of the time at 1000 Hz; at multiplier≥8 the sleep goes
+# to zero and the worker saturates one full CPU core.
+ROUNDS_PER_TRANSFORM = field_count * max(1, field_length // 8) * rounds_multiplier
 
 _M1   = 0xFF51AFD7ED558CCD   # Murmur3 mix constants
 _M2   = 0xC4CEB9FE1A85EC53
@@ -364,6 +385,7 @@ if __name__ == '__main__':
 
     total = sum(per_sec_arr[:duration_s])
     print(f"Transform workers={n_workers}, rate={rate_per_wkr}/worker/s, "
+          f"rounds_per_transform={ROUNDS_PER_TRANSFORM} (×{rounds_multiplier}), "
           f"total={total}, actual_rate={total/duration_s:.1f}/s")
 PYTRANS
 }
@@ -436,12 +458,14 @@ run_one() {
     # ── Start in-memory transform workers ─────────────────────────────────────
     if (( n_workers > 0 )); then
         log "  Starting $n_workers in-memory transform worker(s) ..." \
-            "(${n_workers} × ${TRANSFORMS_PER_WORKER} transforms/s = " \
-            "$((n_workers * TRANSFORMS_PER_WORKER)) transforms/s total)"
+            "(${n_workers} × ${TRANSFORMS_PER_WORKER} transforms/s," \
+            "rounds_multiplier=${WORKER_ROUNDS_MULTIPLIER}," \
+            "total=$((n_workers * TRANSFORMS_PER_WORKER)) transforms/s)"
         python3 "$TRANSFORM_SCRIPT" \
             "$n_workers" "$TRANSFORMS_PER_WORKER" \
             "$FIELD_COUNT" "$FIELD_LENGTH" \
-            "$RUNTIME_SECS" "$xfm_csv" &
+            "$RUNTIME_SECS" "$xfm_csv" \
+            "$WORKER_ROUNDS_MULTIPLIER" &
         TRANSFORM_PIDS=($!)
     fi
 
