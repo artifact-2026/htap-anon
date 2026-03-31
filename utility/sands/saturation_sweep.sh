@@ -92,6 +92,14 @@ IOPS_WRITE_MAX="${IOPS_WRITE_MAX:-0}"
 # Must match YCSB's internal skip (hardcoded 60 s in runXput).
 WARMUP_SKIP_S="${WARMUP_SKIP_S:-60}"
 
+# Number of independent trials to run for each thread count.
+# When > 1, each trial's output goes into run_t<N>/trial_<k>/ and the
+# summariser reports the median across trials.  Taking the median of 3 runs
+# is usually enough to filter out compaction-driven throughput spikes that
+# can shift a single 60 s window by 10-20 %.  Default 1 preserves the
+# original single-run behaviour and experiment duration.
+TRIALS_PER_THREAD="${TRIALS_PER_THREAD:-1}"
+
 # Drop the OS page cache before every run so that disk reads are not silently
 # served from RAM.  Requires passwordless sudo for tee /proc/sys/vm/drop_caches,
 # or run the script as root.  Set to false to skip (reads may show as 0 MB/s).
@@ -297,7 +305,6 @@ run_one() {
 
     local spec; spec=$(create_spec "metrics_output=${cmp_csv}")
 
-    drop_page_cache
     log "  Running $threads thread(s) for ${RUNTIME_SECS}s ..."
     start_monitor "$sys_csv"
     "$BINARY" \
@@ -472,6 +479,23 @@ def parse_system_csv(path, skip_s):
         return empty
 
 # ── collect ───────────────────────────────────────────────────────────────────
+# Supports two directory layouts:
+#   Single-trial (TRIALS_PER_THREAD=1):
+#     run_t<N>/ycsb_t<N>.log          run_t<N>/system_t<N>.csv
+#   Multi-trial  (TRIALS_PER_THREAD>1):
+#     run_t<N>/trial_<k>/ycsb_t<N>.log  run_t<N>/trial_<k>/system_t<N>.csv
+#
+# For multi-trial runs, xput_mean is the median of per-trial means and
+# xput_std is the std across those means (cross-trial variability), which
+# directly captures compaction-driven run-to-run noise.  All system metrics
+# are also medians across trials.
+
+def collect_trial(td, t):
+    """Parse one trial directory; return (xput_mean, xput_std, cache_hits,
+    cache_misses, sys_stats)."""
+    xm, xs, ch, cm = parse_ycsb_log(os.path.join(td, f'ycsb_t{t}.log'))
+    ss = parse_system_csv(os.path.join(td, f'system_t{t}.csv'), warmup_skip)
+    return xm, xs, ch, cm, ss
 
 run_dirs = sorted(
     glob.glob(os.path.join(sweep_dir, 'run_t*')),
@@ -480,9 +504,42 @@ run_dirs = sorted(
 rows = []
 for rd in run_dirs:
     t = thread_from_path(rd)
-    xput_mean, xput_std, cache_hits, cache_misses = \
-        parse_ycsb_log(os.path.join(rd, f'ycsb_t{t}.log'))
-    sys_stats = parse_system_csv(os.path.join(rd, f'system_t{t}.csv'), warmup_skip)
+
+    # Detect trial subdirs.
+    trial_dirs = sorted(
+        glob.glob(os.path.join(rd, 'trial_*')),
+        key=lambda p: int(re.search(r'trial_(\d+)', os.path.basename(p)).group(1))
+                      if re.search(r'trial_(\d+)', os.path.basename(p)) else 0)
+
+    if trial_dirs:
+        # Multi-trial: collect each trial then take medians.
+        trial_xputs = []   # per-trial xput_mean values
+        trial_sys   = {}   # key → list of per-trial values
+        trial_ch    = []
+        trial_cm    = []
+        for td in trial_dirs:
+            xm, _xs, ch, cm, ss = collect_trial(td, t)
+            trial_xputs.append(xm)
+            trial_ch.append(ch)
+            trial_cm.append(cm)
+            for k, v in ss.items():
+                trial_sys.setdefault(k, []).append(v)
+        xput_mean  = float(np.nanmedian(trial_xputs))
+        xput_std   = float(np.nanstd(trial_xputs, ddof=1)) \
+                     if len(trial_xputs) > 1 else float('nan')
+        cache_hits   = float(np.nanmedian(trial_ch))
+        cache_misses = float(np.nanmedian(trial_cm))
+        sys_stats  = {k: float(np.nanmedian(vs)) for k, vs in trial_sys.items()}
+        # Fill any keys that the single-trial path provides but trials dict may lack.
+        for k in ('cpu_active_std', 'disk_read_std', 'disk_write_std',
+                  'disk_read_iops_std', 'disk_write_iops_std',
+                  'mem_used_std', 'mem_avail_mean', 'mem_used_pct_mean'):
+            sys_stats.setdefault(k, float('nan'))
+    else:
+        # Single-trial (original behaviour).
+        xput_mean, xput_std, cache_hits, cache_misses = \
+            parse_ycsb_log(os.path.join(rd, f'ycsb_t{t}.log'))
+        sys_stats = parse_system_csv(os.path.join(rd, f'system_t{t}.csv'), warmup_skip)
 
     disk_r  = sys_stats['disk_read_mean']
     disk_w  = sys_stats['disk_write_mean']
@@ -610,10 +667,19 @@ run_sweep() {
 
     for threads in $THREAD_COUNTS; do
         sep
-        log "Thread count: $threads"
+        log "Thread count: $threads  (${TRIALS_PER_THREAD} trial(s))"
         local run_dir="$sweep_dir/run_t${threads}"
         mkdir -p "$run_dir"
-        run_one "$threads" "$run_dir" "$dbpath"
+        if (( TRIALS_PER_THREAD == 1 )); then
+            run_one "$threads" "$run_dir" "$dbpath"
+        else
+            for (( trial=1; trial<=TRIALS_PER_THREAD; trial++ )); do
+                log "  Trial ${trial}/${TRIALS_PER_THREAD}"
+                local trial_dir="$run_dir/trial_${trial}"
+                mkdir -p "$trial_dir"
+                run_one "$threads" "$trial_dir" "$dbpath"
+            done
+        fi
     done
 
     log "Sweep complete."
@@ -649,6 +715,7 @@ main() {
     log "  Spec:                $WORKLOAD_SPEC"
     log "  Threads:             $THREAD_COUNTS"
     log "  Runtime/pt:          ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
+    log "  Trials/thread:       ${TRIALS_PER_THREAD}  (summary uses median across trials)"
     log "  Disk read max BW:    ${DISK_READ_MAX_BANDWIDTH} MB/s"
     log "  Disk write max BW:   ${DISK_WRITE_MAX_BANDWIDTH} MB/s"
     log "  IOPS read max:       ${IOPS_READ_MAX}"

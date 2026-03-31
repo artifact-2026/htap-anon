@@ -109,6 +109,12 @@ WARMUP_SKIP_S="${WARMUP_SKIP_S:-60}"
 # drops more than this fraction below the 0-worker baseline.
 DEGRADATION_THRESHOLD="${DEGRADATION_THRESHOLD:-0.10}"
 
+# Number of consecutive above-threshold drops required before the sweep stops.
+# A single compaction event can spike throughput down by 10-20 % for one step;
+# requiring N_CONSECUTIVE consecutive above-threshold steps filters those
+# one-off dips out.  Set to 1 to restore the original single-step behaviour.
+N_CONSECUTIVE="${N_CONSECUTIVE:-2}"
+
 # Drop the OS page cache before every YCSB run so that disk reads are not
 # silently served from RAM.  Must match saturation_sweep.sh's DROP_CACHES
 # behaviour so that KNEE_XPUT (measured cold) is a valid baseline here.
@@ -126,9 +132,10 @@ TRANSFORM_SCRIPT=""
 PLOTTER_SCRIPT=""
 TMPSPEC=""
 MONITOR_PID=""
-# Client write throughput (ops/s) parsed from YCSB binary output.
+# Client write throughput (ops/s) and per-second stddev parsed from YCSB output.
 BASELINE_XPUT_OPS=""
 LAST_XPUT_OPS=""
+LAST_XPUT_STDDEV=""
 declare -a TRANSFORM_PIDS=()
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
@@ -256,23 +263,19 @@ setup_transform_script() {
 """
 Rate-limited transform workers simulating Mycelium mRoutine pipeline CPU cost.
 
-Each transform performs field_count rounds of pure integer arithmetic
-(a Murmur3-style mix of multiplications, XORs, and bit-rotations) seeded
-from the previous round's output.  No buffers are allocated, no memory is
-read or written beyond a handful of local integer variables — the work
-stays entirely in CPU registers so it cannot contaminate RocksDB's disk
-or memory I/O measurements.
+Each worker runs as a separate OS process (multiprocessing.Process) so that
+it occupies a dedicated CPU core and is not serialised by the CPython GIL.
+Using threading.Thread instead would cap total CPU consumption at one core
+regardless of worker count, making the load model incorrect.
 
-The amount of arithmetic per transform scales with field_count × field_length
-(the same parameters that govern record layout), so the CPU budget per
-transform remains proportional to real mRoutine work even though no actual
-data bytes are processed.
+Each transform performs field_count × (field_length // 8) Murmur3-style
+integer mix rounds — pure register arithmetic, no I/O.
 
 Usage:
   python3 <script> <n_workers> <transforms_per_worker_per_sec>
                    <field_count> <field_length> <duration_s> <out_csv>
 """
-import sys, time, threading, csv
+import sys, time, multiprocessing, csv
 
 n_workers    = int(sys.argv[1])
 rate_per_wkr = int(sys.argv[2])   # transforms/sec per worker
@@ -283,12 +286,11 @@ out_csv      = sys.argv[6]
 
 # Number of arithmetic rounds per transform = field_count × (field_length // 8).
 # Each round: one 64-bit multiply + two XOR-shifts, matching the cost of
-# hashing an 8-byte word.  field_length // 8 rounds per field keeps the
-# total work proportional to record size without touching any buffer.
+# hashing an 8-byte word.
 ROUNDS_PER_TRANSFORM = field_count * max(1, field_length // 8)
 
-_M1 = 0xFF51AFD7ED558CCD   # Murmur3 mix constants
-_M2 = 0xC4CEB9FE1A85EC53
+_M1   = 0xFF51AFD7ED558CCD   # Murmur3 mix constants
+_M2   = 0xC4CEB9FE1A85EC53
 _MASK = 0xFFFFFFFFFFFFFFFF
 
 def _mix(x):
@@ -297,73 +299,72 @@ def _mix(x):
     x = ((x ^ (x >> 33)) * _M2) & _MASK
     return x ^ (x >> 33)
 
-# Per-second counter shared across threads (one bucket per second).
-# Pre-allocate for the full run duration + a small buffer.
 MAX_SECS = duration_s + 5
-per_sec_counts = [0] * MAX_SECS
-count_lock = threading.Lock()
 
-start_time = time.perf_counter()
-
-def worker(wid, rate, dur):
-    """Single mRoutine pipeline: pure integer hash chain, rate-limited, no I/O."""
-    # Seed is unique per worker; updated each transform so the loop cannot be
-    # optimised away and each round depends on the previous result.
-    state = wid * 0x9E3779B97F4A7C15 & _MASK
-
-    interval = 1.0 / rate   # target seconds between transforms
-    end      = start_time + dur
+def worker_main(wid, rate, dur, start_wall, per_sec_arr):
+    """
+    One mRoutine pipeline — runs in its own OS process, consuming a full CPU
+    core.  Uses time.time() (wall clock) against the shared start_wall epoch
+    for consistent timing across processes; time.perf_counter() is used only
+    for intra-process rate limiting where cross-process consistency is not
+    needed.
+    """
+    state    = wid * 0x9E3779B97F4A7C15 & _MASK
+    interval = 1.0 / rate
+    end_wall = start_wall + dur
     next_t   = time.perf_counter() + interval
 
-    while True:
-        now = time.perf_counter()
-        if now >= end:
-            break
-
-        # ── one transform: ROUNDS_PER_TRANSFORM mix rounds ──
-        # Each round is a multiply + two XOR-shifts, purely in registers.
-        # The chain is data-dependent (each round feeds the next) to prevent
-        # the compiler / interpreter from collapsing the loop.
+    while time.time() < end_wall:
+        # ── one transform: ROUNDS_PER_TRANSFORM mix rounds in registers ──
+        # Data-dependent chain prevents the interpreter from collapsing it.
         x = state
         for _ in range(ROUNDS_PER_TRANSFORM):
             x = _mix(x)
-        state = x   # carry forward so successive transforms are independent
+        state = x
 
-        # ── record into the per-second bucket ──
-        elapsed_s = int(time.perf_counter() - start_time)
+        # ── record into the per-second bucket (shared array, built-in lock) ──
+        elapsed_s = int(time.time() - start_wall)
         if 0 <= elapsed_s < MAX_SECS:
-            with count_lock:
-                per_sec_counts[elapsed_s] += 1
+            with per_sec_arr.get_lock():
+                per_sec_arr[elapsed_s] += 1
 
         # ── rate limiting: sleep until next scheduled transform ──
         sleep_for = next_t - time.perf_counter()
         if sleep_for > 0:
             time.sleep(sleep_for)
-        # If we fell behind, don't try to catch up — just reschedule from now.
+        # Don't try to catch up if we fell behind — just reschedule from now.
         next_t = max(next_t + interval, time.perf_counter())
 
-threads = []
-for wid in range(n_workers):
-    t = threading.Thread(target=worker,
-                         args=(wid, rate_per_wkr, duration_s),
-                         daemon=True)
-    threads.append(t)
+if __name__ == '__main__':
+    # Shared signed-long array — one bucket per second, written by all workers.
+    # multiprocessing.Array('l', ...) is backed by shared memory and provides
+    # a built-in RLock via .get_lock().
+    per_sec_arr = multiprocessing.Array('l', MAX_SECS)
+    start_wall  = time.time()
 
-for t in threads:
-    t.start()
-for t in threads:
-    t.join()
+    procs = []
+    for wid in range(n_workers):
+        p = multiprocessing.Process(
+            target=worker_main,
+            args=(wid, rate_per_wkr, duration_s, start_wall, per_sec_arr),
+            daemon=True)
+        procs.append(p)
 
-# Write per-second aggregate CSV.
-with open(out_csv, 'w', newline='') as fh:
-    w = csv.writer(fh)
-    w.writerow(['elapsed_s', 'transforms_this_second'])
-    for s, cnt in enumerate(per_sec_counts[:duration_s]):
-        w.writerow([s, cnt])
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join()
 
-total = sum(per_sec_counts[:duration_s])
-print(f"Transform workers={n_workers}, rate={rate_per_wkr}/worker/s, "
-      f"total={total}, actual_rate={total/duration_s:.1f}/s")
+    # Write per-second aggregate CSV.
+    with open(out_csv, 'w', newline='') as fh:
+        w = csv.writer(fh)
+        w.writerow(['elapsed_s', 'transforms_this_second'])
+        for s in range(duration_s):
+            w.writerow([s, per_sec_arr[s]])
+
+    total = sum(per_sec_arr[:duration_s])
+    print(f"Transform workers={n_workers}, rate={rate_per_wkr}/worker/s, "
+          f"total={total}, actual_rate={total/duration_s:.1f}/s")
 PYTRANS
 }
 
@@ -432,9 +433,6 @@ run_one() {
     touch "$xfm_csv"
     TRANSFORM_PIDS=()
 
-    # ── Drop page cache (must precede workers + monitor, same as Phase 1) ─────
-    drop_page_cache
-
     # ── Start in-memory transform workers ─────────────────────────────────────
     if (( n_workers > 0 )); then
         log "  Starting $n_workers in-memory transform worker(s) ..." \
@@ -475,14 +473,17 @@ run_one() {
     done
     TRANSFORM_PIDS=()
 
-    # ── Parse throughput from YCSB output ─────────────────────────────────────
+    # ── Parse throughput (mean + stddev) from YCSB output ────────────────────
+    # Line format: "throughput mean:<mean>  stddev: <stddev>, ..."
     LAST_XPUT_OPS=$(grep -oP 'throughput mean:\s*\K[\d.]+' "$log_file" \
                     2>/dev/null | head -1 || echo "")
+    LAST_XPUT_STDDEV=$(grep -oP 'throughput mean:[\d.]+\s+stddev:\s*\K[\d.]+' \
+                       "$log_file" 2>/dev/null | head -1 || echo "")
 
     log "  → ycsb log:     $log_file"
     log "  → system csv:   $sys_csv"
     log "  → transform csv: $xfm_csv"
-    log "  → throughput:   ${LAST_XPUT_OPS:-<no reading>} ops/s"
+    log "  → throughput:   ${LAST_XPUT_OPS:-<no reading>} ops/s  (stddev: ${LAST_XPUT_STDDEV:-?})"
 }
 
 # ── Main sweep ────────────────────────────────────────────────────────────────
@@ -496,7 +497,8 @@ run_sweep() {
     log "  Record layout:   ${FIELD_COUNT} × ${FIELD_LENGTH} B = $((FIELD_COUNT * FIELD_LENGTH)) B/record"
     log "  Rate per worker: ${TRANSFORMS_PER_WORKER} integer-mix transforms/s (no I/O)"
     log "  Run time:        ${RUNTIME_SECS}s per step (binary measures [${WARMUP_SKIP_S}, ${RUNTIME_SECS}]s)"
-    log "  Stop condition:  client write throughput drops >${DEGRADATION_THRESHOLD} below KNEE_XPUT"
+    log "  Stop condition:  client write throughput drops >max(${DEGRADATION_THRESHOLD}, CoV)" \
+        "for ${N_CONSECUTIVE} consecutive steps"
 
     local sweep_dir="$OUTPUT_DIR/sweep"
     mkdir -p "$sweep_dir"
@@ -511,6 +513,8 @@ run_sweep() {
 
     # ── Sweep: add 1 worker per step, check for degradation ──────────────────
     local n_workers=0
+    local consec_drops=0          # consecutive steps that exceeded the threshold
+    local first_degraded_at=""    # worker count where the run started
     while true; do
         n_workers=$(( n_workers + 1 ))
         sep
@@ -520,33 +524,61 @@ run_sweep() {
         local run_dir="$sweep_dir/run_w${n_workers}"
         mkdir -p "$run_dir"
 
-        # run_one starts n_workers CRC32 threads, runs YCSB for RUNTIME_SECS,
-        # waits for everything to finish, sets LAST_XPUT_OPS.
         run_one "$n_workers" "$run_dir" "$dbpath"
 
         # ── Degradation check ─────────────────────────────────────────────────
+        # Two guards prevent spurious stops:
+        #
+        #  1. Stddev floor: the effective threshold is max(DEGRADATION_THRESHOLD,
+        #     CoV) where CoV = stddev/mean for this step.  A compaction transient
+        #     that raises the per-second variance also raises the floor, so a noisy
+        #     run cannot trigger a stop that a quiet run would not.
+        #
+        #  2. Consecutive-step guard: the drop must exceed the effective threshold
+        #     in N_CONSECUTIVE steps in a row.  A single bad step (unlucky
+        #     compaction timing) resets the counter.
         if [[ -n "$LAST_XPUT_OPS" && -n "$BASELINE_XPUT_OPS" && \
               "$BASELINE_XPUT_OPS" != "0" ]]; then
-            local stop drop_pct
-            read stop drop_pct < <(python3 -c "
+            local stop drop_pct eff_thresh_pct
+            read stop drop_pct eff_thresh_pct < <(python3 -c "
 current  = float('${LAST_XPUT_OPS}')
 baseline = float('${BASELINE_XPUT_OPS}')
 thresh   = float('${DEGRADATION_THRESHOLD}')
+stddev   = float('${LAST_XPUT_STDDEV}') if '${LAST_XPUT_STDDEV}' else 0.0
+# CoV = stddev / mean of this run; use it as a noise floor so a high-variance
+# step (active compaction) does not trigger the stop condition on its own.
+cov      = stddev / current if current > 0 else 0.0
+eff      = max(thresh, cov)
 drop     = (baseline - current) / baseline
-print('yes' if drop > thresh else 'no', f'{drop*100:.1f}')
-" 2>/dev/null || echo "no 0.0")
+print('yes' if drop > eff else 'no', f'{drop*100:.1f}', f'{eff*100:.1f}')
+" 2>/dev/null || echo "no 0.0 $(python3 -c "print(f'{float(\"${DEGRADATION_THRESHOLD}\")*100:.1f}')")")
 
-            log "  Throughput: ${LAST_XPUT_OPS} ops/s  vs baseline ${BASELINE_XPUT_OPS} ops/s  (drop: ${drop_pct}%)"
+            log "  Throughput: ${LAST_XPUT_OPS} ops/s" \
+                " vs baseline ${BASELINE_XPUT_OPS} ops/s" \
+                " (drop: ${drop_pct}%  eff.threshold: ${eff_thresh_pct}%)"
 
             if [[ "$stop" == "yes" ]]; then
-                log "*** Drop exceeds ${DEGRADATION_THRESHOLD} threshold — sweep stopping ***"
-                log "*** Slack boundary: $((n_workers - 1)) workers" \
-                    "(= $(( (n_workers - 1) * TRANSFORMS_PER_WORKER)) transforms/s)" \
-                    "| degraded at ${n_workers} workers ***"
-                break
+                consec_drops=$(( consec_drops + 1 ))
+                [[ -z "$first_degraded_at" ]] && first_degraded_at="$n_workers"
+                log "  Above-threshold drop: ${consec_drops}/${N_CONSECUTIVE} consecutive"
+                if (( consec_drops >= N_CONSECUTIVE )); then
+                    log "*** ${N_CONSECUTIVE} consecutive above-threshold drops — sweep stopping ***"
+                    log "*** Slack boundary: $((first_degraded_at - 1)) workers" \
+                        "(= $(( (first_degraded_at - 1) * TRANSFORMS_PER_WORKER)) transforms/s)" \
+                        "| degradation confirmed at ${first_degraded_at} workers ***"
+                    break
+                fi
+            else
+                if (( consec_drops > 0 )); then
+                    log "  Drop cleared (was ${consec_drops} consecutive) — resetting counter"
+                fi
+                consec_drops=0
+                first_degraded_at=""
             fi
         else
             log "  WARNING: no throughput reading for step ${n_workers} — continuing sweep"
+            consec_drops=0
+            first_degraded_at=""
         fi
     done
 
