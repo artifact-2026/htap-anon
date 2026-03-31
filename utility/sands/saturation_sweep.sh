@@ -40,8 +40,9 @@
 #
 # ── Key parsing note ──────────────────────────────────────────────────────────
 # YCSB prints:  throughput mean:<mean>  stddev: <stddev>
-# after a hard-coded 60 s warmup skip inside runXput().
-# The system monitor collects per-second CPU/disk/mem; skip the same 60 s here.
+# after skipping the first WARMUP_SKIP_S seconds (configurable, default 90 s).
+# The system monitor collects per-second CPU/disk/mem; the summariser skips the
+# same WARMUP_SKIP_S seconds so both see the same steady-state window.
 #
 # ── Configuration ─────────────────────────────────────────────────────────────
 # =============================================================================
@@ -65,9 +66,10 @@ WORKLOAD_LABEL="${WORKLOAD_LABEL:-}"
 THREAD_COUNTS="${THREAD_COUNTS:-1 2 4 8 12 16 20 24 32 48}"
 
 # Total experiment duration per thread count (seconds).
-# YCSB skips the first WARMUP_SKIP_S seconds; the rest is the steady window.
-# Keep RUNTIME_SECS ≥ 90 s for meaningful stddev.  120 s → 60 s steady window.
-RUNTIME_SECS="${RUNTIME_SECS:-120}"
+# YCSB discards the first WARMUP_SKIP_S seconds; throughput is averaged over
+# [WARMUP_SKIP_S, RUNTIME_SECS].  With the defaults below that is a 90 s
+# steady-state window — long enough to average across multiple compaction events.
+RUNTIME_SECS="${RUNTIME_SECS:-180}"
 
 # Block device for disk I/O monitoring.  Find yours with: lsblk / df -h <dbpath>
 # Use the block device name as it appears in /proc/diskstats (e.g. nvme0n1, sda).
@@ -88,9 +90,10 @@ DISK_WRITE_MAX_BANDWIDTH="${DISK_WRITE_MAX_BANDWIDTH:-0}"
 IOPS_READ_MAX="${IOPS_READ_MAX:-0}"
 IOPS_WRITE_MAX="${IOPS_WRITE_MAX:-0}"
 
-# Warmup seconds to skip when computing CPU/disk/memory stats from the system CSV.
-# Must match YCSB's internal skip (hardcoded 60 s in runXput).
-WARMUP_SKIP_S="${WARMUP_SKIP_S:-60}"
+# Warmup seconds to skip.  Passed to the binary via -skip and used by the
+# system-monitor CSV trimmer so both see the same steady-state window.
+# Must satisfy WARMUP_SKIP_S < RUNTIME_SECS.
+WARMUP_SKIP_S="${WARMUP_SKIP_S:-90}"
 
 # Number of independent trials to run for each thread count.
 # When > 1, each trial's output goes into run_t<N>/trial_<k>/ and the
@@ -280,6 +283,9 @@ create_spec() {
 
 load_db() {
     local dbpath="$1"
+    # Optional second argument: path for the load log.
+    # Defaults to OUTPUT_DIR/load.log for callers that do not need per-run logs.
+    local logfile="${2:-$OUTPUT_DIR/load.log}"
     local rc; rc=$(grep -E '^recordcount\s*=' "$WORKLOAD_SPEC" | tail -1 | cut -d= -f2 | tr -d ' ')
     log "Loading ${rc:-unknown} records into $dbpath ..."
     local spec; spec=$(create_spec)
@@ -289,7 +295,7 @@ load_db() {
         -load true -run false -throughput false \
         -runtime 0 \
         -levels 7 -table baseline \
-        2>&1 | tee "$OUTPUT_DIR/load.log"
+        2>&1 | tee "$logfile"
     rm -f "$spec"; TMPSPEC=""
     log "Load complete."
 }
@@ -305,13 +311,15 @@ run_one() {
 
     local spec; spec=$(create_spec "metrics_output=${cmp_csv}")
 
-    log "  Running $threads thread(s) for ${RUNTIME_SECS}s ..."
+    log "  Running $threads thread(s) for ${RUNTIME_SECS}s" \
+        "(skip first ${WARMUP_SKIP_S}s, measure [${WARMUP_SKIP_S}, ${RUNTIME_SECS}]s) ..."
     start_monitor "$sys_csv"
     "$BINARY" \
         -db baseline -dbpath "$dbpath" -P "$spec" \
         -bootstrap false -threads "$threads" \
         -load false -run false -throughput true \
         -runtime "$RUNTIME_SECS" \
+        -skip "$WARMUP_SKIP_S" \
         -levels 7 -table baseline \
         -dbstatistics true \
         2>&1 | tee "$log_file"
@@ -340,15 +348,17 @@ workload_label          : human label (from argv)
 threads                 : client thread count
 xput_mean               : mean throughput (ops/s) over steady-state window
 xput_std                : std-dev of per-second throughput
-cpu_active_mean         : mean CPU compute utilization % (100 - idle - iowait).
+cpu_compute_mean        : mean CPU compute utilization % (100 - idle - iowait).
                           Excludes iowait so the value matches what `top` shows
                           as "CPU busy" (user+sys+irq+softirq).  For RocksDB with
                           active NVMe compaction, iowait can be 30-50 %, so
-                          (100 - idle) would overstate compute utilization badly.
-cpu_active_mean_raw     : mean (100 - idle) %, i.e. including iowait — kept for
-                          comparison with tools that define it this way.
-cpu_iowait_mean         : mean iowait % — the gap between cpu_active_mean_raw and
-                          cpu_active_mean; large values confirm I/O-bound compaction.
+                          cpu_busy would overstate actual compute utilization badly.
+cpu_busy_mean           : mean (100 - idle) %, i.e. including iowait — represents
+                          total non-idle CPU time, equivalent to 100%%-%idle in tools
+                          like iostat.  Plot alongside cpu_compute_mean to visualize
+                          how much of the "busy" time is I/O-wait vs real compute.
+cpu_iowait_mean         : mean iowait % — the gap between cpu_busy_mean and
+                          cpu_compute_mean; large values confirm I/O-bound compaction.
 cpu_active_std
 disk_read_mb/s          : mean disk read bandwidth (MB/s) over steady-state window
 disk_read_std
@@ -436,8 +446,8 @@ def parse_ycsb_log(path):
 def parse_system_csv(path, skip_s):
     nan = float('nan')
     empty = dict(
-        cpu_active_mean=nan,  cpu_active_std=nan,
-        cpu_active_mean_raw=nan, cpu_iowait_mean=nan,
+        cpu_compute_mean=nan, cpu_active_std=nan,
+        cpu_busy_mean=nan,    cpu_iowait_mean=nan,
         disk_read_mean=nan,   disk_read_std=nan,
         disk_write_mean=nan,  disk_write_std=nan,
         disk_read_iops_mean=nan,  disk_read_iops_std=nan,
@@ -475,9 +485,9 @@ def parse_system_csv(path, skip_s):
         else:
             mu = ma = mt = pct = pd.Series(dtype=float)
         return dict(
-            cpu_active_mean      = active.mean(),          # compute-only (excl. iowait)
+            cpu_compute_mean     = active.mean(),          # 100 - idle - iowait (compute-only)
             cpu_active_std       = active.std(ddof=1),
-            cpu_active_mean_raw  = active_raw.mean(),      # 100 - idle (incl. iowait)
+            cpu_busy_mean        = active_raw.mean(),      # 100 - idle (incl. iowait)
             cpu_iowait_mean      = iowait.mean(),
             disk_read_mean       = dr.mean(),
             disk_read_std        = dr.std(ddof=1),
@@ -612,10 +622,10 @@ for rd in run_dirs:
         threads               = t,
         xput_mean             = xput_mean,
         xput_std              = xput_std,
-        cpu_active_mean       = sys_stats['cpu_active_mean'],     # excl. iowait
+        cpu_compute_mean      = sys_stats['cpu_compute_mean'],    # 100 - idle - iowait
         cpu_active_std        = sys_stats['cpu_active_std'],
-        cpu_active_mean_raw   = sys_stats.get('cpu_active_mean_raw', float('nan')),
-        cpu_iowait_mean       = sys_stats.get('cpu_iowait_mean',    float('nan')),
+        cpu_busy_mean         = sys_stats.get('cpu_busy_mean',     float('nan')),  # 100 - idle
+        cpu_iowait_mean       = sys_stats.get('cpu_iowait_mean',   float('nan')),
         **{'disk_read_mb/s'   : disk_r},
         disk_read_std         = disk_rs,
         **{'disk_write_mb/s'  : disk_w},
@@ -644,7 +654,7 @@ if not rows:
 df = pd.DataFrame(rows).sort_values('threads').reset_index(drop=True)
 df.to_csv(output_csv, index=False)
 print(f'summary.csv written → {output_csv}')
-preview_cols = ['threads', 'xput_mean', 'cpu_active_mean',
+preview_cols = ['threads', 'xput_mean', 'cpu_compute_mean', 'cpu_busy_mean',
                 'disk_read_mb/s', 'disk_write_mb/s', 'r/s', 'w/s',
                 'disk_bandwidth_pct', 'iops_pct',
                 'mem_used_pct_mean', 'block_cache_hit_rate']
@@ -679,11 +689,9 @@ run_sweep() {
 
     local sweep_dir="$OUTPUT_DIR/sweep"
     mkdir -p "$sweep_dir"
+    # DB is placed inside sweep_dir and wiped+reloaded before every measurement
+    # so that no run inherits compaction debt or LSM state from previous runs.
     local dbpath="$sweep_dir/rocksdb"
-
-    recordcount=$(awk -F= '$1=="recordcount" {print $2}' "$WORKLOAD_SPEC")
-
-    load_db "$dbpath"
 
     for threads in $THREAD_COUNTS; do
         sep
@@ -691,12 +699,17 @@ run_sweep() {
         local run_dir="$sweep_dir/run_t${threads}"
         mkdir -p "$run_dir"
         if (( TRIALS_PER_THREAD == 1 )); then
+            log "  Wiping DB and loading fresh dataset ..."
+            rm -rf "$dbpath"
+            load_db "$dbpath" "$run_dir/load.log"
             run_one "$threads" "$run_dir" "$dbpath"
         else
             for (( trial=1; trial<=TRIALS_PER_THREAD; trial++ )); do
-                log "  Trial ${trial}/${TRIALS_PER_THREAD}"
+                log "  Trial ${trial}/${TRIALS_PER_THREAD}: wiping DB and loading fresh dataset ..."
+                rm -rf "$dbpath"
                 local trial_dir="$run_dir/trial_${trial}"
                 mkdir -p "$trial_dir"
+                load_db "$dbpath" "$trial_dir/load.log"
                 run_one "$threads" "$trial_dir" "$dbpath"
             done
         fi

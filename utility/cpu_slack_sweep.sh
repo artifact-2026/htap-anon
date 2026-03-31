@@ -115,13 +115,17 @@ WORKER_ROUNDS_MULTIPLIER="${WORKER_ROUNDS_MULTIPLIER:-8}"
 DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
 
 # Total seconds each run_one() YCSB instance runs.
-# The binary hardcodes skip=60 internally — it discards the first 60 s and
-# reports the mean/stddev over [60, RUNTIME_SECS].  Must be > 60.
-RUNTIME_SECS="${RUNTIME_SECS:-120}"
+# The binary discards the first WARMUP_SKIP_S seconds (passed via -skip) and
+# reports the mean/stddev over [WARMUP_SKIP_S, RUNTIME_SECS].  Must be strictly
+# greater than WARMUP_SKIP_S.  Matching saturation_sweep.sh defaults gives a
+# 90 s steady-state window: [90, 180].
+RUNTIME_SECS="${RUNTIME_SECS:-180}"
 
-# Must match the binary's hardcoded skip window; used by the plotter to trim
-# the system-monitor CSV to the same steady-state window.
-WARMUP_SKIP_S="${WARMUP_SKIP_S:-60}"
+# Warmup seconds to discard.  Passed to the binary via -skip and used by the
+# plotter to trim the system-monitor CSV to the same steady-state window.
+# Must match the value used in Phase 1 (saturation_sweep.sh) so that KNEE_XPUT
+# was measured over the same window length as Phase 2 steps.
+WARMUP_SKIP_S="${WARMUP_SKIP_S:-90}"
 
 # Throughput degradation threshold: stop the sweep when YCSB client throughput
 # drops more than this fraction below the 0-worker baseline.
@@ -474,7 +478,7 @@ run_one() {
 
     # ── Run YCSB ──────────────────────────────────────────────────────────────
     # -throughput true: runXput() path; binary exits after runtime seconds.
-    # Binary internally discards first WARMUP_SKIP_S seconds (hardcoded skip=60).
+    # -skip: discard the first WARMUP_SKIP_S seconds; report [WARMUP_SKIP_S, RUNTIME_SECS].
     # Prints "throughput mean: X  stddev: Y" at termination.
     log "  Running YCSB: $KNEE_THREADS write threads × ${RUNTIME_SECS}s" \
         "(measuring [${WARMUP_SKIP_S}, ${RUNTIME_SECS}]s window) ..."
@@ -484,6 +488,7 @@ run_one() {
         -bootstrap false -threads "$KNEE_THREADS" \
         -load false -run false -throughput true \
         -runtime "$RUNTIME_SECS" \
+        -skip "$WARMUP_SKIP_S" \
         -levels 7 -table baseline \
         2>&1 | tee "$log_file"
     rm -f "$spec"; TMPSPEC=""
@@ -665,10 +670,10 @@ def parse_ycsb_log(path):
     return float('nan'), float('nan')
 
 def parse_system_csv(path, warmup_skip):
-    empty = dict(cpu_active_mean=np.nan, cpu_active_std=np.nan,
-                 cpu_active_mean_raw=np.nan, cpu_iowait_mean=np.nan,
-                 disk_read_mean=np.nan,  disk_read_std=np.nan,
-                 disk_write_mean=np.nan, disk_write_std=np.nan)
+    empty = dict(cpu_compute_mean=np.nan, cpu_active_std=np.nan,
+                 cpu_busy_mean=np.nan,    cpu_iowait_mean=np.nan,
+                 disk_read_mean=np.nan,   disk_read_std=np.nan,
+                 disk_write_mean=np.nan,  disk_write_std=np.nan)
     try:
         df = pd.read_csv(path)
         df['elapsed_s'] = df['timestamp_s'] - df['timestamp_s'].iloc[0]
@@ -685,10 +690,10 @@ def parse_system_csv(path, warmup_skip):
         active     = active_raw - iowait               # compute-only
         dr, dw = steady['disk_read_mbs'], steady['disk_write_mbs']
         return dict(
-            cpu_active_mean     = active.mean(),     cpu_active_std  = active.std(ddof=1),
-            cpu_active_mean_raw = active_raw.mean(), cpu_iowait_mean = iowait.mean(),
-            disk_read_mean      = dr.mean(),         disk_read_std   = dr.std(ddof=1),
-            disk_write_mean     = dw.mean(),         disk_write_std  = dw.std(ddof=1),
+            cpu_compute_mean = active.mean(),     cpu_active_std  = active.std(ddof=1),
+            cpu_busy_mean    = active_raw.mean(), cpu_iowait_mean = iowait.mean(),
+            disk_read_mean   = dr.mean(),         disk_read_std   = dr.std(ddof=1),
+            disk_write_mean  = dw.mean(),         disk_write_std  = dw.std(ddof=1),
         )
     except Exception as e:
         print(f"  [skip sys] {path}: {e}")
@@ -747,7 +752,7 @@ df = pd.DataFrame(rows).sort_values('workers').reset_index(drop=True)
 df.to_csv(os.path.join(PLOT_DIR, "cpu_slack_summary.csv"), index=False)
 print("Summary:")
 print(df[['workers','total_rate_target','xput_mean','xput_std',
-          'cpu_active_mean','disk_write_mean','disk_read_mean',
+          'cpu_compute_mean','cpu_busy_mean','disk_write_mean','disk_read_mean',
           'xfm_mean']].to_string(index=False))
 
 # ── Detect slack boundary ─────────────────────────────────────────────────────
@@ -825,17 +830,28 @@ ax_disk.set_title('Disk read + write bandwidth vs transform workers  (± 1 σ)\n
                   '(flat = transforms are CPU-bound in memory; rising = I/O coupling)')
 ax_disk.legend(fontsize=9, loc='lower left')
 
-# ── Panel 3: CPU active % ────────────────────────────────────────────────────
+# ── Panel 3: CPU utilization — two metrics ───────────────────────────────────
+# cpu_busy    = 100 - idle           (includes iowait; matches iostat %util)
+# cpu_compute = 100 - idle - iowait  (pure compute: user+sys+irq+softirq)
+# The gap between the two lines is the iowait component — tells you how much
+# of the "busy" time is the CPU stalled on I/O vs doing real arithmetic.
 
-ax_cpu.errorbar(workers, df['cpu_active_mean'], yerr=df['cpu_active_std'],
+ax_cpu.errorbar(workers, df['cpu_busy_mean'], yerr=df['cpu_active_std'],
+                fmt='s--', color='steelblue', linewidth=2, markersize=7,
+                capsize=5, capthick=1.5, elinewidth=1.5,
+                label='cpu_busy = 100−idle  (incl. iowait) %')
+ax_cpu.errorbar(workers, df['cpu_compute_mean'], yerr=df['cpu_active_std'],
                 fmt='^-', color='forestgreen', linewidth=2, markersize=7,
                 capsize=5, capthick=1.5, elinewidth=1.5,
-                label='CPU active (excl. iowait) %')
+                label='cpu_compute = 100−idle−iowait  (pure compute) %')
+ax_cpu.fill_between(workers, df['cpu_compute_mean'], df['cpu_busy_mean'],
+                    alpha=0.15, color='steelblue', label='iowait gap')
 ax_cpu.set_ylim(0, 105)
 ax_cpu.axhline(100, color='gray', linestyle=':', alpha=0.6, label='100% ceiling')
 add_slack_vline(ax_cpu)
-ax_cpu.set_ylabel('CPU utilization\n(excl. iowait, %)')
-ax_cpu.set_title('System CPU utilization vs transform workers  (± 1 σ)')
+ax_cpu.set_ylabel('CPU utilization (%)')
+ax_cpu.set_title('System CPU utilization vs transform workers  (± 1 σ)\n'
+                 'gap = iowait (CPU stalled on I/O, not doing useful work)')
 ax_cpu.legend(fontsize=9, loc='lower right')
 
 # ── Panel 4: actual transform throughput ─────────────────────────────────────

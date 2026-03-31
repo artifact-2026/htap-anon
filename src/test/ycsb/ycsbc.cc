@@ -412,8 +412,8 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int run_t
       exec_times[k] /= throughput_ops.size();
     }
 
-    int skip=60;
-    if (exec_times.size() <= 60 || xputs.size() <= 60) {
+    int skip = stoi(props.GetProperty("skip", "60"));
+    if ((int)exec_times.size() <= skip || (int)xputs.size() <= skip) {
       skip = 0;
     }
     double mean = std::accumulate(exec_times.begin()+skip, exec_times.end(), 0.0) / (exec_times.size()-skip);
@@ -471,6 +471,14 @@ string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) 
         exit(0);
       }
       props.SetProperty("runtime",argv[argindex]);
+      argindex++;
+    } else if(strcmp(argv[argindex],"-skip")==0){
+      argindex++;
+      if(argindex >= argc){
+        UsageMessage(argv[0]);
+        exit(0);
+      }
+      props.SetProperty("skip",argv[argindex]);
       argindex++;
     } else if(strcmp(argv[argindex],"-bootstrap")==0){
       argindex++;
