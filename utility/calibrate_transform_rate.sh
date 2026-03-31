@@ -112,7 +112,7 @@ knee_idx  = len(valid) - 1          # default: last (peak) row
 for i in range(1, len(xput_vals)):
     prev, curr = xput_vals[i - 1], xput_vals[i]
     gain = (curr - prev) / prev if prev > 0 else 0.0
-    if gain < 0.075:
+    if gain < 0.025:
         knee_idx = i
         break
 knee_row = valid.iloc[knee_idx-1]

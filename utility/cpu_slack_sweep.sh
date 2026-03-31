@@ -17,7 +17,8 @@
 # (= K × R transforms/s) before write throughput degrades."
 #
 # Run from the project BUILD directory:
-#   cd /path/to/build && bash ../utility/cpu_slack_sweep.sh
+#   cd /path/to/build && 
+#     DB_PATH=<sat_results_dir>/sweep/rocksdb bash ../utility/cpu_slack_sweep.sh
 #
 # Minimum required configuration (set these from Phase 1 results):
 #   KNEE_THREADS=<N>        client write threads at the knee
@@ -107,6 +108,14 @@ WARMUP_SKIP_S="${WARMUP_SKIP_S:-60}"
 # Throughput degradation threshold: stop the sweep when YCSB client throughput
 # drops more than this fraction below the 0-worker baseline.
 DEGRADATION_THRESHOLD="${DEGRADATION_THRESHOLD:-0.10}"
+
+# Drop the OS page cache before every YCSB run so that disk reads are not
+# silently served from RAM.  Must match saturation_sweep.sh's DROP_CACHES
+# behaviour so that KNEE_XPUT (measured cold) is a valid baseline here.
+# Requires passwordless sudo for tee /proc/sys/vm/drop_caches, or root.
+# Set to false only if you deliberately want a warm-cache Phase 2 and will
+# supply a matching warm-cache KNEE_XPUT (e.g. from a Step 0 run).
+DROP_CACHES="${DROP_CACHES:-true}"
 
 # =============================================================================
 # Internals
@@ -366,6 +375,24 @@ stop_monitor()    {
         kill "$MONITOR_PID" 2>/dev/null || true; wait "$MONITOR_PID" 2>/dev/null || true; MONITOR_PID=""; }
 }
 
+# ── Page-cache flush ──────────────────────────────────────────────────────────
+# Without this, the kernel serves RocksDB reads from the OS page cache, which
+# inflates throughput above the cold-cache knee measured by saturation_sweep.sh
+# and makes KNEE_XPUT an invalid degradation baseline.
+drop_page_cache() {
+    if [[ "$DROP_CACHES" != "true" ]]; then
+        return
+    fi
+    log "  Dropping OS page cache (sync + drop_caches=3) ..."
+    sudo sysctl -w vm.dirty_expire_centisecs=0 > /dev/null 2>&1 || true
+    if echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null 2>&1; then
+        log "  Page cache dropped."
+    else
+        log "  WARNING: drop_caches failed (need sudo or root). Reads may be served from RAM."
+        log "           Re-run as root or grant passwordless sudo for tee /proc/sys/vm/drop_caches."
+    fi
+}
+
 # ── Workload spec ─────────────────────────────────────────────────────────────
 
 create_spec() {
@@ -384,6 +411,8 @@ create_spec() {
 # CRC32 transform workers running concurrently alongside YCSB.
 #
 # Flow:
+#   0. Drop the OS page cache (same as saturation_sweep.sh) so reads are not
+#      silently served from RAM; keeps KNEE_XPUT a valid cold-cache baseline.
 #   1. Start n_workers transform workers (duration = RUNTIME_SECS).
 #   2. Start the per-second system monitor.
 #   3. Run the YCSB binary: -throughput true -runtime RUNTIME_SECS.
@@ -402,6 +431,9 @@ run_one() {
     local log_file="$run_dir/ycsb_w${n_workers}.log"
     touch "$xfm_csv"
     TRANSFORM_PIDS=()
+
+    # ── Drop page cache (must precede workers + monitor, same as Phase 1) ─────
+    drop_page_cache
 
     # ── Start in-memory transform workers ─────────────────────────────────────
     if (( n_workers > 0 )); then
