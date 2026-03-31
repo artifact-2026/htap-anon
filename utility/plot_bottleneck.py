@@ -226,7 +226,7 @@ def build_figure(datasets, args):
         x_domain = sorted(common) if common else []
     else:
         all_threads = sorted({int(t) for _, df in datasets
-                               for t in df['threads'].iloc[:18].dropna()})
+                               for t in df['threads'].dropna()})
         x_domain = all_threads
 
     # ── Per-workload lines ────────────────────────────────────────────────────
