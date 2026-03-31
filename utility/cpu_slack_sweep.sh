@@ -666,6 +666,7 @@ def parse_ycsb_log(path):
 
 def parse_system_csv(path, warmup_skip):
     empty = dict(cpu_active_mean=np.nan, cpu_active_std=np.nan,
+                 cpu_active_mean_raw=np.nan, cpu_iowait_mean=np.nan,
                  disk_read_mean=np.nan,  disk_read_std=np.nan,
                  disk_write_mean=np.nan, disk_write_std=np.nan)
     try:
@@ -674,12 +675,20 @@ def parse_system_csv(path, warmup_skip):
         steady = df[df['elapsed_s'] >= warmup_skip]
         if steady.empty:
             steady = df
-        active = 100.0 - steady['cpu_idle_pct']
+        # Exclude iowait from cpu_active so it matches what `top` shows as
+        # "CPU busy".  iowait = CPU idle while waiting for I/O; for RocksDB
+        # with active NVMe compaction this is often 30-50 %, making
+        # (100 - idle) overstate compute utilisation significantly.
+        iowait     = steady['cpu_iowait_pct'] if 'cpu_iowait_pct' in steady.columns \
+                     else pd.Series([0.0] * len(steady), index=steady.index)
+        active_raw = 100.0 - steady['cpu_idle_pct']   # includes iowait
+        active     = active_raw - iowait               # compute-only
         dr, dw = steady['disk_read_mbs'], steady['disk_write_mbs']
         return dict(
-            cpu_active_mean  = active.mean(), cpu_active_std  = active.std(ddof=1),
-            disk_read_mean   = dr.mean(),     disk_read_std   = dr.std(ddof=1),
-            disk_write_mean  = dw.mean(),     disk_write_std  = dw.std(ddof=1),
+            cpu_active_mean     = active.mean(),     cpu_active_std  = active.std(ddof=1),
+            cpu_active_mean_raw = active_raw.mean(), cpu_iowait_mean = iowait.mean(),
+            disk_read_mean      = dr.mean(),         disk_read_std   = dr.std(ddof=1),
+            disk_write_mean     = dw.mean(),         disk_write_std  = dw.std(ddof=1),
         )
     except Exception as e:
         print(f"  [skip sys] {path}: {e}")
@@ -821,11 +830,11 @@ ax_disk.legend(fontsize=9, loc='lower left')
 ax_cpu.errorbar(workers, df['cpu_active_mean'], yerr=df['cpu_active_std'],
                 fmt='^-', color='forestgreen', linewidth=2, markersize=7,
                 capsize=5, capthick=1.5, elinewidth=1.5,
-                label='CPU active (100 − idle) %')
+                label='CPU active (excl. iowait) %')
 ax_cpu.set_ylim(0, 105)
 ax_cpu.axhline(100, color='gray', linestyle=':', alpha=0.6, label='100% ceiling')
 add_slack_vline(ax_cpu)
-ax_cpu.set_ylabel('CPU utilization\n(100 − idle, %)')
+ax_cpu.set_ylabel('CPU utilization\n(excl. iowait, %)')
 ax_cpu.set_title('System CPU utilization vs transform workers  (± 1 σ)')
 ax_cpu.legend(fontsize=9, loc='lower right')
 

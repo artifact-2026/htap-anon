@@ -1,0 +1,102 @@
+1. Enable Compaction Triggers + Capture Baseline
+Run a workload that triggers compaction (e.g., high-volume inserts):
+
+Use DB::Put() or bulk load
+
+Capture metrics:
+
+Total compaction time (rocksdb.stats)
+
+CPU usage (top, perf, pidstat)
+
+Disk I/O rates (iostat -x 1)
+
+%iowait on CPU
+
+🧠 If iowait is high during compaction, that's a strong sign of I/O-bound behavior.
+
+2. Use a tmpfs (RAM disk)
+Mount RocksDB’s DB directory on a tmpfs:
+
+bash
+Copy
+Edit
+mkdir /mnt/tmpfs
+mount -t tmpfs -o size=4G tmpfs /mnt/tmpfs
+Re-run the same workload:
+
+Compare:
+
+Compaction duration from logs/stats
+
+System-wide I/O wait
+
+Whether compactions complete faster
+
+✅ If compaction gets significantly faster → I/O-bound
+❌ If little or no change → not I/O-bound (likely CPU-bound)
+
+3. Vary Disk Speed (e.g., SSD vs HDD)
+Run the workload on:
+
+A slow SATA disk
+
+A fast NVMe SSD
+
+(Optionally) tmpfs again
+
+Compare compaction duration and write throughput.
+
+4. Artificially Throttle Disk I/O
+Use ionice or cgroups:
+
+bash
+Copy
+Edit
+ionice -c2 -n7 ./your_rocksdb_test
+or
+
+bash
+Copy
+Edit
+cgcreate -g blkio:/slowgroup
+echo "8:0 1000000" > /sys/fs/cgroup/blkio/slowgroup/blkio.throttle.write_bps_device
+cgexec -g blkio:slowgroup ./your_rocksdb_test
+Result:
+
+If performance degrades, confirms sensitivity to disk → I/O-bound
+
+5. Profile with perf or flamegraph
+Run:
+
+bash
+Copy
+Edit
+perf record -g ./your_rocksdb_test
+perf report
+Look for:
+
+pread(), pwrite(), fread(), fwrite()
+
+env_posix.cc in RocksDB stack
+
+Disk I/O syscalls in flamegraph
+
+6. Optional: Use rocksdb::EnvWrapper to Intercept I/O
+Wrap your Env implementation and log or count:
+
+Number of Read, Write, Fsync, etc.
+
+Size of each I/O
+
+Timing per call
+
+You can use this to build a histogram of I/O cost during compaction.
+
+✅ Conclusion: Signs You're I/O-Bound
+Evidence	Interpretation
+Compaction gets faster on tmpfs	✅ Strong I/O bound
+High %iowait during compaction	✅ I/O-bound
+Throttled I/O degrades compaction time	✅ I/O-sensitive
+Disk speed affects compaction duration	✅ Disk-bound
+perf shows I/O syscalls dominate	✅ Blocking on I/O

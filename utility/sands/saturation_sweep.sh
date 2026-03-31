@@ -340,7 +340,15 @@ workload_label          : human label (from argv)
 threads                 : client thread count
 xput_mean               : mean throughput (ops/s) over steady-state window
 xput_std                : std-dev of per-second throughput
-cpu_active_mean         : mean CPU utilization % (100 - idle)
+cpu_active_mean         : mean CPU compute utilization % (100 - idle - iowait).
+                          Excludes iowait so the value matches what `top` shows
+                          as "CPU busy" (user+sys+irq+softirq).  For RocksDB with
+                          active NVMe compaction, iowait can be 30-50 %, so
+                          (100 - idle) would overstate compute utilization badly.
+cpu_active_mean_raw     : mean (100 - idle) %, i.e. including iowait — kept for
+                          comparison with tools that define it this way.
+cpu_iowait_mean         : mean iowait % — the gap between cpu_active_mean_raw and
+                          cpu_active_mean; large values confirm I/O-bound compaction.
 cpu_active_std
 disk_read_mb/s          : mean disk read bandwidth (MB/s) over steady-state window
 disk_read_std
@@ -429,6 +437,7 @@ def parse_system_csv(path, skip_s):
     nan = float('nan')
     empty = dict(
         cpu_active_mean=nan,  cpu_active_std=nan,
+        cpu_active_mean_raw=nan, cpu_iowait_mean=nan,
         disk_read_mean=nan,   disk_read_std=nan,
         disk_write_mean=nan,  disk_write_std=nan,
         disk_read_iops_mean=nan,  disk_read_iops_std=nan,
@@ -442,7 +451,14 @@ def parse_system_csv(path, skip_s):
         steady = df[df['elapsed_s'] >= skip_s]
         if steady.empty:
             steady = df
-        active = 100.0 - steady['cpu_idle_pct']
+        # cpu_active excludes iowait so it matches what `top` shows as "CPU busy"
+        # (user+sys+irq+softirq).  iowait is CPU-idle time waiting for I/O; for
+        # RocksDB with active NVMe compaction it can be 30-50 %, causing (100-idle)
+        # to overstate compute utilisation significantly.
+        iowait = steady['cpu_iowait_pct'] if 'cpu_iowait_pct' in steady.columns \
+                 else pd.Series([0.0] * len(steady), index=steady.index)
+        active_raw = 100.0 - steady['cpu_idle_pct']          # includes iowait
+        active     = active_raw - iowait                      # compute-only
         dr = steady['disk_read_mbs']
         dw = steady['disk_write_mbs']
         # IOPS columns (present in new-format CSVs; fall back to NaN if absent)
@@ -459,8 +475,10 @@ def parse_system_csv(path, skip_s):
         else:
             mu = ma = mt = pct = pd.Series(dtype=float)
         return dict(
-            cpu_active_mean      = active.mean(),
+            cpu_active_mean      = active.mean(),          # compute-only (excl. iowait)
             cpu_active_std       = active.std(ddof=1),
+            cpu_active_mean_raw  = active_raw.mean(),      # 100 - idle (incl. iowait)
+            cpu_iowait_mean      = iowait.mean(),
             disk_read_mean       = dr.mean(),
             disk_read_std        = dr.std(ddof=1),
             disk_write_mean      = dw.mean(),
@@ -594,8 +612,10 @@ for rd in run_dirs:
         threads               = t,
         xput_mean             = xput_mean,
         xput_std              = xput_std,
-        cpu_active_mean       = sys_stats['cpu_active_mean'],
+        cpu_active_mean       = sys_stats['cpu_active_mean'],     # excl. iowait
         cpu_active_std        = sys_stats['cpu_active_std'],
+        cpu_active_mean_raw   = sys_stats.get('cpu_active_mean_raw', float('nan')),
+        cpu_iowait_mean       = sys_stats.get('cpu_iowait_mean',    float('nan')),
         **{'disk_read_mb/s'   : disk_r},
         disk_read_std         = disk_rs,
         **{'disk_write_mb/s'  : disk_w},
