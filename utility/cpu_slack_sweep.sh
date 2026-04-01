@@ -221,9 +221,19 @@ outfile     = sys.argv[1]
 disk_device = sys.argv[2] if len(sys.argv) > 2 else ""
 
 def read_cpu():
+    # Returns fields 1-8 of the first 'cpu' line in /proc/stat:
+    # user nice sys idle iowait irq softirq steal
     with open('/proc/stat') as f:
         parts = f.readline().split()
     return [int(x) for x in parts[1:9]]
+
+def read_ctxt():
+    # Total context switches since boot; diff gives ctx/sec.
+    with open('/proc/stat') as f:
+        for line in f:
+            if line.startswith('ctxt '):
+                return int(line.split()[1])
+    return 0
 
 def read_disk(dev):
     if not dev:
@@ -235,7 +245,8 @@ def read_disk(dev):
                 return int(p[5]), int(p[9])
     return 0, 0
 
-prev_cpu = read_cpu()
+prev_cpu  = read_cpu()
+prev_ctxt = read_ctxt()
 prev_rd, prev_wr = read_disk(disk_device)
 prev_t   = time.time()
 
@@ -243,12 +254,14 @@ with open(outfile, 'w', newline='') as fh:
     w = csv.writer(fh)
     w.writerow(['timestamp_s', 'cpu_user_pct', 'cpu_sys_pct',
                 'cpu_iowait_pct', 'cpu_idle_pct',
-                'disk_read_mbs', 'disk_write_mbs'])
+                'disk_read_mbs', 'disk_write_mbs',
+                'ctx_switches_per_sec'])
     fh.flush()
     while True:
         time.sleep(1)
-        now     = time.time()
-        cur_cpu = read_cpu()
+        now      = time.time()
+        cur_cpu  = read_cpu()
+        cur_ctxt = read_ctxt()
         cur_rd, cur_wr = read_disk(disk_device)
 
         delta = [cur_cpu[i] - prev_cpu[i] for i in range(8)]
@@ -257,17 +270,19 @@ with open(outfile, 'w', newline='') as fh:
         user_pct   = 100.0 * delta[0] / total
         sys_pct    = 100.0 * delta[2] / total
         iowait_pct = 100.0 * delta[4] / total
-
         dt = (now - prev_t) or 1
-        rd_mbs = (cur_rd - prev_rd) * 512 / 1024 / 1024 / dt
-        wr_mbs = (cur_wr - prev_wr) * 512 / 1024 / 1024 / dt
+        rd_mbs    = (cur_rd   - prev_rd)   * 512 / 1024 / 1024 / dt
+        wr_mbs    = (cur_wr   - prev_wr)   * 512 / 1024 / 1024 / dt
+        ctx_per_s = (cur_ctxt - prev_ctxt) / dt
 
         w.writerow([int(now),
                     f'{user_pct:.2f}', f'{sys_pct:.2f}',
                     f'{iowait_pct:.2f}', f'{idle_pct:.2f}',
-                    f'{rd_mbs:.3f}', f'{wr_mbs:.3f}'])
+                    f'{rd_mbs:.3f}', f'{wr_mbs:.3f}',
+                    f'{ctx_per_s:.0f}'])
         fh.flush()
-        prev_cpu = cur_cpu
+        prev_cpu  = cur_cpu
+        prev_ctxt = cur_ctxt
         prev_rd, prev_wr = cur_rd, cur_wr
         prev_t   = now
 PYMON
@@ -734,22 +749,32 @@ try:
     sys_df['cpu_busy']    = 100.0 - sys_df['cpu_idle_pct']
     sys_df['cpu_compute'] = sys_df['cpu_busy'] - iowait_col
 
+    ctx_col = sys_df['ctx_switches_per_sec'] if 'ctx_switches_per_sec' in sys_df.columns \
+              else pd.Series(np.nan, index=sys_df.index)
+
     for _, wrow in xw.iterrows():
         t0 = wrow['window_start_sec']
         t1 = t0 + XPUT_WINDOW
         win = sys_df[(sys_df['elapsed_s'] >= t0) & (sys_df['elapsed_s'] < t1)]
         if win.empty:
             sys_rows.append(dict(cpu_compute_mean=np.nan, cpu_busy_mean=np.nan,
-                                 cpu_iowait_mean=np.nan,  cpu_active_std=np.nan,
-                                 disk_read_mean=np.nan,   disk_write_mean=np.nan))
+                                 cpu_iowait_mean=np.nan,
+                                 cpu_compute_std=np.nan,  cpu_busy_std=np.nan,
+                                 disk_read_mean=np.nan,   disk_read_std=np.nan,
+                                 disk_write_mean=np.nan,  disk_write_std=np.nan,
+                                 ctx_switches_mean=np.nan))
         else:
             sys_rows.append(dict(
-                cpu_compute_mean = win['cpu_compute'].mean(),
-                cpu_busy_mean    = win['cpu_busy'].mean(),
-                cpu_iowait_mean  = iowait_col[win.index].mean(),
-                cpu_active_std   = win['cpu_compute'].std(ddof=1),
-                disk_read_mean   = win['disk_read_mbs'].mean(),
-                disk_write_mean  = win['disk_write_mbs'].mean(),
+                cpu_compute_mean  = win['cpu_compute'].mean(),
+                cpu_busy_mean     = win['cpu_busy'].mean(),
+                cpu_iowait_mean   = iowait_col[win.index].mean(),
+                cpu_compute_std   = win['cpu_compute'].std(ddof=1),
+                cpu_busy_std      = win['cpu_busy'].std(ddof=1),
+                disk_read_mean    = win['disk_read_mbs'].mean(),
+                disk_read_std     = win['disk_read_mbs'].std(ddof=1),
+                disk_write_mean   = win['disk_write_mbs'].mean(),
+                disk_write_std    = win['disk_write_mbs'].std(ddof=1),
+                ctx_switches_mean = ctx_col[win.index].mean(),
             ))
 except Exception as e:
     print(f"  [warn] Could not parse {sys_path}: {e}")
@@ -798,7 +823,7 @@ plt.rcParams.update({
     'axes.labelsize': 11, 'xtick.labelsize': 9, 'ytick.labelsize': 10,
 })
 
-fig = plt.figure(figsize=(14, 12))
+fig = plt.figure(figsize=(14, 13))
 gs  = gridspec.GridSpec(3, 1, hspace=0.55)
 ax_xput = fig.add_subplot(gs[0])
 ax_cpu  = fig.add_subplot(gs[1], sharex=ax_xput)
@@ -807,22 +832,27 @@ ax_disk = fig.add_subplot(gs[2], sharex=ax_xput)
 t    = df['window_start_sec'].values
 wkrs = df['workers'].values
 
-def add_slack_vline(ax):
+def add_slack_vline(ax, label=True):
     if slack_boundary_w is not None:
-        # Find the window_start_sec for the first degraded window (slack_boundary_w + 1)
         deg_rows = df[df['workers'] == slack_boundary_w + 1]
         if not deg_rows.empty:
             vx = deg_rows.iloc[0]['window_start_sec']
-            ax.axvline(vx, color='purple', linestyle=':', alpha=0.75,
-                       label=f'Slack boundary: {slack_boundary_w} workers')
+            lbl = f'Slack boundary: {slack_boundary_w} workers' if label else None
+            ax.axvline(vx, color='purple', linestyle=':', alpha=0.75, label=lbl)
 
-# ── Panel 1: write throughput ────────────────────────────────────────────────
+# ── Panel 1: write throughput with min/max band ──────────────────────────────
 
+# Shaded min/max band behind the mean line shows the full per-second range
+# within each window — a single write stall tanks the min even when the mean
+# and stddev error bars look modest.
+if 'min_throughput' in df.columns and 'max_throughput' in df.columns:
+    ax_xput.fill_between(t, df['min_throughput'], df['max_throughput'],
+                         alpha=0.18, color='steelblue', label='Min/max range')
 ax_xput.errorbar(t, df['avg_throughput'], yerr=df['stddev_throughput'],
                  fmt='o-', color='steelblue', linewidth=2, markersize=6,
                  capsize=4, capthick=1.5, elinewidth=1.5,
-                 label='Write throughput (ops/s)  ± 1σ')
-baseline_label = 'Knee baseline' if KNEE_XPUT > 0 else f'Window-0 baseline ({baseline_xput:.0f} ops/s)'
+                 label='Mean throughput  ± 1σ')
+baseline_label = 'Knee baseline' if KNEE_XPUT > 0 else 'Window-0 baseline'
 ax_xput.axhline(baseline_xput, color='crimson', linestyle='--', alpha=0.7,
                 label=f'{baseline_label} ({baseline_xput:.0f} ops/s)')
 ax_xput.axhline(baseline_xput * (1 - DEGRADATION_PCT),
@@ -830,56 +860,49 @@ ax_xput.axhline(baseline_xput * (1 - DEGRADATION_PCT),
                 label=f'−{DEGRADATION_PCT*100:.0f}% threshold')
 add_slack_vline(ax_xput)
 ax_xput.set_ylabel('Write throughput\n(ops / sec)')
-ax_xput.set_title('Write throughput over time  (± 1 σ)  —  worker count shown on X-axis')
+ax_xput.set_title('Write throughput vs concurrent transform workers  (± 1σ, shaded = min/max)')
 ax_xput.legend(fontsize=9, loc='lower left')
 
-# ── Panel 2: CPU utilization ─────────────────────────────────────────────────
+# ── Panel 2: CPU utilization with error bars ─────────────────────────────────
 
-ax_cpu.plot(t, df['cpu_busy_mean'], 's--', color='steelblue', linewidth=2,
-            markersize=6, label='cpu_busy = 100−idle  (incl. iowait) %')
-ax_cpu.plot(t, df['cpu_compute_mean'], '^-', color='forestgreen', linewidth=2,
-            markersize=6, label='cpu_compute = 100−idle−iowait  (pure compute) %')
+ax_cpu.errorbar(t, df['cpu_busy_mean'], yerr=df['cpu_busy_std'],
+                fmt='s--', color='steelblue', linewidth=2, markersize=6,
+                capsize=4, capthick=1.5, elinewidth=1.5,
+                label='cpu_busy = 100−idle  (incl. iowait) %')
+ax_cpu.errorbar(t, df['cpu_compute_mean'], yerr=df['cpu_compute_std'],
+                fmt='^-', color='forestgreen', linewidth=2, markersize=6,
+                capsize=4, capthick=1.5, elinewidth=1.5,
+                label='cpu_compute = 100−idle−iowait  (pure compute) %')
 ax_cpu.fill_between(t, df['cpu_compute_mean'], df['cpu_busy_mean'],
                     alpha=0.13, color='steelblue', label='iowait gap')
 ax_cpu.set_ylim(0, 105)
 ax_cpu.axhline(100, color='gray', linestyle=':', alpha=0.55, label='100% ceiling')
-add_slack_vline(ax_cpu)
+add_slack_vline(ax_cpu, label=False)
 ax_cpu.set_ylabel('CPU utilization (%)')
-ax_cpu.set_title('System CPU utilization over time\n'
-                 'gap = iowait (CPU stalled on I/O, not compute)')
+ax_cpu.set_title('System CPU utilization  (± 1σ)  —  gap = iowait')
 ax_cpu.legend(fontsize=9, loc='lower right')
 
-# ── Panel 3: disk bandwidth ──────────────────────────────────────────────────
+# ── Panel 3: disk bandwidth with error bars ───────────────────────────────────
 
-ax_disk.plot(t, df['disk_write_mean'], 's-', color='darkorange', linewidth=2,
-             markersize=6, label='Disk write (MB/s)')
-ax_disk.plot(t, df['disk_read_mean'],  'D--', color='saddlebrown', linewidth=2,
-             markersize=5, label='Disk read (MB/s)')
-add_slack_vline(ax_disk)
+ax_disk.errorbar(t, df['disk_write_mean'], yerr=df['disk_write_std'],
+                 fmt='s-', color='darkorange', linewidth=2, markersize=6,
+                 capsize=4, capthick=1.5, elinewidth=1.5,
+                 label='Disk write (MB/s)  ± 1σ')
+ax_disk.errorbar(t, df['disk_read_mean'], yerr=df['disk_read_std'],
+                 fmt='D--', color='saddlebrown', linewidth=2, markersize=5,
+                 capsize=4, capthick=1.5, elinewidth=1.5,
+                 label='Disk read (MB/s)  ± 1σ')
+add_slack_vline(ax_disk, label=False)
 ax_disk.set_ylabel('Disk I/O\n(MB / sec)')
-ax_disk.set_title('Disk bandwidth over time\n'
-                  '(flat = transforms are CPU-bound in memory; rising = I/O coupling)')
+ax_disk.set_title('Disk bandwidth  (± 1σ)')
 ax_disk.legend(fontsize=9, loc='lower left')
 
-# ── X-axis: time ticks with worker-count labels ───────────────────────────────
-# Show every window as a tick; label with "Ns / Kw" (N=start_sec, K=workers).
+# ── X-axis: concurrent worker count only ─────────────────────────────────────
 
-tick_pos   = t
-tick_top   = [f'{int(s)}s'  for s in tick_pos]
-tick_bot   = [f'w={int(w)}' for w in wkrs]
-
-ax_disk.set_xticks(tick_pos)
-ax_disk.set_xticklabels(tick_top, rotation=45, ha='right', fontsize=8)
-
-# Add secondary x-axis below showing worker count.
-ax2 = ax_disk.twiny()
-ax2.set_xlim(ax_disk.get_xlim())
-ax2.set_xticks(tick_pos)
-ax2.set_xticklabels(tick_bot, fontsize=8, rotation=45, ha='left')
-ax2.xaxis.set_ticks_position('bottom')
-ax2.xaxis.set_label_position('bottom')
-ax2.spines['bottom'].set_position(('outward', 46))
-ax2.set_xlabel('Concurrent transform workers (w=0 = baseline)', fontsize=9)
+tick_labels = [f'w={int(w)}' for w in wkrs]
+ax_disk.set_xticks(t)
+ax_disk.set_xticklabels(tick_labels, rotation=45, ha='right', fontsize=8)
+ax_disk.set_xlabel('Concurrent transform workers  (w=0 = baseline)', fontsize=10)
 
 plt.setp(ax_xput.get_xticklabels(), visible=False)
 plt.setp(ax_cpu.get_xticklabels(),  visible=False)

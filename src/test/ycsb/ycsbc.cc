@@ -457,7 +457,7 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int run_t
       if (!out) {
         fprintf(stderr, "Warning: could not open xput output file '%s'\n", xput_file.c_str());
       } else {
-        out << "window_start_sec,avg_throughput,stddev_throughput\n";
+        out << "window_start_sec,avg_throughput,stddev_throughput,min_throughput,max_throughput\n";
         for (int w = skip; w + xput_window <= run_time_in_units; w += xput_window) {
           double wmean = 0.0;
           for (int k = w; k < w + xput_window; ++k) wmean += xputs[k];
@@ -465,7 +465,9 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int run_t
           double wsq = 0.0;
           for (int k = w; k < w + xput_window; ++k) wsq += std::pow(double(xputs[k]) - wmean, 2);
           double wstddev = std::sqrt(wsq / xput_window);
-          out << w << "," << wmean << "," << wstddev << "\n";
+          uint64_t wmin = *std::min_element(xputs.begin() + w, xputs.begin() + w + xput_window);
+          uint64_t wmax = *std::max_element(xputs.begin() + w, xputs.begin() + w + xput_window);
+          out << w << "," << wmean << "," << wstddev << "," << wmin << "," << wmax << "\n";
         }
         printf("Per-window throughput stats written to '%s' (window=%ds, skip=%ds)\n",
                xput_file.c_str(), xput_window, skip);
