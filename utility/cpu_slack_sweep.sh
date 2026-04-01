@@ -122,7 +122,11 @@ WORKER_ROUNDS_MULTIPLIER="${WORKER_ROUNDS_MULTIPLIER:-8}"
 
 # ── Experiment timing ─────────────────────────────────────────────────────────
 
-DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
+# Block device to monitor for disk I/O (passed to the system monitor).
+# Leave unset to auto-detect from the filesystem OUTPUT_DIR lives on.
+# Override explicitly when the data disk differs from the OS disk, e.g.:
+#   DISK_DEVICE=sdb bash ../utility/cpu_slack_sweep.sh
+DISK_DEVICE="${DISK_DEVICE:-}"
 
 # Total seconds for the single YCSB throughput run.
 # With XPUT_WINDOW=30 this yields 30 per-window measurements: window 0 is the
@@ -198,9 +202,33 @@ check_prereqs() {
             || sudo apt-get install -y python3-matplotlib python3-pandas python3-numpy -q
     }
     [[ -d "$WORKLOAD_DIR" ]] || die "Workload dir not found: $WORKLOAD_DIR"
-    if ! awk '{print $3}' /proc/diskstats 2>/dev/null | grep -qx "$DISK_DEVICE"; then
-        log "WARNING: device '$DISK_DEVICE' not found — disk I/O will be zero."
-        log "  Available: $(awk '{print $3}' /proc/diskstats | sort -u | tr '\n' ' ')"
+    # Auto-detect DISK_DEVICE if unset or not present in /proc/diskstats.
+    # Override with DISK_DEVICE=sdb (or whichever device) when the data disk
+    # differs from the OS disk (e.g. multi-disk setups).
+    if [[ -z "$DISK_DEVICE" ]] || \
+       ! awk '{print $3}' /proc/diskstats 2>/dev/null | grep -qx "$DISK_DEVICE"; then
+        local devfile devname detected=""
+        # Ask df which block device backs the directory OUTPUT_DIR will live in.
+        devfile=$(df "$(dirname "$OUTPUT_DIR")" 2>/dev/null | awk 'NR==2{print $1}')
+        devname="${devfile##*/}"   # strip /dev/ prefix
+        # Try candidates in order: as-is, strip NVMe partition suffix (p1→""),
+        # strip SATA partition suffix (trailing digit: sda1→sda).
+        local c
+        for c in "$devname" \
+                 "$(echo "$devname" | sed -E 's/p[0-9]+$//')" \
+                 "$(echo "$devname" | sed -E 's/[0-9]+$//')"; do
+            if [[ -n "$c" ]] && \
+               awk '{print $3}' /proc/diskstats 2>/dev/null | grep -qx "$c"; then
+                detected="$c"; break
+            fi
+        done
+        if [[ -n "$detected" ]]; then
+            log "  DISK_DEVICE '$DISK_DEVICE' not found; auto-detected '$detected' from $(dirname "$OUTPUT_DIR")"
+            DISK_DEVICE="$detected"
+        else
+            log "WARNING: DISK_DEVICE '$DISK_DEVICE' not found and auto-detection failed — disk I/O will be zero."
+            log "  Set DISK_DEVICE manually. Available: $(awk '{print $3}' /proc/diskstats | sort -u | tr '\n' ' ')"
+        fi
     fi
     (( RUNTIME_SECS > 0 ))   || die "RUNTIME_SECS must be > 0"
     (( XPUT_WINDOW > 0 ))    || die "XPUT_WINDOW must be > 0"
