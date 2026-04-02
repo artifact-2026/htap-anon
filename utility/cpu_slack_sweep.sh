@@ -48,6 +48,12 @@
 
 set -euo pipefail
 
+# ── Optional: path to saturation_sweep.sh summary.csv ─────────────────────────
+# When provided, the combined plotter overlays saturation-phase CPU and disk
+# utilization alongside the slack-sweep phase in a single chart.
+# X-axis ticks: 1, 2, …, KNEE_THREADS, KNEE_THREADS+1, … , KNEE_THREADS+N.
+SATURATION_SUMMARY="${SATURATION_SUMMARY:-}"
+
 # ── Optional: source Phase 1 calibration file ─────────────────────────────────
 # Run calibrate_transform_rate.sh first, then either:
 #
@@ -160,8 +166,9 @@ DROP_CACHES="${DROP_CACHES:-true}"
 # =============================================================================
 
 MONITOR_SCRIPT=""
-TRANSFORM_SCRIPT=""
+TRANSFORM_BINARY=""     # compiled iBench_cpu binary (replaces Python worker)
 PLOTTER_SCRIPT=""
+COMBINED_PLOTTER_SCRIPT=""
 TMPSPEC=""
 MONITOR_PID=""
 # Client write throughput (ops/s) and per-second stddev parsed from YCSB output.
@@ -181,10 +188,11 @@ cleanup() {
     for pid in "${TRANSFORM_PIDS[@]:-}"; do
         kill "$pid" 2>/dev/null || true
     done
-    [[ -n "${MONITOR_SCRIPT:-}"   ]] && rm -f "$MONITOR_SCRIPT"
-    [[ -n "${TRANSFORM_SCRIPT:-}" ]] && rm -f "$TRANSFORM_SCRIPT"
-    [[ -n "${PLOTTER_SCRIPT:-}"   ]] && rm -f "$PLOTTER_SCRIPT"
-    [[ -n "${TMPSPEC:-}"          ]] && rm -f "$TMPSPEC"
+    [[ -n "${MONITOR_SCRIPT:-}"          ]] && rm -f "$MONITOR_SCRIPT"
+    [[ -n "${TRANSFORM_BINARY:-}"        ]] && rm -f "$TRANSFORM_BINARY"
+    [[ -n "${PLOTTER_SCRIPT:-}"          ]] && rm -f "$PLOTTER_SCRIPT"
+    [[ -n "${COMBINED_PLOTTER_SCRIPT:-}" ]] && rm -f "$COMBINED_PLOTTER_SCRIPT"
+    [[ -n "${TMPSPEC:-}"                 ]] && rm -f "$TMPSPEC"
 }
 trap cleanup EXIT
 
@@ -316,130 +324,23 @@ with open(outfile, 'w', newline='') as fh:
 PYMON
 }
 
-# ── Embedded rate-limited transform worker ────────────────────────────────────
+# ── Compiled transform worker (iBench_cpu.cc) ────────────────────────────────
 #
-# Each worker thread targets TRANSFORMS_PER_WORKER_PER_SEC.  One transform =
-# software CRC32 over each of the field_count chunks of field_length bytes,
-# matching one Mycelium mRoutine pass over a single record.  Workers sleep
-# between transforms to respect the rate cap — they are NOT busy loops.
+# Each worker is a separate process running the compiled iBench_cpu binary.
+# The binary performs Murmur3-style 64-bit integer mix rounds with optional
+# rate limiting — pure CPU register work, no memory or disk I/O.
 #
-# Output CSV:  timestamp_s, total_transforms_this_second
-# (per-second aggregate across all worker threads, for stddev computation)
+# Using C++ instead of Python eliminates interpreter overhead (~100×) and
+# gives precise, low-jitter per-core CPU pressure via clock_nanosleep.
 
-setup_transform_script() {
-    TRANSFORM_SCRIPT=$(mktemp /tmp/slack_transform_XXXXX.py)
-    cat > "$TRANSFORM_SCRIPT" << 'PYTRANS'
-#!/usr/bin/env python3
-"""
-Rate-limited transform workers simulating Mycelium mRoutine pipeline CPU cost.
-
-Each worker runs as a separate OS process (multiprocessing.Process) so that
-it occupies a dedicated CPU core and is not serialised by the CPython GIL.
-Using threading.Thread instead would cap total CPU consumption at one core
-regardless of worker count, making the load model incorrect.
-
-Each transform performs field_count × (field_length // 8) Murmur3-style
-integer mix rounds — pure register arithmetic, no I/O.
-
-Usage:
-  python3 <script> <n_workers> <transforms_per_worker_per_sec>
-                   <field_count> <field_length> <duration_s> <out_csv>
-"""
-import sys, time, multiprocessing, csv
-
-n_workers        = int(sys.argv[1])
-rate_per_wkr     = int(sys.argv[2])   # transforms/sec per worker
-field_count      = int(sys.argv[3])
-field_length     = int(sys.argv[4])
-duration_s       = int(sys.argv[5])
-out_csv          = sys.argv[6]
-rounds_multiplier = int(sys.argv[7]) if len(sys.argv) > 7 else 1
-
-# Base rounds = field_count × (field_length // 8): one hash word per 8 bytes
-# of field payload.  The multiplier scales this up so each transform burns
-# more CPU without changing the logical transform rate.  At multiplier=1 each
-# worker sleeps ~85 % of the time at 1000 Hz; at multiplier≥8 the sleep goes
-# to zero and the worker saturates one full CPU core.
-ROUNDS_PER_TRANSFORM = field_count * max(1, field_length // 8) * rounds_multiplier
-
-_M1   = 0xFF51AFD7ED558CCD   # Murmur3 mix constants
-_M2   = 0xC4CEB9FE1A85EC53
-_MASK = 0xFFFFFFFFFFFFFFFF
-
-def _mix(x):
-    """One Murmur3-style 64-bit integer finalisation round (register-only)."""
-    x = ((x ^ (x >> 33)) * _M1) & _MASK
-    x = ((x ^ (x >> 33)) * _M2) & _MASK
-    return x ^ (x >> 33)
-
-MAX_SECS = duration_s + 5
-
-def worker_main(wid, rate, dur, start_wall, per_sec_arr):
-    """
-    One mRoutine pipeline — runs in its own OS process, consuming a full CPU
-    core.  Uses time.time() (wall clock) against the shared start_wall epoch
-    for consistent timing across processes; time.perf_counter() is used only
-    for intra-process rate limiting where cross-process consistency is not
-    needed.
-    """
-    state    = wid * 0x9E3779B97F4A7C15 & _MASK
-    interval = 1.0 / rate
-    end_wall = start_wall + dur
-    next_t   = time.perf_counter() + interval
-
-    while time.time() < end_wall:
-        # ── one transform: ROUNDS_PER_TRANSFORM mix rounds in registers ──
-        # Data-dependent chain prevents the interpreter from collapsing it.
-        x = state
-        for _ in range(ROUNDS_PER_TRANSFORM):
-            x = _mix(x)
-        state = x
-
-        # ── record into the per-second bucket (shared array, built-in lock) ──
-        elapsed_s = int(time.time() - start_wall)
-        if 0 <= elapsed_s < MAX_SECS:
-            with per_sec_arr.get_lock():
-                per_sec_arr[elapsed_s] += 1
-
-        # ── rate limiting: sleep until next scheduled transform ──
-        sleep_for = next_t - time.perf_counter()
-        if sleep_for > 0:
-            time.sleep(sleep_for)
-        # Don't try to catch up if we fell behind — just reschedule from now.
-        next_t = max(next_t + interval, time.perf_counter())
-
-if __name__ == '__main__':
-    # Shared signed-long array — one bucket per second, written by all workers.
-    # multiprocessing.Array('l', ...) is backed by shared memory and provides
-    # a built-in RLock via .get_lock().
-    per_sec_arr = multiprocessing.Array('l', MAX_SECS)
-    start_wall  = time.time()
-
-    procs = []
-    for wid in range(n_workers):
-        p = multiprocessing.Process(
-            target=worker_main,
-            args=(wid, rate_per_wkr, duration_s, start_wall, per_sec_arr),
-            daemon=True)
-        procs.append(p)
-
-    for p in procs:
-        p.start()
-    for p in procs:
-        p.join()
-
-    # Write per-second aggregate CSV.
-    with open(out_csv, 'w', newline='') as fh:
-        w = csv.writer(fh)
-        w.writerow(['elapsed_s', 'transforms_this_second'])
-        for s in range(duration_s):
-            w.writerow([s, per_sec_arr[s]])
-
-    total = sum(per_sec_arr[:duration_s])
-    print(f"Transform workers={n_workers}, rate={rate_per_wkr}/worker/s, "
-          f"rounds_per_transform={ROUNDS_PER_TRANSFORM} (×{rounds_multiplier}), "
-          f"total={total}, actual_rate={total/duration_s:.1f}/s")
-PYTRANS
+compile_transform_binary() {
+    local src_cc; src_cc="$(dirname "$0")/iBench_cpu.cc"
+    [[ -f "$src_cc" ]] || die "iBench_cpu.cc not found at '$src_cc'"
+    TRANSFORM_BINARY=$(mktemp /tmp/slack_cpu_XXXXX)
+    log "Compiling iBench_cpu.cc → $TRANSFORM_BINARY"
+    g++ -O2 -fopenmp -o "$TRANSFORM_BINARY" "$src_cc" -lrt \
+        || die "Failed to compile iBench_cpu.cc.  Need g++ and OpenMP."
+    chmod +x "$TRANSFORM_BINARY"
 }
 
 # ── Monitor / transform helpers ───────────────────────────────────────────────
@@ -536,16 +437,15 @@ run_one() {
     TRANSFORM_PIDS=()
 
     # ── Start in-memory transform workers ─────────────────────────────────────
+    local rounds_per_xfm=$(( FIELD_COUNT * (FIELD_LENGTH / 8) * WORKER_ROUNDS_MULTIPLIER ))
     if (( n_workers > 0 )); then
-        log "  Starting $n_workers in-memory transform worker(s) ..." \
-            "(${n_workers} × ${TRANSFORMS_PER_WORKER} transforms/s," \
-            "rounds_multiplier=${WORKER_ROUNDS_MULTIPLIER}," \
+        log "  Starting $n_workers iBench_cpu worker(s) ..." \
+            "(${n_workers} threads × ${TRANSFORMS_PER_WORKER} transforms/s," \
+            "rounds=${rounds_per_xfm}," \
             "total=$((n_workers * TRANSFORMS_PER_WORKER)) transforms/s)"
-        python3 "$TRANSFORM_SCRIPT" \
-            "$n_workers" "$TRANSFORMS_PER_WORKER" \
-            "$FIELD_COUNT" "$FIELD_LENGTH" \
-            "$RUNTIME_SECS" "$xfm_csv" \
-            "$WORKER_ROUNDS_MULTIPLIER" &
+        "$TRANSFORM_BINARY" \
+            "$RUNTIME_SECS" "$n_workers" \
+            "$TRANSFORMS_PER_WORKER" "$rounds_per_xfm" &
         TRANSFORM_PIDS=($!)
     fi
 
@@ -670,15 +570,18 @@ run_sweep() {
         local remaining=$(( RUNTIME_SECS - elapsed ))
         (( remaining <= 0 )) && break
 
-        log "  Window ${w}: launching transform worker ${w}" \
-            "(~${remaining}s remaining, total ~$((w * TRANSFORMS_PER_WORKER)) transforms/s)"
+        local rounds_per_xfm=$(( FIELD_COUNT * (FIELD_LENGTH / 8) * WORKER_ROUNDS_MULTIPLIER ))
+        log "  Window ${w}: launching iBench_cpu worker ${w}" \
+            "(~${remaining}s remaining," \
+            "total ~$((w * TRANSFORMS_PER_WORKER)) transforms/s," \
+            "rounds=${rounds_per_xfm})"
 
-        local xfm_csv="$sweep_dir/transform_w${w}.csv"
-        python3 "$TRANSFORM_SCRIPT" \
-            1 "$TRANSFORMS_PER_WORKER" \
-            "$FIELD_COUNT" "$FIELD_LENGTH" \
-            "$remaining" "$xfm_csv" \
-            "$WORKER_ROUNDS_MULTIPLIER" &
+        # Rate=0 → saturate mode (busy-loop): each worker pegs one core at 100%.
+        # The sweep varies the *number* of fully-loaded workers, not per-worker
+        # intensity.  Passing TRANSFORMS_PER_WORKER as the rate limit made each
+        # worker sleep ~98% of the time (effectively invisible on CPU metrics).
+        "$TRANSFORM_BINARY" \
+            "$remaining" 1 0 "$rounds_per_xfm" &
         TRANSFORM_PIDS+=($!)
 
         sleep "$XPUT_WINDOW"
@@ -951,6 +854,298 @@ print(f"\nPlot saved: {out}")
 PYPLOT
 }
 
+# ── Combined saturation + slack plotter ───────────────────────────────────────
+#
+# When SATURATION_SUMMARY is set, this plotter reads both the saturation-phase
+# summary.csv (per-thread-count CPU/disk aggregates) and the slack-sweep
+# system.csv (per-second data aggregated per window).  The X-axis is unified:
+#   1, 2, 4, 8, 12, 16, 16+1, 16+2, ..., 16+28
+# where KNEE_THREADS=16 in this example.
+
+write_combined_plotter() {
+    COMBINED_PLOTTER_SCRIPT=$(mktemp /tmp/slack_combined_plotter_XXXXX.py)
+    cat > "$COMBINED_PLOTTER_SCRIPT" << 'PYCOMB'
+#!/usr/bin/env python3
+"""
+combined_saturation_slack_plotter.py
+
+Reads:
+  1. Saturation-phase summary.csv — per-thread-count aggregated metrics.
+  2. Slack-sweep system.csv + xput_windows.csv — per-window metrics.
+
+Produces a 3-panel plot with unified X-axis:
+  Panel 1: Write throughput
+  Panel 2: CPU utilization (compute + busy + iowait gap)
+  Panel 3: Disk bandwidth (read + write)
+
+X-axis ticks:  1, 2, 4, …, K, K+1, K+2, …, K+N
+where K = KNEE_THREADS and N = number of slack-sweep workers.
+A vertical dashed line separates the saturation phase from the slack phase.
+"""
+import sys, os
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from matplotlib.ticker import FixedLocator, FixedFormatter
+
+OUTPUT_DIR        = sys.argv[1]
+SATURATION_CSV    = sys.argv[2]    # summary.csv from saturation_sweep.sh
+XPUT_WINDOW       = int(sys.argv[3])
+KNEE_THREADS      = int(sys.argv[4])
+KNEE_XPUT         = float(sys.argv[5])
+DEGRADATION_PCT   = float(sys.argv[6])
+
+SWEEP_DIR = os.path.join(OUTPUT_DIR, "sweep")
+PLOT_DIR  = os.path.join(OUTPUT_DIR, "plots")
+os.makedirs(PLOT_DIR, exist_ok=True)
+
+# ── Load saturation summary ───────────────────────────────────────────────────
+
+sat_df = pd.read_csv(SATURATION_CSV)
+sat_df = sat_df.sort_values('threads').reset_index(drop=True)
+
+# ── Load slack-sweep xput_windows.csv ─────────────────────────────────────────
+
+xput_path = os.path.join(SWEEP_DIR, "xput_windows.csv")
+try:
+    xw = pd.read_csv(xput_path)
+    if 'window_start_sec' not in xw.columns:
+        xw.columns = ['window_start_sec', 'avg_throughput', 'stddev_throughput']
+    xw = xw.sort_values('window_start_sec').reset_index(drop=True)
+    xw['workers'] = xw.index.astype(int)
+except Exception as e:
+    print(f"ERROR: could not read {xput_path}: {e}")
+    sys.exit(1)
+
+# ── Load slack-sweep system.csv and aggregate per window ──────────────────────
+
+sys_path = os.path.join(SWEEP_DIR, "system.csv")
+try:
+    sys_df = pd.read_csv(sys_path)
+    sys_df['elapsed_s'] = sys_df['timestamp_s'] - sys_df['timestamp_s'].iloc[0]
+    iowait_col = sys_df['cpu_iowait_pct'] if 'cpu_iowait_pct' in sys_df.columns \
+                 else pd.Series(0.0, index=sys_df.index)
+    sys_df['cpu_busy']    = 100.0 - sys_df['cpu_idle_pct']
+    sys_df['cpu_compute'] = sys_df['cpu_busy'] - iowait_col
+except Exception as e:
+    print(f"ERROR: could not read {sys_path}: {e}")
+    sys_df = pd.DataFrame()
+
+slack_sys_rows = []
+for _, wrow in xw.iterrows():
+    t0 = wrow['window_start_sec']
+    t1 = t0 + XPUT_WINDOW
+    if sys_df.empty:
+        slack_sys_rows.append(dict(
+            cpu_compute_mean=np.nan, cpu_busy_mean=np.nan, cpu_iowait_mean=np.nan,
+            cpu_compute_std=np.nan,  cpu_busy_std=np.nan,
+            disk_read_mean=np.nan,   disk_read_std=np.nan,
+            disk_write_mean=np.nan,  disk_write_std=np.nan))
+        continue
+    win = sys_df[(sys_df['elapsed_s'] >= t0) & (sys_df['elapsed_s'] < t1)]
+    if win.empty:
+        slack_sys_rows.append(dict(
+            cpu_compute_mean=np.nan, cpu_busy_mean=np.nan, cpu_iowait_mean=np.nan,
+            cpu_compute_std=np.nan,  cpu_busy_std=np.nan,
+            disk_read_mean=np.nan,   disk_read_std=np.nan,
+            disk_write_mean=np.nan,  disk_write_std=np.nan))
+    else:
+        iw = iowait_col[win.index] if not sys_df.empty else pd.Series(0.0)
+        slack_sys_rows.append(dict(
+            cpu_compute_mean = win['cpu_compute'].mean(),
+            cpu_busy_mean    = win['cpu_busy'].mean(),
+            cpu_iowait_mean  = iw.mean(),
+            cpu_compute_std  = win['cpu_compute'].std(ddof=1),
+            cpu_busy_std     = win['cpu_busy'].std(ddof=1),
+            disk_read_mean   = win['disk_read_mbs'].mean(),
+            disk_read_std    = win['disk_read_mbs'].std(ddof=1),
+            disk_write_mean  = win['disk_write_mbs'].mean(),
+            disk_write_std   = win['disk_write_mbs'].std(ddof=1),
+        ))
+
+slack_agg = pd.DataFrame(slack_sys_rows)
+slack_df  = pd.concat([xw.reset_index(drop=True), slack_agg.reset_index(drop=True)], axis=1)
+
+# ── Build unified X-axis ──────────────────────────────────────────────────────
+# Saturation phase: x-position = thread count (1, 2, 4, 8, …, K)
+# Slack phase:      x-position = K + worker_count (K+1, K+2, …, K+N)
+
+sat_x = sat_df['threads'].values.astype(float)
+slack_x = KNEE_THREADS + slack_df['workers'].values.astype(float)
+
+# Labels for saturation: just the thread count
+sat_labels = [str(int(t)) for t in sat_x]
+# Labels for slack: K+w format
+slack_labels = [f"{KNEE_THREADS}+{int(w)}" for w in slack_df['workers'].values]
+
+all_x      = np.concatenate([sat_x, slack_x])
+all_labels = sat_labels + slack_labels
+
+# ── Detect baseline and slack boundary ────────────────────────────────────────
+baseline_xput = KNEE_XPUT if KNEE_XPUT > 0 else (
+    slack_df['avg_throughput'].dropna().iloc[0] if not slack_df['avg_throughput'].dropna().empty
+    else np.nan)
+
+slack_boundary_w = None
+for _, row in slack_df.dropna(subset=['avg_throughput']).iterrows():
+    if baseline_xput > 0 and (baseline_xput - row['avg_throughput']) / baseline_xput <= DEGRADATION_PCT:
+        slack_boundary_w = int(row['workers'])
+    else:
+        if slack_boundary_w is not None:
+            break
+
+# ── Plot ──────────────────────────────────────────────────────────────────────
+
+plt.rcParams.update({
+    'figure.dpi': 150, 'font.size': 11,
+    'axes.spines.top': False, 'axes.spines.right': False,
+    'axes.grid': True, 'grid.alpha': 0.35,
+    'axes.labelsize': 11, 'xtick.labelsize': 8, 'ytick.labelsize': 10,
+})
+
+fig = plt.figure(figsize=(16, 14))
+gs  = gridspec.GridSpec(3, 1, hspace=0.50)
+ax_xput = fig.add_subplot(gs[0])
+ax_cpu  = fig.add_subplot(gs[1], sharex=ax_xput)
+ax_disk = fig.add_subplot(gs[2], sharex=ax_xput)
+
+# Vertical separator at the knee
+for ax in (ax_xput, ax_cpu, ax_disk):
+    ax.axvline(KNEE_THREADS + 0.5, color='gray', linestyle='--', alpha=0.6, linewidth=1.5)
+
+def add_slack_boundary_vline(ax, label=True):
+    if slack_boundary_w is not None:
+        vx = KNEE_THREADS + slack_boundary_w + 0.5
+        lbl = f'Slack boundary: {slack_boundary_w} workers' if label else None
+        ax.axvline(vx, color='purple', linestyle=':', alpha=0.75, label=lbl)
+
+# ── Panel 1: Write throughput ─────────────────────────────────────────────────
+# Saturation phase
+if 'xput_std' in sat_df.columns:
+    ax_xput.errorbar(sat_x, sat_df['xput_mean'], yerr=sat_df['xput_std'],
+                     fmt='o-', color='steelblue', linewidth=2, markersize=6,
+                     capsize=4, capthick=1.5, elinewidth=1.5,
+                     label='Saturation phase (throughput ± 1σ)')
+else:
+    ax_xput.plot(sat_x, sat_df['xput_mean'], 'o-', color='steelblue',
+                 linewidth=2, markersize=6, label='Saturation phase')
+
+# Slack phase
+ax_xput.errorbar(slack_x, slack_df['avg_throughput'], yerr=slack_df['stddev_throughput'],
+                 fmt='s-', color='darkorange', linewidth=2, markersize=6,
+                 capsize=4, capthick=1.5, elinewidth=1.5,
+                 label='Slack phase (throughput ± 1σ)')
+
+if not np.isnan(baseline_xput):
+    ax_xput.axhline(baseline_xput, color='crimson', linestyle='--', alpha=0.7,
+                    label=f'Knee baseline ({baseline_xput:.0f} ops/s)')
+    ax_xput.axhline(baseline_xput * (1 - DEGRADATION_PCT),
+                    color='crimson', linestyle=':', alpha=0.45,
+                    label=f'−{DEGRADATION_PCT*100:.0f}% threshold')
+add_slack_boundary_vline(ax_xput)
+ax_xput.set_ylabel('Write throughput\n(ops / sec)')
+ax_xput.set_title('Write throughput — saturation sweep → slack sweep', fontsize=12)
+ax_xput.legend(fontsize=8, loc='best')
+
+# ── Panel 2: CPU utilization ──────────────────────────────────────────────────
+# Saturation phase
+if 'cpu_busy_mean' in sat_df.columns:
+    sat_cpu_busy = sat_df['cpu_busy_mean']
+    sat_cpu_compute = sat_df.get('cpu_compute_mean', sat_cpu_busy)
+    sat_cpu_std = sat_df.get('cpu_active_std', pd.Series(0.0, index=sat_df.index))
+
+    ax_cpu.errorbar(sat_x, sat_cpu_busy, yerr=sat_cpu_std,
+                    fmt='s--', color='steelblue', linewidth=2, markersize=6,
+                    capsize=3, capthick=1.2, elinewidth=1.2,
+                    label='Saturation: cpu_busy (100−idle) %')
+    ax_cpu.errorbar(sat_x, sat_cpu_compute,
+                    fmt='^-', color='forestgreen', linewidth=2, markersize=6,
+                    capsize=3, capthick=1.2, elinewidth=1.2,
+                    label='Saturation: cpu_compute (100−idle−iowait) %')
+    ax_cpu.fill_between(sat_x, sat_cpu_compute, sat_cpu_busy,
+                        alpha=0.10, color='steelblue')
+
+# Slack phase
+ax_cpu.errorbar(slack_x, slack_df['cpu_busy_mean'], yerr=slack_df.get('cpu_busy_std', 0),
+                fmt='s--', color='darkorange', linewidth=2, markersize=6,
+                capsize=3, capthick=1.2, elinewidth=1.2,
+                label='Slack: cpu_busy %')
+ax_cpu.errorbar(slack_x, slack_df['cpu_compute_mean'], yerr=slack_df.get('cpu_compute_std', 0),
+                fmt='^-', color='darkgreen', linewidth=2, markersize=6,
+                capsize=3, capthick=1.2, elinewidth=1.2,
+                label='Slack: cpu_compute %')
+ax_cpu.fill_between(slack_x, slack_df['cpu_compute_mean'], slack_df['cpu_busy_mean'],
+                    alpha=0.10, color='darkorange')
+
+ax_cpu.set_ylim(0, 105)
+ax_cpu.axhline(100, color='gray', linestyle=':', alpha=0.55, label='100% ceiling')
+add_slack_boundary_vline(ax_cpu, label=False)
+ax_cpu.set_ylabel('CPU utilization (%)')
+ax_cpu.set_title('System CPU utilization — gap = iowait', fontsize=12)
+ax_cpu.legend(fontsize=7, loc='best', ncol=2)
+
+# ── Panel 3: Disk bandwidth ──────────────────────────────────────────────────
+# Saturation phase
+if 'disk_read_mb/s' in sat_df.columns:
+    ax_disk.errorbar(sat_x, sat_df['disk_write_mb/s'],
+                     yerr=sat_df.get('disk_write_std', 0),
+                     fmt='s-', color='steelblue', linewidth=2, markersize=6,
+                     capsize=3, capthick=1.2, elinewidth=1.2,
+                     label='Saturation: disk write (MB/s)')
+    ax_disk.errorbar(sat_x, sat_df['disk_read_mb/s'],
+                     yerr=sat_df.get('disk_read_std', 0),
+                     fmt='D--', color='cornflowerblue', linewidth=2, markersize=5,
+                     capsize=3, capthick=1.2, elinewidth=1.2,
+                     label='Saturation: disk read (MB/s)')
+
+# Slack phase
+ax_disk.errorbar(slack_x, slack_df['disk_write_mean'],
+                 yerr=slack_df.get('disk_write_std', 0),
+                 fmt='s-', color='darkorange', linewidth=2, markersize=6,
+                 capsize=3, capthick=1.2, elinewidth=1.2,
+                 label='Slack: disk write (MB/s)')
+ax_disk.errorbar(slack_x, slack_df['disk_read_mean'],
+                 yerr=slack_df.get('disk_read_std', 0),
+                 fmt='D--', color='saddlebrown', linewidth=2, markersize=5,
+                 capsize=3, capthick=1.2, elinewidth=1.2,
+                 label='Slack: disk read (MB/s)')
+add_slack_boundary_vline(ax_disk, label=False)
+ax_disk.set_ylabel('Disk I/O\n(MB / sec)')
+ax_disk.set_title('Disk bandwidth', fontsize=12)
+ax_disk.legend(fontsize=8, loc='best')
+
+# ── X-axis ticks ──────────────────────────────────────────────────────────────
+
+ax_disk.set_xticks(all_x)
+ax_disk.set_xticklabels(all_labels, rotation=45, ha='right', fontsize=7)
+ax_disk.set_xlabel(
+    f'← Saturation (client threads) │ Slack sweep (workers at {KNEE_THREADS} threads) →',
+    fontsize=10)
+
+plt.setp(ax_xput.get_xticklabels(), visible=False)
+plt.setp(ax_cpu.get_xticklabels(),  visible=False)
+
+# Add phase labels
+fig.text(0.25, 0.01, 'Saturation Phase', ha='center', fontsize=10, fontstyle='italic', color='steelblue')
+fig.text(0.70, 0.01, 'Slack Sweep Phase', ha='center', fontsize=10, fontstyle='italic', color='darkorange')
+
+slack_str = (f"  |  slack ≤ {slack_boundary_w} workers"
+             if slack_boundary_w is not None else "")
+fig.suptitle(
+    f'RocksDB characterization — saturation + CPU slack sweep'
+    f'{slack_str}',
+    fontsize=13, fontweight='bold', y=0.998)
+
+out = os.path.join(PLOT_DIR, "combined_saturation_slack.png")
+plt.savefig(out, bbox_inches='tight')
+plt.close()
+print(f"\nCombined plot saved: {out}")
+PYCOMB
+}
+
 run_plotter() {
     sep
     log "Generating CPU slack plots..."
@@ -961,6 +1156,19 @@ run_plotter() {
         "$OUTPUT_DIR" "$XPUT_WINDOW" "$KNEE_XPUT" \
         "$TRANSFORMS_PER_WORKER" "$FIELD_COUNT" "$FIELD_LENGTH" \
         "$DEGRADATION_THRESHOLD"
+
+    # ── Combined saturation + slack plot (when saturation data is available) ──
+    if [[ -n "$SATURATION_SUMMARY" && -f "$SATURATION_SUMMARY" ]]; then
+        log "Generating combined saturation + slack plot..."
+        write_combined_plotter
+        python3 "$COMBINED_PLOTTER_SCRIPT" \
+            "$OUTPUT_DIR" "$SATURATION_SUMMARY" \
+            "$XPUT_WINDOW" "$KNEE_THREADS" "$KNEE_XPUT" \
+            "$DEGRADATION_THRESHOLD"
+    else
+        log "  (Skipping combined plot — SATURATION_SUMMARY not set or not found)"
+        log "  Set SATURATION_SUMMARY=/path/to/summary.csv to enable."
+    fi
 }
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -979,11 +1187,12 @@ main() {
     log "  Runtime:         ${RUNTIME_SECS}s  ÷  window ${XPUT_WINDOW}s  = $((RUNTIME_SECS / XPUT_WINDOW)) windows"
     log "  Worker schedule: +1 worker per window (window 0 = baseline, no workers)"
     log "  Degrad. thresh:  ${DEGRADATION_THRESHOLD}  (plot annotation only)"
+    log "  Sat. summary:    ${SATURATION_SUMMARY:-<not set>}"
     echo ""
 
     check_prereqs
     setup_monitor_script
-    setup_transform_script
+    compile_transform_binary
     mkdir -p "$OUTPUT_DIR"
 
     run_sweep
