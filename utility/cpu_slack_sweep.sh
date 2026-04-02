@@ -161,6 +161,23 @@ DEGRADATION_THRESHOLD="${DEGRADATION_THRESHOLD:-0.10}"
 # supply a matching warm-cache KNEE_XPUT (e.g. from a Step 0 run).
 DROP_CACHES="${DROP_CACHES:-true}"
 
+# ── Combined-plot appearance ──────────────────────────────────────────────────
+
+# Matplotlib color for the *saturation-phase* series in the combined plot.
+# Set this to match the color used in your saturation_sweep plot so the two
+# figures share a consistent palette.  Any named color or hex string works,
+# e.g.:  SAT_COLOR='#2196F3'  or  SAT_COLOR='steelblue' (default).
+SAT_COLOR="${SAT_COLOR:-steelblue}"
+
+# Peak disk bandwidth of your storage device in MB/s.
+# Used only in the combined plot's "disk utilization %" panel:
+#   utilization = (disk_read_mb/s / DISK_READ_MAX_BW
+#                + disk_write_mb/s / DISK_WRITE_MAX_BW) × 100
+# Mirrors the disk_bandwidth_pct formula in saturation_sweep.sh.
+# Set to 0 to fall back to raw MB/s rather than a % scale (default: 0).
+DISK_READ_MAX_BW="${DISK_READ_MAX_BW:-0}"
+DISK_WRITE_MAX_BW="${DISK_WRITE_MAX_BW:-0}"
+
 # =============================================================================
 # Internals
 # =============================================================================
@@ -876,11 +893,25 @@ Reads:
 Produces a 3-panel plot with unified X-axis:
   Panel 1: Write throughput
   Panel 2: CPU utilization (compute + busy + iowait gap)
-  Panel 3: Disk bandwidth (read + write)
+  Panel 3: Disk total bandwidth utilization %
+             = (read_mb/s / read_max + write_mb/s / write_max) × 100
+             Falls back to raw MB/s when max bandwidths are not provided (=0).
 
 X-axis ticks:  1, 2, 4, …, K, K+1, K+2, …, K+N
 where K = KNEE_THREADS and N = number of slack-sweep workers.
+Saturation data is clipped to threads ≤ KNEE_THREADS.
 A vertical dashed line separates the saturation phase from the slack phase.
+
+CLI args:
+  sys.argv[1]  OUTPUT_DIR
+  sys.argv[2]  SATURATION_CSV
+  sys.argv[3]  XPUT_WINDOW
+  sys.argv[4]  KNEE_THREADS
+  sys.argv[5]  KNEE_XPUT
+  sys.argv[6]  DEGRADATION_PCT
+  sys.argv[7]  SAT_COLOR         (matplotlib color for saturation series)
+  sys.argv[8]  DISK_READ_MAX_BW  (MB/s; 0 = use raw MB/s scale)
+  sys.argv[9]  DISK_WRITE_MAX_BW (MB/s; 0 = use raw MB/s scale)
 """
 import sys, os
 import pandas as pd
@@ -897,15 +928,26 @@ XPUT_WINDOW       = int(sys.argv[3])
 KNEE_THREADS      = int(sys.argv[4])
 KNEE_XPUT         = float(sys.argv[5])
 DEGRADATION_PCT   = float(sys.argv[6])
+SAT_COLOR         = sys.argv[7]    # e.g. 'steelblue' or '#2196F3'
+DISK_READ_MAX_BW  = float(sys.argv[8])   # 0 → raw MB/s mode
+DISK_WRITE_MAX_BW = float(sys.argv[9])   # 0 → raw MB/s mode
+USE_DISK_PCT      = (DISK_READ_MAX_BW > 0 and DISK_WRITE_MAX_BW > 0)
 
 SWEEP_DIR = os.path.join(OUTPUT_DIR, "sweep")
 PLOT_DIR  = os.path.join(OUTPUT_DIR, "plots")
 os.makedirs(PLOT_DIR, exist_ok=True)
 
-# ── Load saturation summary ───────────────────────────────────────────────────
+# Slack phase always uses a warm-orange to stand apart from the sat phase color.
+SLACK_COLOR = 'darkorange'
+
+# ── Load saturation summary and clip to ≤ KNEE_THREADS ───────────────────────
+# Only show the saturation curve up to and including the knee.
+# Points beyond KNEE_THREADS belong to the over-saturation regime and can
+# distort the scale, so they are intentionally excluded.
 
 sat_df = pd.read_csv(SATURATION_CSV)
 sat_df = sat_df.sort_values('threads').reset_index(drop=True)
+sat_df = sat_df[sat_df['threads'] <= KNEE_THREADS].reset_index(drop=True)
 
 # ── Load slack-sweep xput_windows.csv ─────────────────────────────────────────
 
@@ -970,21 +1012,20 @@ slack_agg = pd.DataFrame(slack_sys_rows)
 slack_df  = pd.concat([xw.reset_index(drop=True), slack_agg.reset_index(drop=True)], axis=1)
 
 # ── Build unified X-axis ──────────────────────────────────────────────────────
-# Saturation phase: x-position = thread count (1, 2, 4, 8, …, K)
-# Slack phase:      x-position = K + worker_count (K+1, K+2, …, K+N)
+# Saturation phase: x-position = thread count (already clipped to ≤ KNEE_THREADS)
+# Slack phase:      x-position = K + worker_count
 
 sat_x = sat_df['threads'].values.astype(float)
 slack_x = KNEE_THREADS + slack_df['workers'].values.astype(float)
 
-# Labels for saturation: just the thread count
-sat_labels = [str(int(t)) for t in sat_x]
-# Labels for slack: K+w format
+sat_labels   = [str(int(t)) for t in sat_x]
 slack_labels = [f"{KNEE_THREADS}+{int(w)}" for w in slack_df['workers'].values]
 
 all_x      = np.concatenate([sat_x, slack_x])
 all_labels = sat_labels + slack_labels
 
 # ── Detect baseline and slack boundary ────────────────────────────────────────
+
 baseline_xput = KNEE_XPUT if KNEE_XPUT > 0 else (
     slack_df['avg_throughput'].dropna().iloc[0] if not slack_df['avg_throughput'].dropna().empty
     else np.nan)
@@ -996,6 +1037,49 @@ for _, row in slack_df.dropna(subset=['avg_throughput']).iterrows():
     else:
         if slack_boundary_w is not None:
             break
+
+# ── Disk utilization helpers ──────────────────────────────────────────────────
+
+def to_disk_util_pct(read_mbs, write_mbs):
+    """Combined disk utilization % = (r/r_max + w/w_max) × 100.
+    Returns raw MB/s as a fallback when max bandwidths are 0."""
+    if USE_DISK_PCT:
+        return (read_mbs / DISK_READ_MAX_BW + write_mbs / DISK_WRITE_MAX_BW) * 100.0
+    # fallback: treat as MB/s (returned as-is so the axis stays in MB/s)
+    return read_mbs + write_mbs
+
+# ── Per-point disk utilization ────────────────────────────────────────────────
+# Saturation summary (uses disk_read_mb/s, disk_write_mb/s columns)
+if USE_DISK_PCT and 'disk_read_mb/s' in sat_df.columns and 'disk_write_mb/s' in sat_df.columns:
+    sat_disk_util  = to_disk_util_pct(sat_df['disk_read_mb/s'], sat_df['disk_write_mb/s'])
+    # Propagate std: σ_combined = sqrt((σ_r/r_max)²+(σ_w/w_max)²) × 100
+    rr = sat_df.get('disk_read_std',  pd.Series(0.0, index=sat_df.index)).fillna(0)
+    rw = sat_df.get('disk_write_std', pd.Series(0.0, index=sat_df.index)).fillna(0)
+    sat_disk_std   = np.sqrt((rr / DISK_READ_MAX_BW)**2 + (rw / DISK_WRITE_MAX_BW)**2) * 100.0
+elif 'disk_read_mb/s' in sat_df.columns and 'disk_write_mb/s' in sat_df.columns:
+    sat_disk_util  = sat_df['disk_read_mb/s'] + sat_df['disk_write_mb/s']
+    sat_disk_std   = sat_df.get('disk_read_std', pd.Series(0.0, index=sat_df.index)).fillna(0) \
+                   + sat_df.get('disk_write_std', pd.Series(0.0, index=sat_df.index)).fillna(0)
+else:
+    sat_disk_util  = None
+    sat_disk_std   = None
+
+# Slack sweep (uses disk_read_mean, disk_write_mean columns)
+slk_r = slack_df['disk_read_mean'].fillna(0)
+slk_w = slack_df['disk_write_mean'].fillna(0)
+slak_disk_util = to_disk_util_pct(slk_r, slk_w)
+if USE_DISK_PCT:
+    slk_rs = slack_df.get('disk_read_std',  pd.Series(0.0, index=slack_df.index)).fillna(0)
+    slk_ws = slack_df.get('disk_write_std', pd.Series(0.0, index=slack_df.index)).fillna(0)
+    slak_disk_std = np.sqrt((slk_rs / DISK_READ_MAX_BW)**2 + (slk_ws / DISK_WRITE_MAX_BW)**2) * 100.0
+else:
+    slak_disk_std = (slack_df.get('disk_read_std',  pd.Series(0.0, index=slack_df.index)).fillna(0)
+                  + slack_df.get('disk_write_std', pd.Series(0.0, index=slack_df.index)).fillna(0))
+
+disk_ylabel  = 'Disk utilization\n(% of peak)' if USE_DISK_PCT else 'Disk I/O\n(MB/s total)'
+disk_title   = ('Disk total bandwidth utilization %  '
+                f'(read/{DISK_READ_MAX_BW:.0f} + write/{DISK_WRITE_MAX_BW:.0f} MB/s)\'  × 100'
+                if USE_DISK_PCT else 'Disk total bandwidth (read + write MB/s)')
 
 # ── Plot ──────────────────────────────────────────────────────────────────────
 
@@ -1012,7 +1096,7 @@ ax_xput = fig.add_subplot(gs[0])
 ax_cpu  = fig.add_subplot(gs[1], sharex=ax_xput)
 ax_disk = fig.add_subplot(gs[2], sharex=ax_xput)
 
-# Vertical separator at the knee
+# Vertical separator between saturation and slack phases
 for ax in (ax_xput, ax_cpu, ax_disk):
     ax.axvline(KNEE_THREADS + 0.5, color='gray', linestyle='--', alpha=0.6, linewidth=1.5)
 
@@ -1023,19 +1107,18 @@ def add_slack_boundary_vline(ax, label=True):
         ax.axvline(vx, color='purple', linestyle=':', alpha=0.75, label=lbl)
 
 # ── Panel 1: Write throughput ─────────────────────────────────────────────────
-# Saturation phase
+
 if 'xput_std' in sat_df.columns:
     ax_xput.errorbar(sat_x, sat_df['xput_mean'], yerr=sat_df['xput_std'],
-                     fmt='o-', color='steelblue', linewidth=2, markersize=6,
+                     fmt='o-', color=SAT_COLOR, linewidth=2, markersize=6,
                      capsize=4, capthick=1.5, elinewidth=1.5,
                      label='Saturation phase (throughput ± 1σ)')
 else:
-    ax_xput.plot(sat_x, sat_df['xput_mean'], 'o-', color='steelblue',
+    ax_xput.plot(sat_x, sat_df['xput_mean'], 'o-', color=SAT_COLOR,
                  linewidth=2, markersize=6, label='Saturation phase')
 
-# Slack phase
 ax_xput.errorbar(slack_x, slack_df['avg_throughput'], yerr=slack_df['stddev_throughput'],
-                 fmt='s-', color='darkorange', linewidth=2, markersize=6,
+                 fmt='s-', color=SLACK_COLOR, linewidth=2, markersize=6,
                  capsize=4, capthick=1.5, elinewidth=1.5,
                  label='Slack phase (throughput ± 1σ)')
 
@@ -1044,41 +1127,40 @@ if not np.isnan(baseline_xput):
                     label=f'Knee baseline ({baseline_xput:.0f} ops/s)')
     ax_xput.axhline(baseline_xput * (1 - DEGRADATION_PCT),
                     color='crimson', linestyle=':', alpha=0.45,
-                    label=f'−{DEGRADATION_PCT*100:.0f}% threshold')
+                    label=f'-{DEGRADATION_PCT*100:.0f}% threshold')
 add_slack_boundary_vline(ax_xput)
 ax_xput.set_ylabel('Write throughput\n(ops / sec)')
 ax_xput.set_title('Write throughput — saturation sweep → slack sweep', fontsize=12)
 ax_xput.legend(fontsize=8, loc='best')
 
 # ── Panel 2: CPU utilization ──────────────────────────────────────────────────
-# Saturation phase
+
 if 'cpu_busy_mean' in sat_df.columns:
-    sat_cpu_busy = sat_df['cpu_busy_mean']
+    sat_cpu_busy    = sat_df['cpu_busy_mean']
     sat_cpu_compute = sat_df.get('cpu_compute_mean', sat_cpu_busy)
-    sat_cpu_std = sat_df.get('cpu_active_std', pd.Series(0.0, index=sat_df.index))
+    sat_cpu_std     = sat_df.get('cpu_active_std', pd.Series(0.0, index=sat_df.index))
 
     ax_cpu.errorbar(sat_x, sat_cpu_busy, yerr=sat_cpu_std,
-                    fmt='s--', color='steelblue', linewidth=2, markersize=6,
-                    capsize=3, capthick=1.2, elinewidth=1.2,
+                    fmt='s--', color=SAT_COLOR, linewidth=2, markersize=6,
+                    capsize=3, capthick=1.2, elinewidth=1.2, alpha=0.85,
                     label='Saturation: cpu_busy (100−idle) %')
     ax_cpu.errorbar(sat_x, sat_cpu_compute,
-                    fmt='^-', color='forestgreen', linewidth=2, markersize=6,
-                    capsize=3, capthick=1.2, elinewidth=1.2,
+                    fmt='^-', color=SAT_COLOR, linewidth=2, markersize=6,
+                    capsize=3, capthick=1.2, elinewidth=1.2, alpha=0.55,
                     label='Saturation: cpu_compute (100−idle−iowait) %')
     ax_cpu.fill_between(sat_x, sat_cpu_compute, sat_cpu_busy,
-                        alpha=0.10, color='steelblue')
+                        alpha=0.10, color=SAT_COLOR)
 
-# Slack phase
 ax_cpu.errorbar(slack_x, slack_df['cpu_busy_mean'], yerr=slack_df.get('cpu_busy_std', 0),
-                fmt='s--', color='darkorange', linewidth=2, markersize=6,
+                fmt='s--', color=SLACK_COLOR, linewidth=2, markersize=6,
                 capsize=3, capthick=1.2, elinewidth=1.2,
                 label='Slack: cpu_busy %')
 ax_cpu.errorbar(slack_x, slack_df['cpu_compute_mean'], yerr=slack_df.get('cpu_compute_std', 0),
-                fmt='^-', color='darkgreen', linewidth=2, markersize=6,
-                capsize=3, capthick=1.2, elinewidth=1.2,
+                fmt='^-', color=SLACK_COLOR, linewidth=2, markersize=6,
+                capsize=3, capthick=1.2, elinewidth=1.2, alpha=0.65,
                 label='Slack: cpu_compute %')
 ax_cpu.fill_between(slack_x, slack_df['cpu_compute_mean'], slack_df['cpu_busy_mean'],
-                    alpha=0.10, color='darkorange')
+                    alpha=0.10, color=SLACK_COLOR)
 
 ax_cpu.set_ylim(0, 105)
 ax_cpu.axhline(100, color='gray', linestyle=':', alpha=0.55, label='100% ceiling')
@@ -1087,34 +1169,30 @@ ax_cpu.set_ylabel('CPU utilization (%)')
 ax_cpu.set_title('System CPU utilization — gap = iowait', fontsize=12)
 ax_cpu.legend(fontsize=7, loc='best', ncol=2)
 
-# ── Panel 3: Disk bandwidth ──────────────────────────────────────────────────
-# Saturation phase
-if 'disk_read_mb/s' in sat_df.columns:
-    ax_disk.errorbar(sat_x, sat_df['disk_write_mb/s'],
-                     yerr=sat_df.get('disk_write_std', 0),
-                     fmt='s-', color='steelblue', linewidth=2, markersize=6,
-                     capsize=3, capthick=1.2, elinewidth=1.2,
-                     label='Saturation: disk write (MB/s)')
-    ax_disk.errorbar(sat_x, sat_df['disk_read_mb/s'],
-                     yerr=sat_df.get('disk_read_std', 0),
-                     fmt='D--', color='cornflowerblue', linewidth=2, markersize=5,
-                     capsize=3, capthick=1.2, elinewidth=1.2,
-                     label='Saturation: disk read (MB/s)')
+# ── Panel 3: Disk total bandwidth utilization ─────────────────────────────────
+# Combined metric: (read_mb/s / read_max + write_mb/s / write_max) × 100 %
+# This mirrors disk_bandwidth_pct from saturation_sweep.sh so both phases
+# share the same Y-axis scale and can be compared directly.
+# When max bandwidths are not provided the Y-axis falls back to raw MB/s.
 
-# Slack phase
-ax_disk.errorbar(slack_x, slack_df['disk_write_mean'],
-                 yerr=slack_df.get('disk_write_std', 0),
-                 fmt='s-', color='darkorange', linewidth=2, markersize=6,
+if sat_disk_util is not None:
+    ax_disk.errorbar(sat_x, sat_disk_util, yerr=sat_disk_std,
+                     fmt='o-', color=SAT_COLOR, linewidth=2, markersize=6,
+                     capsize=3, capthick=1.2, elinewidth=1.2,
+                     label=f'Saturation: disk util')
+
+ax_disk.errorbar(slack_x, slak_disk_util, yerr=slak_disk_std,
+                 fmt='s-', color=SLACK_COLOR, linewidth=2, markersize=6,
                  capsize=3, capthick=1.2, elinewidth=1.2,
-                 label='Slack: disk write (MB/s)')
-ax_disk.errorbar(slack_x, slack_df['disk_read_mean'],
-                 yerr=slack_df.get('disk_read_std', 0),
-                 fmt='D--', color='saddlebrown', linewidth=2, markersize=5,
-                 capsize=3, capthick=1.2, elinewidth=1.2,
-                 label='Slack: disk read (MB/s)')
+                 label='Slack: disk util')
+
+if USE_DISK_PCT:
+    ax_disk.axhline(100, color='gray', linestyle=':', alpha=0.55, label='100% peak')
+    ax_disk.set_ylim(bottom=0)
+
 add_slack_boundary_vline(ax_disk, label=False)
-ax_disk.set_ylabel('Disk I/O\n(MB / sec)')
-ax_disk.set_title('Disk bandwidth', fontsize=12)
+ax_disk.set_ylabel(disk_ylabel)
+ax_disk.set_title(disk_title, fontsize=12)
 ax_disk.legend(fontsize=8, loc='best')
 
 # ── X-axis ticks ──────────────────────────────────────────────────────────────
@@ -1122,21 +1200,22 @@ ax_disk.legend(fontsize=8, loc='best')
 ax_disk.set_xticks(all_x)
 ax_disk.set_xticklabels(all_labels, rotation=45, ha='right', fontsize=7)
 ax_disk.set_xlabel(
-    f'← Saturation (client threads) │ Slack sweep (workers at {KNEE_THREADS} threads) →',
+    f'<- Saturation (client threads) | Slack sweep (CPU workers at {KNEE_THREADS} threads) ->',
     fontsize=10)
 
 plt.setp(ax_xput.get_xticklabels(), visible=False)
 plt.setp(ax_cpu.get_xticklabels(),  visible=False)
 
-# Add phase labels
-fig.text(0.25, 0.01, 'Saturation Phase', ha='center', fontsize=10, fontstyle='italic', color='steelblue')
-fig.text(0.70, 0.01, 'Slack Sweep Phase', ha='center', fontsize=10, fontstyle='italic', color='darkorange')
+# Phase labels at the bottom
+fig.text(0.25, 0.01, 'Saturation Phase', ha='center', fontsize=10,
+         fontstyle='italic', color=SAT_COLOR)
+fig.text(0.70, 0.01, 'Slack Sweep Phase', ha='center', fontsize=10,
+         fontstyle='italic', color=SLACK_COLOR)
 
-slack_str = (f"  |  slack ≤ {slack_boundary_w} workers"
+slack_str = (f"  |  slack <= {slack_boundary_w} workers"
              if slack_boundary_w is not None else "")
 fig.suptitle(
-    f'RocksDB characterization — saturation + CPU slack sweep'
-    f'{slack_str}',
+    f'RocksDB characterization — saturation + CPU slack sweep{slack_str}',
     fontsize=13, fontweight='bold', y=0.998)
 
 out = os.path.join(PLOT_DIR, "combined_saturation_slack.png")
@@ -1160,11 +1239,15 @@ run_plotter() {
     # ── Combined saturation + slack plot (when saturation data is available) ──
     if [[ -n "$SATURATION_SUMMARY" && -f "$SATURATION_SUMMARY" ]]; then
         log "Generating combined saturation + slack plot..."
+        log "  sat color:       $SAT_COLOR"
+        log "  disk read max:   ${DISK_READ_MAX_BW} MB/s  (0 = raw MB/s mode)"
+        log "  disk write max:  ${DISK_WRITE_MAX_BW} MB/s  (0 = raw MB/s mode)"
         write_combined_plotter
         python3 "$COMBINED_PLOTTER_SCRIPT" \
             "$OUTPUT_DIR" "$SATURATION_SUMMARY" \
             "$XPUT_WINDOW" "$KNEE_THREADS" "$KNEE_XPUT" \
-            "$DEGRADATION_THRESHOLD"
+            "$DEGRADATION_THRESHOLD" \
+            "$SAT_COLOR" "$DISK_READ_MAX_BW" "$DISK_WRITE_MAX_BW"
     else
         log "  (Skipping combined plot — SATURATION_SUMMARY not set or not found)"
         log "  Set SATURATION_SUMMARY=/path/to/summary.csv to enable."
@@ -1188,6 +1271,9 @@ main() {
     log "  Worker schedule: +1 worker per window (window 0 = baseline, no workers)"
     log "  Degrad. thresh:  ${DEGRADATION_THRESHOLD}  (plot annotation only)"
     log "  Sat. summary:    ${SATURATION_SUMMARY:-<not set>}"
+    log "  Sat. color:      ${SAT_COLOR}  (combined plot)"
+    log "  Disk read max:   ${DISK_READ_MAX_BW} MB/s  (0 = raw MB/s fallback)"
+    log "  Disk write max:  ${DISK_WRITE_MAX_BW} MB/s  (0 = raw MB/s fallback)"
     echo ""
 
     check_prereqs
