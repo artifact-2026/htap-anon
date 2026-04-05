@@ -63,13 +63,21 @@ WORKLOAD_LABEL="${WORKLOAD_LABEL:-}"
 # ── Experiment knobs ──────────────────────────────────────────────────────────
 
 # Thread counts to sweep.
-THREAD_COUNTS="${THREAD_COUNTS:-1 2 4 8 12 16 20 24 32 48}"
+THREAD_COUNTS="${THREAD_COUNTS:-1 2 4 8 16 32 64}"
+
+# Total number of records to preload into RocksDB.
+# With record size = 16 fields × 128 B + 16 B key = 2064 B ≈ 2 KB per record:
+#   10 000 000 records ≈ 20 GB  ← recommended: reliably exceeds typical
+#   block caches (8–16 GB) so every run is genuinely disk-bound.
+# The script always appends recordcount and operationcount overrides to the
+# spec file so the spec's own values are ignored.
+RECORD_COUNT="${RECORD_COUNT:-10000000}"
 
 # Total experiment duration per thread count (seconds).
 # YCSB discards the first WARMUP_SKIP_S seconds; throughput is averaged over
-# [WARMUP_SKIP_S, RUNTIME_SECS].  With the defaults below that is a 90 s
-# steady-state window — long enough to average across multiple compaction events.
-RUNTIME_SECS="${RUNTIME_SECS:-180}"
+# [WARMUP_SKIP_S, RUNTIME_SECS].  With WARMUP_SKIP_S=0 the entire 10-minute
+# window contributes to the throughput/s reported in summary.csv.
+RUNTIME_SECS="${RUNTIME_SECS:-600}"
 
 # Block device for disk I/O monitoring.  Find yours with: lsblk / df -h <dbpath>
 # Use the block device name as it appears in /proc/diskstats (e.g. nvme0n1, sda).
@@ -92,8 +100,8 @@ IOPS_WRITE_MAX="${IOPS_WRITE_MAX:-0}"
 
 # Warmup seconds to skip.  Passed to the binary via -skip and used by the
 # system-monitor CSV trimmer so both see the same steady-state window.
-# Must satisfy WARMUP_SKIP_S < RUNTIME_SECS.
-WARMUP_SKIP_S="${WARMUP_SKIP_S:-90}"
+# Set to 0 to report total mean throughput over the entire RUNTIME_SECS window.
+WARMUP_SKIP_S="${WARMUP_SKIP_S:-0}"
 
 # Number of independent trials to run for each thread count.
 # When > 1, each trial's output goes into run_t<N>/trial_<k>/ and the
@@ -149,6 +157,7 @@ check_prereqs() {
     fi
     (( RUNTIME_SECS > WARMUP_SKIP_S )) || \
         die "RUNTIME_SECS ($RUNTIME_SECS) must be > WARMUP_SKIP_S ($WARMUP_SKIP_S)"
+    (( WARMUP_SKIP_S >= 0 )) || die "WARMUP_SKIP_S must be >= 0"
 
     # Derive label from spec filename if not provided.
     if [[ -z "$WORKLOAD_LABEL" ]]; then
@@ -266,8 +275,9 @@ drop_page_cache() {
 
 # ── Spec builder ──────────────────────────────────────────────────────────────
 # Always makes a fresh temp copy of WORKLOAD_SPEC so that load_db's
-# "rm -f $spec" never deletes the original file.  fieldcount, fieldlength,
-# recordcount, and operationcount come entirely from the spec itself.
+# "rm -f $spec" never deletes the original file.  recordcount and
+# operationcount are always overridden to RECORD_COUNT so the spec file's
+# own values are ignored — the dataset size is controlled here.
 # Callers may append extra key=value pairs as positional arguments
 # (e.g. create_spec "metrics_output=/path/to/file").
 
@@ -275,6 +285,9 @@ create_spec() {
     TMPSPEC=$(mktemp "${SAT_TMPDIR}/sat_spec_XXXXX.spec")
     cp "$WORKLOAD_SPEC" "$TMPSPEC"
     printf '\n' >> "$TMPSPEC"
+    # Always override dataset size — these lines win over anything in the spec.
+    printf 'recordcount=%s\n'   "$RECORD_COUNT" >> "$TMPSPEC"
+    printf 'operationcount=%s\n' "$RECORD_COUNT" >> "$TMPSPEC"
     for kv in "$@"; do printf '%s\n' "$kv" >> "$TMPSPEC"; done
     echo "$TMPSPEC"
 }
@@ -286,8 +299,7 @@ load_db() {
     # Optional second argument: path for the load log.
     # Defaults to OUTPUT_DIR/load.log for callers that do not need per-run logs.
     local logfile="${2:-$OUTPUT_DIR/load.log}"
-    local rc; rc=$(grep -E '^recordcount\s*=' "$WORKLOAD_SPEC" | tail -1 | cut -d= -f2 | tr -d ' ')
-    log "Loading ${rc:-unknown} records into $dbpath ..."
+    log "Loading ${RECORD_COUNT} records into $dbpath (~$(( RECORD_COUNT * 2064 / 1024 / 1024 / 1024 )) GiB) ..."
     local spec; spec=$(create_spec)
     "$BINARY" \
         -db baseline -dbpath "$dbpath" -P "$spec" \
