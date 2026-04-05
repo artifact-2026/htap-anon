@@ -52,13 +52,14 @@ Expected CSV columns (produced by saturation_sweep.sh)
 ------------------------------------------------------
 workload_label, threads,
 xput_mean, xput_std,
-cpu_compute_mean, cpu_active_std,   # 100 - idle - iowait  (pure compute)
-cpu_busy_mean,                       # 100 - idle            (incl. iowait)
-cpu_iowait_mean,                     # iowait %  (gap between the two)
-disk_read_mb/s, disk_read_std, disk_write_mb/s, disk_write_std,
-r/s, r/s_std, w/s, w/s_std,
-disk_bandwidth_pct, disk_bandwidth_pct_std, iops_pct, iops_pct_std,
-mem_used_mean, mem_used_std, mem_avail_mean, mem_used_pct_mean,
+cpu_compute_mean, cpu_compute_std, cpu_compute_min, cpu_compute_max,
+cpu_schedule_mean, cpu_schedule_std, cpu_schedule_min, cpu_schedule_max,
+disk_read_mb/s, disk_read_mb/s_std, disk_read_mb/s_min, disk_read_mb/s_max,
+disk_write_mb/s, disk_write_mb/s_std, disk_write_mb/s_min, disk_write_mb/s_max,
+r/s, r/s_std, r/s_min, r/s_max,
+w/s, w/s_std, w/s_min, w/s_max,
+mem_used_mean, mem_used_std, mem_used_min, mem_used_max,
+mem_avail_mean, mem_used_pct_mean,
 block_cache_hits, block_cache_misses, block_cache_hit_rate
 """
 
@@ -146,14 +147,18 @@ def load_csv(spec: str):
 
     # Ensure all expected columns exist.
     for col in ['xput_mean', 'xput_std',
-                'cpu_compute_mean', 'cpu_active_std',
-                'cpu_busy_mean', 'cpu_iowait_mean',
-                'disk_read_mb/s', 'disk_read_std',
-                'disk_write_mb/s', 'disk_write_std',
-                'r/s', 'r/s_std', 'w/s', 'w/s_std',
-                'disk_bandwidth_pct', 'disk_bandwidth_pct_std',
-                'iops_pct', 'iops_pct_std',
+                'cpu_compute_mean', 'cpu_compute_std',
+                'cpu_compute_min', 'cpu_compute_max',
+                'cpu_schedule_mean', 'cpu_schedule_std',
+                'cpu_schedule_min', 'cpu_schedule_max',
+                'disk_read_mb/s', 'disk_read_mb/s_std',
+                'disk_read_mb/s_min', 'disk_read_mb/s_max',
+                'disk_write_mb/s', 'disk_write_mb/s_std',
+                'disk_write_mb/s_min', 'disk_write_mb/s_max',
+                'r/s', 'r/s_std', 'r/s_min', 'r/s_max',
+                'w/s', 'w/s_std', 'w/s_min', 'w/s_max',
                 'mem_used_mean', 'mem_used_std',
+                'mem_used_min', 'mem_used_max',
                 'mem_avail_mean', 'mem_used_pct_mean',
                 'block_cache_hits', 'block_cache_misses',
                 'block_cache_hit_rate']:
@@ -296,12 +301,9 @@ def build_fig1_throughput(datasets, args):
         df = df_full[df_full['threads'].isin(x_domain)].copy() \
              if args.normalize_x else df_full.copy()
         x = df['threads'].values
-        knee = find_knee(df)
 
         _plot_line(ax, x, df['xput_mean'], df['xput_std'],
                    color, label, lw, ms, args.no_bands)
-        #_annotate_knee(ax, df_full, x_domain, args.normalize_x,
-        #               idx, color, lw, ms, fsz)
 
         legend_handles.append(
             Line2D([0], [0], color=color, linewidth=lw, marker='o',
@@ -326,97 +328,99 @@ def build_fig1_throughput(datasets, args):
 def build_fig2_diskio_mem(datasets_23, args):
     """
     Layout: 2 columns × 2 rows via GridSpec.
-      Left column  (spans both rows) — disk bandwidth utilization %.
-      Right column, top row          — IOPS utilization %.
-      Right column, bottom row       — memory used %.
+      Left column  (spans both rows) — disk read and write bandwidth (MB/s).
+      Right column, top row          — disk read and write IOPS.
+      Right column, bottom row       — memory used (GiB).
 
+    Min/max range is shown as a shaded band instead of std-dev.
     Colors mirror Figure 1: datasets_23[0] gets palette index 1 (2nd CSV),
     datasets_23[1] gets palette index 2 (3rd CSV).
     """
     lw, ms, fsz = 1.5, 4, args.font_size
-    # Taller than the old 2-panel figure to give the stacked right panels room.
     fig_h = round(args.width * 0.65, 2)
 
     _apply_rcparams(fsz)
     fig = plt.figure(figsize=(args.width, fig_h))
-    
-    # We will use subplots_adjust to force the panels to use the full width,
-    # rather than tight_layout which might shrink them.
     fig.subplots_adjust(left=0.08, right=0.97, top=0.88, bottom=0.12, wspace=0.25)
     gs  = gridspec.GridSpec(5, 2, figure=fig, hspace=0.60)
 
     ax_disk = fig.add_subplot(gs[:, 0])          # left, full height
-    ax_iops = fig.add_subplot(gs[0:3, 1])          # right, top
-    ax_mem  = fig.add_subplot(gs[3:5, 1],          # right, bottom — share x with iops
+    ax_iops = fig.add_subplot(gs[0:3, 1])        # right, top
+    ax_mem  = fig.add_subplot(gs[3:5, 1],        # right, bottom — share x with iops
                               sharex=ax_iops)
 
     x_domain = _resolve_x_domain(datasets_23, args.normalize_x)
     legend_handles = []
 
     for idx, (label, df_full) in enumerate(datasets_23):
-        # Palette index 1 for 2nd CSV, 2 for 3rd — mirrors Fig 1.
-        color = _PALETTE[(idx) % len(_PALETTE)]
+        color   = _PALETTE[idx % len(_PALETTE)]
+        color_w = _PALETTE[(idx + 3) % len(_PALETTE)]  # distinct color for write
         df = df_full[df_full['threads'].isin(x_domain)].copy() \
              if args.normalize_x else df_full.copy()
-        x    = df['threads'].values
-        knee = find_knee(df)
+        x = df['threads'].values
 
-        # ── Disk bandwidth % ──────────────────────────────────────────────────
-        _plot_line(ax_disk, x, df['disk_bandwidth_pct'], df['disk_bandwidth_pct_std'],
-                   color, label, lw, ms, args.no_bands)
-        #_knee_vline(ax_disk, knee, color)
+        def _band(ax, col_mean, col_min, col_max, c, lbl):
+            """Plot mean line + min/max shaded range."""
+            mean = np.asarray(df[col_mean], dtype=float)
+            lo   = np.asarray(df[col_min],  dtype=float)
+            hi   = np.asarray(df[col_max],  dtype=float)
+            ax.plot(x, mean, color=c, linewidth=lw, marker='o', markersize=ms, label=lbl, zorder=3)
+            if not args.no_bands:
+                ax.fill_between(x, lo, hi, color=c, alpha=0.13, linewidth=0, zorder=2)
+
+        # ── Disk bandwidth (MB/s) ─────────────────────────────────────────────
+        _band(ax_disk, 'disk_read_mb/s',  'disk_read_mb/s_min',  'disk_read_mb/s_max',
+              color,   f'{label} read')
+        _band(ax_disk, 'disk_write_mb/s', 'disk_write_mb/s_min', 'disk_write_mb/s_max',
+              color_w, f'{label} write')
         if args.disk_ceiling > 0 and idx == 0:
             ax_disk.axhline(args.disk_ceiling, color='black', linestyle=':',
                             linewidth=0.9, alpha=0.7,
                             label=f'ceiling ({args.disk_ceiling:,.0f} MB/s)')
 
-        # ── IOPS % ───────────────────────────────────────────────────────────
-        _plot_line(ax_iops, x, df['iops_pct'], df['iops_pct_std'],
-                   color, label, lw, ms, args.no_bands)
-        #_knee_vline(ax_iops, knee, color)
+        # ── IOPS ─────────────────────────────────────────────────────────────
+        _band(ax_iops, 'r/s', 'r/s_min', 'r/s_max', color,   f'{label} r/s')
+        _band(ax_iops, 'w/s', 'w/s_min', 'w/s_max', color_w, f'{label} w/s')
 
-        # ── Memory used % ────────────────────────────────────────────────────
-        _plot_line(ax_mem, x, df['mem_used_pct_mean'],
-                   np.zeros(len(df)),
-                   color, label, lw, ms, args.no_bands)
-        #_knee_vline(ax_mem, knee, color)
+        # ── Memory used (GiB) ────────────────────────────────────────────────
+        mem_mean, unit = _mem_to_gb(df['mem_used_mean'])
+        mem_lo,   _    = _mem_to_gb(df['mem_used_min'])
+        mem_hi,   _    = _mem_to_gb(df['mem_used_max'])
+        ax_mem.plot(x, mem_mean, color=color, linewidth=lw,
+                    marker='o', markersize=ms, label=label, zorder=3)
+        if not args.no_bands:
+            ax_mem.fill_between(x, mem_lo, mem_hi,
+                                color=color, alpha=0.13, linewidth=0, zorder=2)
 
         legend_handles.append(
             Line2D([0], [0], color=color, linewidth=lw, marker='o',
                    markersize=ms, label=label))
-    
-    # ── Decoration ────────────────────────────────────────────────────────────
-    ax_disk.set_ylabel('I/O bandwidth (%)', fontsize=12)
-    ax_disk.set_ylim(0, 105)
-    ax_disk.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
-    _set_xticks(ax_disk, x_domain, max_labels=4)
-    ax_disk.text(0.02, 0.98, '(A) Disk I/O Utilization', transform=ax_disk.transAxes, fontsize=12, fontweight='bold')
 
-    ax_iops.set_ylabel('IOPS (%)', fontsize=12)
-    ax_iops.set_ylim(bottom=0)          # auto-scale top; values >100% are valid
-    ax_iops.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
-   
-    # Hide x tick labels on the top-right panel; bottom one shows them.
+    # ── Decoration ────────────────────────────────────────────────────────────
+    ax_disk.set_ylabel('Disk bandwidth (MB/s)', fontsize=12)
+    ax_disk.set_ylim(bottom=0)
+    _set_xticks(ax_disk, x_domain, max_labels=4)
+    ax_disk.text(0.02, 0.98, '(A) Disk Bandwidth Read/Write',
+                 transform=ax_disk.transAxes, fontsize=12, fontweight='bold')
+    ax_disk.legend(fontsize=fsz-2, loc='upper left')
+
+    ax_iops.set_ylabel('IOPS', fontsize=12)
+    ax_iops.set_ylim(bottom=0)
     plt.setp(ax_iops.get_xticklabels(), visible=False)
     ax_iops.set_xlabel('')
-    ax_iops.text(0.02, 0.98, '(B) IOPS Utilization', transform=ax_iops.transAxes, fontsize=12, fontweight='bold')
+    ax_iops.text(0.02, 0.98, '(B) Disk IOPS Read/Write',
+                 transform=ax_iops.transAxes, fontsize=12, fontweight='bold')
+    ax_iops.legend(fontsize=fsz-2, loc='upper left')
 
-    ax_mem.set_ylabel('Mem used (%)', fontsize=12)
-    ax_mem.set_ylim(0, 10)
-    ax_mem.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
+    ax_mem.set_ylabel(f'Mem used ({unit})', fontsize=12)
+    ax_mem.set_ylim(bottom=0)
     _set_xticks(ax_mem, x_domain, max_labels=4)
-    ax_mem.text(0.02, 0.98, '(C) Mem Used', transform=ax_mem.transAxes, fontsize=12, fontweight='bold')
+    ax_mem.text(0.02, 0.98, '(C) Memory Used',
+                transform=ax_mem.transAxes, fontsize=12, fontweight='bold')
 
-    # Single shared legend centered above all panels in one row.
-    fig.legend(handles=legend_handles,
-               loc='lower center',
-               ncol=len(legend_handles),
-               fontsize=fsz-1,
-               framealpha=0.85,
-               mode='expand',
-               bbox_to_anchor=(0.08, 0.90, 0.89, 0.08))
     fig.supxlabel('Client threads', fontsize=12)
     return fig
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Figure 3 — CPU utilization (2nd & 3rd CSV, one panel each, side by side)
@@ -427,10 +431,11 @@ def build_fig3_cpu(datasets_23, args):
     Two panels side by side, one per workload:
       Left  — CPU utilization for the 2nd CSV.
       Right — CPU utilization for the 3rd CSV.
-    Each panel has three semantic fill areas (same colors in both panels):
-      light purple — compute  (0 → solid cpu_compute line)
-      light pink   — iowait   (cpu_compute → dashed cpu_busy line)
-      light brown  — idle     (cpu_busy → 100 %)
+    Each panel shows:
+      solid line   — cpu_compute  (1 - idle - iowait)
+      dashed line  — cpu_schedule (1 - idle,  incl. iowait)
+      hatched band — iowait gap between the two lines
+    Min/max shown as light shaded band around each line.
     """
     from matplotlib.patches import Patch
 
@@ -446,23 +451,33 @@ def build_fig3_cpu(datasets_23, args):
     x_domain = _resolve_x_domain(datasets_23, args.normalize_x)
 
     for idx, ((label, df_full), ax) in enumerate(zip(datasets_23, axes)):
-        # Line color: matches workload palette index
         color = _PALETTE[idx % len(_PALETTE)]
 
         df   = df_full[df_full['threads'].isin(x_domain)].copy() \
                if args.normalize_x else df_full.copy()
         x    = df['threads'].values
-        comp = np.asarray(df['cpu_compute_mean'], dtype=float)
-        busy = np.asarray(df['cpu_busy_mean'],    dtype=float)
+        comp     = np.asarray(df['cpu_compute_mean'],  dtype=float)
+        sched    = np.asarray(df['cpu_schedule_mean'], dtype=float)
+        comp_min = np.asarray(df['cpu_compute_min'],   dtype=float)
+        comp_max = np.asarray(df['cpu_compute_max'],   dtype=float)
+        sched_min = np.asarray(df['cpu_schedule_min'], dtype=float)
+        sched_max = np.asarray(df['cpu_schedule_max'], dtype=float)
 
-        # ── Hatched mesh for iowait (between compute and busy line) ───────────
-        ax.fill_between(x, comp, busy, facecolor='none', edgecolor=color, hatch='xxxx', alpha=0.5, zorder=1)
+        # ── Min/max bands ────────────────────────────────────────────────────
+        if not args.no_bands:
+            ax.fill_between(x, comp_min,  comp_max,  color=color, alpha=0.10, linewidth=0, zorder=1)
+            ax.fill_between(x, sched_min, sched_max, color=color, alpha=0.06, linewidth=0, zorder=1)
+
+        # ── Hatched iowait gap ────────────────────────────────────────────────
+        ax.fill_between(x, comp, sched,
+                        facecolor='none', edgecolor=color,
+                        hatch='xxxx', alpha=0.5, zorder=2)
 
         # ── Boundary lines ────────────────────────────────────────────────────
-        _plot_line(ax, x, comp, df['cpu_active_std'],
-                   color, 'cpu compute',  lw, ms, args.no_bands, linestyle='-')
-        _plot_line(ax, x, busy, df['cpu_active_std'],
-                   color, 'cpu busy',     lw, ms, args.no_bands, linestyle='--')
+        ax.plot(x, comp,  color=color, linewidth=lw, linestyle='-',
+                marker='o', markersize=ms, label='cpu_compute',  zorder=3)
+        ax.plot(x, sched, color=color, linewidth=lw, linestyle='--',
+                marker='s', markersize=ms, label='cpu_schedule', zorder=3)
 
         ax.set_ylim(0, 105)
         ax.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.55)
@@ -477,9 +492,9 @@ def build_fig3_cpu(datasets_23, args):
     # ── Shared legend above both panels ───────────────────────────────────────
     legend_handles = [
         Line2D([0], [0], color='gray', linestyle='-',  linewidth=lw, marker='o',
-               markersize=ms, label='cpu compute'),
+               markersize=ms, label='cpu_compute  (1 − idle − iowait)'),
         Line2D([0], [0], color='gray', linestyle='--', linewidth=lw, marker='s',
-               markersize=ms, label='cpu scheduled'),
+               markersize=ms, label='cpu_schedule (1 − idle)'),
         Patch(facecolor='none', edgecolor='gray', hatch='xxxx', linewidth=0.6,
               label='iowait (gap)'),
     ]
