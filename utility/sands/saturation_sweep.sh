@@ -85,18 +85,6 @@ RUNTIME_SECS="${RUNTIME_SECS:-600}"
 #       will NOT appear in /proc/diskstats — do not use the c0 form here.
 DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
 
-# Peak sequential read bandwidth of the device in MB/s (measured with fio).
-# Used in disk_bandwidth_pct = read_mb/s/DISK_READ_MAX_BANDWIDTH + write_mb/s/DISK_WRITE_MAX_BANDWIDTH.
-# Set to 0 to leave disk_bandwidth_pct as NaN.
-DISK_READ_MAX_BANDWIDTH="${DISK_READ_MAX_BANDWIDTH:-0}"
-
-# Peak sequential write bandwidth of the device in MB/s (measured with fio).
-DISK_WRITE_MAX_BANDWIDTH="${DISK_WRITE_MAX_BANDWIDTH:-0}"
-
-# Peak IOPS of the device (measured with fio, random 4K mix).
-# Used in iops_pct = r/s / IOPS_READ_MAX + w/s / IOPS_WRITE_MAX.  Set to 0 to leave iops_pct as NaN.
-IOPS_READ_MAX="${IOPS_READ_MAX:-0}"
-IOPS_WRITE_MAX="${IOPS_WRITE_MAX:-0}"
 
 # Warmup seconds to skip.  Passed to the binary via -skip and used by the
 # system-monitor CSV trimmer so both see the same steady-state window.
@@ -415,10 +403,6 @@ sweep_dir              = sys.argv[1]
 output_csv             = sys.argv[2]
 warmup_skip            = int(sys.argv[3])
 workload_label         = sys.argv[4]
-disk_read_max_bw       = float(sys.argv[5]) if len(sys.argv) > 5 else 0.0
-disk_write_max_bw      = float(sys.argv[6]) if len(sys.argv) > 6 else 0.0
-iops_read_max          = float(sys.argv[7]) if len(sys.argv) > 7 else 0.0
-iops_write_max         = float(sys.argv[8]) if len(sys.argv) > 8 else 0.0
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -459,12 +443,19 @@ def parse_system_csv(path, skip_s):
     nan = float('nan')
     empty = dict(
         cpu_compute_mean=nan, cpu_compute_std=nan,
+        cpu_compute_min=nan,  cpu_compute_max=nan,
         cpu_schedule_mean=nan, cpu_schedule_std=nan,
+        cpu_schedule_min=nan,  cpu_schedule_max=nan,
         disk_read_mean=nan,   disk_read_std=nan,
+        disk_read_min=nan,    disk_read_max=nan,
         disk_write_mean=nan,  disk_write_std=nan,
+        disk_write_min=nan,   disk_write_max=nan,
         disk_read_iops_mean=nan,  disk_read_iops_std=nan,
+        disk_read_iops_min=nan,   disk_read_iops_max=nan,
         disk_write_iops_mean=nan, disk_write_iops_std=nan,
+        disk_write_iops_min=nan,  disk_write_iops_max=nan,
         mem_used_mean=nan,    mem_used_std=nan,
+        mem_used_min=nan,     mem_used_max=nan,
         mem_avail_mean=nan,   mem_used_pct_mean=nan,
     )
     try:
@@ -499,18 +490,32 @@ def parse_system_csv(path, skip_s):
         return dict(
             cpu_compute_mean     = compute.mean(),
             cpu_compute_std      = compute.std(ddof=1),
+            cpu_compute_min      = compute.min(),
+            cpu_compute_max      = compute.max(),
             cpu_schedule_mean    = schedule.mean(),
             cpu_schedule_std     = schedule.std(ddof=1),
+            cpu_schedule_min     = schedule.min(),
+            cpu_schedule_max     = schedule.max(),
             disk_read_mean       = dr.mean(),
             disk_read_std        = dr.std(ddof=1),
+            disk_read_min        = dr.min(),
+            disk_read_max        = dr.max(),
             disk_write_mean      = dw.mean(),
             disk_write_std       = dw.std(ddof=1),
+            disk_write_min       = dw.min(),
+            disk_write_max       = dw.max(),
             disk_read_iops_mean  = dri.mean()      if not dri.empty else nan,
             disk_read_iops_std   = dri.std(ddof=1) if not dri.empty else nan,
+            disk_read_iops_min   = dri.min()       if not dri.empty else nan,
+            disk_read_iops_max   = dri.max()       if not dri.empty else nan,
             disk_write_iops_mean = dwi.mean()      if not dwi.empty else nan,
             disk_write_iops_std  = dwi.std(ddof=1) if not dwi.empty else nan,
+            disk_write_iops_min  = dwi.min()       if not dwi.empty else nan,
+            disk_write_iops_max  = dwi.max()       if not dwi.empty else nan,
             mem_used_mean        = mu.mean()       if not mu.empty  else nan,
             mem_used_std         = mu.std(ddof=1)  if not mu.empty  else nan,
+            mem_used_min         = mu.min()        if not mu.empty  else nan,
+            mem_used_max         = mu.max()        if not mu.empty  else nan,
             mem_avail_mean       = ma.mean()       if not ma.empty  else nan,
             mem_used_pct_mean    = pct.mean()      if not pct.empty else nan,
         )
@@ -571,9 +576,14 @@ for rd in run_dirs:
         cache_misses = float(np.nanmedian(trial_cm))
         sys_stats  = {k: float(np.nanmedian(vs)) for k, vs in trial_sys.items()}
         # Fill any keys that the single-trial path provides but trials dict may lack.
-        for k in ('cpu_active_std', 'disk_read_std', 'disk_write_std',
-                  'disk_read_iops_std', 'disk_write_iops_std',
-                  'mem_used_std', 'mem_avail_mean', 'mem_used_pct_mean'):
+        for k in ('cpu_compute_std', 'cpu_compute_min', 'cpu_compute_max',
+                  'cpu_schedule_std', 'cpu_schedule_min', 'cpu_schedule_max',
+                  'disk_read_std', 'disk_read_min', 'disk_read_max',
+                  'disk_write_std', 'disk_write_min', 'disk_write_max',
+                  'disk_read_iops_std', 'disk_read_iops_min', 'disk_read_iops_max',
+                  'disk_write_iops_std', 'disk_write_iops_min', 'disk_write_iops_max',
+                  'mem_used_std', 'mem_used_min', 'mem_used_max',
+                  'mem_avail_mean', 'mem_used_pct_mean'):
             sys_stats.setdefault(k, float('nan'))
     else:
         # Single-trial (original behaviour).
@@ -636,22 +646,32 @@ for rd in run_dirs:
         xput_std              = xput_std,
         cpu_compute_mean      = sys_stats['cpu_compute_mean'],
         cpu_compute_std       = sys_stats['cpu_compute_std'],
+        cpu_compute_min       = sys_stats.get('cpu_compute_min',  float('nan')),
+        cpu_compute_max       = sys_stats.get('cpu_compute_max',  float('nan')),
         cpu_schedule_mean     = sys_stats.get('cpu_schedule_mean', float('nan')),
         cpu_schedule_std      = sys_stats.get('cpu_schedule_std',  float('nan')),
-        **{'disk_read_mb/s'   : disk_r},
-        disk_read_std         = disk_rs,
-        **{'disk_write_mb/s'  : disk_w},
-        disk_write_std        = disk_ws,
-        **{'r/s'              : iops_r},
-        **{'r/s_std'          : iops_rs},
-        **{'w/s'              : iops_w},
-        **{'w/s_std'          : iops_ws},
-        disk_bandwidth_pct     = disk_bandwidth_pct * 100,
-        disk_bandwidth_pct_std = disk_bandwidth_pct_std * 100,
-        iops_pct               = iops_pct * 100,
-        iops_pct_std           = iops_pct_std * 100,
+        cpu_schedule_min      = sys_stats.get('cpu_schedule_min',  float('nan')),
+        cpu_schedule_max      = sys_stats.get('cpu_schedule_max',  float('nan')),
+        **{'disk_read_mb/s'      : sys_stats['disk_read_mean']},
+        **{'disk_read_mb/s_std'  : sys_stats['disk_read_std']},
+        **{'disk_read_mb/s_min'  : sys_stats.get('disk_read_min',  float('nan'))},
+        **{'disk_read_mb/s_max'  : sys_stats.get('disk_read_max',  float('nan'))},
+        **{'disk_write_mb/s'     : sys_stats['disk_write_mean']},
+        **{'disk_write_mb/s_std' : sys_stats['disk_write_std']},
+        **{'disk_write_mb/s_min' : sys_stats.get('disk_write_min', float('nan'))},
+        **{'disk_write_mb/s_max' : sys_stats.get('disk_write_max', float('nan'))},
+        **{'r/s'                 : sys_stats['disk_read_iops_mean']},
+        **{'r/s_std'             : sys_stats['disk_read_iops_std']},
+        **{'r/s_min'             : sys_stats.get('disk_read_iops_min',  float('nan'))},
+        **{'r/s_max'             : sys_stats.get('disk_read_iops_max',  float('nan'))},
+        **{'w/s'                 : sys_stats['disk_write_iops_mean']},
+        **{'w/s_std'             : sys_stats['disk_write_iops_std']},
+        **{'w/s_min'             : sys_stats.get('disk_write_iops_min', float('nan'))},
+        **{'w/s_max'             : sys_stats.get('disk_write_iops_max', float('nan'))},
         mem_used_mean         = sys_stats['mem_used_mean'],
         mem_used_std          = sys_stats['mem_used_std'],
+        mem_used_min          = sys_stats.get('mem_used_min', float('nan')),
+        mem_used_max          = sys_stats.get('mem_used_max', float('nan')),
         mem_avail_mean        = sys_stats['mem_avail_mean'],
         mem_used_pct_mean     = sys_stats['mem_used_pct_mean'],
         block_cache_hits      = cache_hits,
@@ -672,10 +692,12 @@ df[float_cols] = df[float_cols].round(2)
 df.to_csv(output_csv, index=False)
 print(f'summary.csv written → {output_csv}')
 preview_cols = ['threads', 'xput_mean', 'xput_std',
-                'cpu_compute_mean', 'cpu_compute_std',
-                'cpu_schedule_mean', 'cpu_schedule_std',
-                'disk_read_mb/s', 'disk_write_mb/s', 'r/s', 'w/s',
-                'disk_bandwidth_pct', 'iops_pct',
+                'cpu_compute_mean', 'cpu_compute_std', 'cpu_compute_min', 'cpu_compute_max',
+                'cpu_schedule_mean', 'cpu_schedule_std', 'cpu_schedule_min', 'cpu_schedule_max',
+                'disk_read_mb/s', 'disk_read_mb/s_min', 'disk_read_mb/s_max',
+                'disk_write_mb/s', 'disk_write_mb/s_min', 'disk_write_mb/s_max',
+                'r/s', 'r/s_min', 'r/s_max', 'w/s', 'w/s_min', 'w/s_max',
+                'mem_used_mean', 'mem_used_min', 'mem_used_max',
                 'mem_used_pct_mean', 'block_cache_hit_rate']
 print(df[[c for c in preview_cols if c in df.columns]].to_string(index=False))
 PYSUM
@@ -689,11 +711,7 @@ run_summarizer() {
         "$OUTPUT_DIR/sweep" \
         "$OUTPUT_DIR/summary.csv" \
         "$WARMUP_SKIP_S" \
-        "$WORKLOAD_LABEL" \
-        "$DISK_READ_MAX_BANDWIDTH" \
-        "$DISK_WRITE_MAX_BANDWIDTH" \
-        "$IOPS_READ_MAX" \
-        "$IOPS_WRITE_MAX"
+        "$WORKLOAD_LABEL"
     log "  → $OUTPUT_DIR/summary.csv"
 }
 
@@ -768,10 +786,6 @@ main() {
     log "  Threads:             $THREAD_COUNTS"
     log "  Runtime/pt:          ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
     log "  Trials/thread:       ${TRIALS_PER_THREAD}  (summary uses median across trials)"
-    log "  Disk read max BW:    ${DISK_READ_MAX_BANDWIDTH} MB/s"
-    log "  Disk write max BW:   ${DISK_WRITE_MAX_BANDWIDTH} MB/s"
-    log "  IOPS read max:       ${IOPS_READ_MAX}"
-    log "  IOPS write max:      ${IOPS_WRITE_MAX}"
     echo ""
 
     python3 -c "import pandas, numpy" 2>/dev/null || {
