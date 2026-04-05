@@ -231,11 +231,11 @@ with open(outfile, 'w', newline='') as fh:
                     f'{100*delta[2]/total:.2f}',              # sys
                     f'{100*delta[4]/total:.2f}',              # iowait
                     f'{100*delta[3]/total:.2f}',              # idle
-                    f'{(cur_rd-prev_rd)*512/1024/1024/dt:.3f}',  # read MB/s
-                    f'{(cur_wr-prev_wr)*512/1024/1024/dt:.3f}',  # write MB/s
+                    f'{(cur_rd-prev_rd)*512/1024/1024/dt:.2f}',  # read MB/s
+                    f'{(cur_wr-prev_wr)*512/1024/1024/dt:.2f}',  # write MB/s
                     f'{(cur_rc-prev_rc)/dt:.2f}',             # r/s
                     f'{(cur_wc-prev_wc)/dt:.2f}',             # w/s
-                    f'{m_total:.1f}', f'{m_used:.1f}', f'{m_avail:.1f}'])
+                    f'{m_total:.2f}', f'{m_used:.2f}', f'{m_avail:.2f}'])
         fh.flush()
         prev_cpu = cur_cpu
         prev_rd, prev_wr, prev_rc, prev_wc = cur_rd, cur_wr, cur_rc, cur_wc
@@ -458,8 +458,8 @@ def parse_ycsb_log(path):
 def parse_system_csv(path, skip_s):
     nan = float('nan')
     empty = dict(
-        cpu_compute_mean=nan, cpu_active_std=nan,
-        cpu_busy_mean=nan,    cpu_iowait_mean=nan,
+        cpu_compute_mean=nan, cpu_compute_std=nan,
+        cpu_schedule_mean=nan, cpu_schedule_std=nan,
         disk_read_mean=nan,   disk_read_std=nan,
         disk_write_mean=nan,  disk_write_std=nan,
         disk_read_iops_mean=nan,  disk_read_iops_std=nan,
@@ -477,10 +477,10 @@ def parse_system_csv(path, skip_s):
         # (user+sys+irq+softirq).  iowait is CPU-idle time waiting for I/O; for
         # RocksDB with active NVMe compaction it can be 30-50 %, causing (100-idle)
         # to overstate compute utilisation significantly.
-        iowait = steady['cpu_iowait_pct'] if 'cpu_iowait_pct' in steady.columns \
-                 else pd.Series([0.0] * len(steady), index=steady.index)
-        active_raw = 100.0 - steady['cpu_idle_pct']          # includes iowait
-        active     = active_raw - iowait                      # compute-only
+        iowait     = steady['cpu_iowait_pct'] if 'cpu_iowait_pct' in steady.columns \
+                     else pd.Series([0.0] * len(steady), index=steady.index)
+        schedule   = 100.0 - steady['cpu_idle_pct']     # cpu_schedule = 1 - idle (incl. iowait)
+        compute    = schedule - iowait                   # cpu_compute  = 1 - idle - iowait
         dr = steady['disk_read_mbs']
         dw = steady['disk_write_mbs']
         # IOPS columns (present in new-format CSVs; fall back to NaN if absent)
@@ -497,10 +497,10 @@ def parse_system_csv(path, skip_s):
         else:
             mu = ma = mt = pct = pd.Series(dtype=float)
         return dict(
-            cpu_compute_mean     = active.mean(),          # 100 - idle - iowait (compute-only)
-            cpu_active_std       = active.std(ddof=1),
-            cpu_busy_mean        = active_raw.mean(),      # 100 - idle (incl. iowait)
-            cpu_iowait_mean      = iowait.mean(),
+            cpu_compute_mean     = compute.mean(),
+            cpu_compute_std      = compute.std(ddof=1),
+            cpu_schedule_mean    = schedule.mean(),
+            cpu_schedule_std     = schedule.std(ddof=1),
             disk_read_mean       = dr.mean(),
             disk_read_std        = dr.std(ddof=1),
             disk_write_mean      = dw.mean(),
@@ -634,10 +634,10 @@ for rd in run_dirs:
         threads               = t,
         xput_mean             = xput_mean,
         xput_std              = xput_std,
-        cpu_compute_mean      = sys_stats['cpu_compute_mean'],    # 100 - idle - iowait
-        cpu_active_std        = sys_stats['cpu_active_std'],
-        cpu_busy_mean         = sys_stats.get('cpu_busy_mean',     float('nan')),  # 100 - idle
-        cpu_iowait_mean       = sys_stats.get('cpu_iowait_mean',   float('nan')),
+        cpu_compute_mean      = sys_stats['cpu_compute_mean'],
+        cpu_compute_std       = sys_stats['cpu_compute_std'],
+        cpu_schedule_mean     = sys_stats.get('cpu_schedule_mean', float('nan')),
+        cpu_schedule_std      = sys_stats.get('cpu_schedule_std',  float('nan')),
         **{'disk_read_mb/s'   : disk_r},
         disk_read_std         = disk_rs,
         **{'disk_write_mb/s'  : disk_w},
@@ -664,9 +664,16 @@ if not rows:
     sys.exit(0)
 
 df = pd.DataFrame(rows).sort_values('threads').reset_index(drop=True)
+
+# Round all float columns to 2 decimal places for clean, readable output.
+float_cols = df.select_dtypes(include='float').columns
+df[float_cols] = df[float_cols].round(2)
+
 df.to_csv(output_csv, index=False)
 print(f'summary.csv written → {output_csv}')
-preview_cols = ['threads', 'xput_mean', 'cpu_compute_mean', 'cpu_busy_mean',
+preview_cols = ['threads', 'xput_mean', 'xput_std',
+                'cpu_compute_mean', 'cpu_compute_std',
+                'cpu_schedule_mean', 'cpu_schedule_std',
                 'disk_read_mb/s', 'disk_write_mb/s', 'r/s', 'w/s',
                 'disk_bandwidth_pct', 'iops_pct',
                 'mem_used_pct_mean', 'block_cache_hit_rate']
