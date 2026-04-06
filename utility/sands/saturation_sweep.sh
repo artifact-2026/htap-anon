@@ -368,15 +368,6 @@ r/s                     : mean disk read IOPS over steady-state window
 r/s_std
 w/s                     : mean disk write IOPS over steady-state window
 w/s_std
-disk_bandwidth_pct      : disk_read_mb/s / DISK_READ_MAX_BANDWIDTH
-                          + disk_write_mb/s / DISK_WRITE_MAX_BANDWIDTH
-                          (NaN if either ceiling is 0)
-disk_bandwidth_pct_std  : error-propagation std of disk_bandwidth_pct
-                          = sqrt((disk_read_std/R_max)^2 + (disk_write_std/W_max)^2)
-                          (assumes read and write fluctuations are independent per second)
-iops_pct                : r/s / IOPS_READ_MAX + w/s / IOPS_WRITE_MAX  (NaN if either IOPS_MAX is 0)
-iops_pct_std            : error-propagation std of iops_pct
-                          = sqrt((r/s_std/IOPS_READ_MAX)^2 + (w/s_std/IOPS_WRITE_MAX)^2)
 mem_used_mean           : mean memory used (GiB)  — system-wide, from /proc/meminfo
 mem_used_std
 mem_avail_mean          : mean memory available (GiB)
@@ -600,38 +591,6 @@ for rd in run_dirs:
     iops_rs = sys_stats['disk_read_iops_std']
     iops_ws = sys_stats['disk_write_iops_std']
 
-    # disk_bandwidth_pct = read_mb/s / read_max + write_mb/s / write_max
-    # (each term is independently normalised, so the sum reflects mixed pressure)
-    # std via error propagation (assumes R and W independent per second):
-    #   std = 100 * sqrt((disk_read_std/R_max)^2 + (disk_write_std/W_max)^2)
-    if disk_read_max_bw > 0 and disk_write_max_bw > 0:
-        r_term = (disk_r if not np.isnan(disk_r) else 0) / disk_read_max_bw
-        w_term = (disk_w if not np.isnan(disk_w) else 0) / disk_write_max_bw
-        disk_bandwidth_pct = r_term + w_term
-        rs = disk_rs if not np.isnan(disk_rs) else 0
-        ws = disk_ws if not np.isnan(disk_ws) else 0
-        disk_bandwidth_pct_std = np.sqrt(
-            (rs / disk_read_max_bw)**2 + (ws / disk_write_max_bw)**2
-        )
-    else:
-        disk_bandwidth_pct     = float('nan')
-        disk_bandwidth_pct_std = float('nan')
-
-    # iops_pct = r/s / IOPS_READ_MAX + w/s / IOPS_WRITE_MAX
-    # std via error propagation (same independence assumption):
-    #   std = 100 * sqrt((r/s_std/IOPS_READ_MAX)^2 + (w/s_std/IOPS_WRITE_MAX)^2)
-    if iops_read_max > 0 and iops_write_max > 0:
-        iops_pct = (iops_r if not np.isnan(iops_r) else 0) / iops_read_max \
-                   + (iops_w if not np.isnan(iops_w) else 0) / iops_write_max
-        irs = iops_rs if not np.isnan(iops_rs) else 0
-        iws = iops_ws if not np.isnan(iops_ws) else 0
-        iops_pct_std = np.sqrt(
-            (irs / iops_read_max)**2 + (iws / iops_write_max)**2
-        )
-    else:
-        iops_pct     = float('nan')
-        iops_pct_std = float('nan')
-
     # Block cache hit rate — nan if stats were not printed.
     if not (np.isnan(cache_hits) or np.isnan(cache_misses)):
         total_accesses = cache_hits + cache_misses
@@ -762,14 +721,6 @@ main() {
     # Accepted forms: --flag=VALUE  or  --flag VALUE
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --disk-read-max-bandwidth=*)  DISK_READ_MAX_BANDWIDTH="${1#*=}" ;;
-            --disk-read-max-bandwidth)    DISK_READ_MAX_BANDWIDTH="$2"; shift ;;
-            --disk-write-max-bandwidth=*) DISK_WRITE_MAX_BANDWIDTH="${1#*=}" ;;
-            --disk-write-max-bandwidth)   DISK_WRITE_MAX_BANDWIDTH="$2"; shift ;;
-            --iops-read-max=*)            IOPS_READ_MAX="${1#*=}" ;;
-            --iops-read-max)              IOPS_READ_MAX="$2"; shift ;;
-            --iops-write-max=*)           IOPS_WRITE_MAX="${1#*=}" ;;
-            --iops-write-max)             IOPS_WRITE_MAX="$2"; shift ;;
             *) die "Unknown argument: $1.  Use env vars or --disk-read-max-bandwidth, --disk-write-max-bandwidth, --iops-read-max, --iops-write-max" ;;
         esac
         shift
