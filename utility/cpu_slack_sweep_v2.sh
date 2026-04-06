@@ -64,7 +64,7 @@ WARMUP_SKIP_S="${WARMUP_SKIP_S:-0}"
 
 # Records to preload (default 5 M from spec; override here to take precedence).
 # Leave blank to use whatever recordcount is in WORKLOAD_SPEC.
-RECORD_COUNT="${RECORD_COUNT:-}"
+RECORD_COUNT="${RECORD_COUNT:-10000000}"
 
 # Block device to monitor (e.g. nvme0n1). Auto-detected if empty.
 DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
@@ -73,9 +73,6 @@ DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
 DROP_CACHES="${DROP_CACHES:-true}"
 
 # ── iBench_cpu worker knobs ───────────────────────────────────────────────────
-
-FIELD_LENGTH="${FIELD_LENGTH:-256}"
-FIELD_COUNT="${FIELD_COUNT:-16}"
 
 # Per-worker transform rate (0 = busy-loop / saturate one core).
 TRANSFORMS_PER_WORKER="${TRANSFORMS_PER_WORKER:-0}"
@@ -263,10 +260,10 @@ create_spec() {
 
 load_db() {
     local dbpath="$1"
+    # Optional second argument: path for the load log.
+    # Defaults to OUTPUT_DIR/load.log for callers that do not need per-run logs.
     local logfile="${2:-$OUTPUT_DIR/load.log}"
-    local rc; rc=$(grep -E '^recordcount\s*=' "$WORKLOAD_SPEC" | tail -1 | cut -d= -f2 | tr -d ' ')
-    rc="${RECORD_COUNT:-${rc:-unknown}}"
-    log "Loading ${rc} records into $dbpath ..."
+    log "Loading ${RECORD_COUNT} records into $dbpath (~$(( RECORD_COUNT * 2064 / 1024 / 1024 / 1024 )) GiB) ..."
     local spec; spec=$(create_spec)
     "$BINARY" \
         -db baseline -dbpath "$dbpath" -P "$spec" \
@@ -315,7 +312,7 @@ run_one() {
     # ── Start n_workers iBench_cpu workers alongside YCSB ────────────────────
     TRANSFORM_PIDS=()
     if (( n_workers > 0 )); then
-        local rounds_per_xfm=$(( FIELD_COUNT * (FIELD_LENGTH / 8) * WORKER_ROUNDS_MULTIPLIER ))
+        local rounds_per_xfm=$((  1024 * WORKER_ROUNDS_MULTIPLIER ))
         log "  Starting ${n_workers} iBench_cpu worker(s)" \
             "(rounds=${rounds_per_xfm}, rate=${TRANSFORMS_PER_WORKER}/s, duration=${RUNTIME_SECS}s)"
         "$TRANSFORM_BINARY" \
