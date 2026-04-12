@@ -45,15 +45,43 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
+import matplotlib.ticker as mticker
 
 # ── colour palette ─────────────────────────────────────────────────────────────
-C_SAT      = '#2196F3'   # blue  — saturation phase
-C_SLACK    = '#E91E63'   # pink  — slack phase
-C_READ     = '#00BCD4'   # cyan  — disk read
-C_WRITE    = '#FF9800'   # amber — disk write
-C_COMPUTE  = '#4CAF50'   # green — cpu_compute (excl. iowait)
-C_SCHEDULE = '#9C27B0'   # purple — cpu_schedule (incl. iowait)
-C_BAND     = 0.15        # alpha for min/max fill bands
+# Machine palette — same order as plot_bottleneck.py so colours stay consistent
+# across all figures for a given machine.
+_PALETTE = [
+    '#2166ac',   # blue
+    '#d6604d',   # red-orange
+    '#4dac26',   # green
+    '#8856a7',   # purple
+    '#b35806',   # brown-orange
+    '#1a9e77',   # teal
+    '#e7298a',   # pink
+    '#666666',   # gray
+]
+
+C_FADE     = '#999999'   # gray  — post-knee saturation (faded)
+C_BAND     = 0.15        # alpha for std-dev fill bands
+
+# ── colour utilities ──────────────────────────────────────────────────────────
+
+def _shade(hex_color, factor):
+    """Return a lighter (factor > 1) or darker (factor < 0) variant of hex_color.
+
+    factor is a float in (-1, 1):
+      +0.35  → blend 35 % toward white  (lighten)
+      -0.30  → blend 30 % toward black  (darken)
+    Clamps each channel to [0, 1].
+    """
+    import matplotlib.colors as mcolors
+    r, g, b = mcolors.to_rgb(hex_color)
+    if factor >= 0:          # lighten: blend toward white
+        r, g, b = r + (1-r)*factor, g + (1-g)*factor, b + (1-b)*factor
+    else:                    # darken:  blend toward black
+        f = 1 + factor       # e.g. factor=-0.3 → f=0.7
+        r, g, b = r*f, g*f, b*f
+    return mcolors.to_hex((min(r,1), min(g,1), min(b,1)))
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -86,12 +114,12 @@ def errbar(ax, xs, mean, std, color, label=None, lw=2, ms=6, fmt='o-'):
                 capsize=3, label=label)
 
 def add_divider(ax, x_div, label='Knee / phase boundary'):
-    ax.axvline(x_div, color='gray', linestyle='--', linewidth=1.2, alpha=0.7)
+    ax.axvline(x_div, color='#333333', linestyle='-', linewidth=2.0, alpha=0.55, zorder=5)
 
-def set_xticks(ax, xs, labels, phase_boundary_x, rotate=True):
+def set_xticks(ax, xs, labels, rotate=True):
     ax.set_xticks(xs)
-    ax.set_xticklabels(labels, fontsize=8,
-                       rotation=45 if rotate else 0, ha='right' if rotate else 'center')
+    ax.set_xticklabels(labels, rotation=45 if rotate else 0,
+                       ha='right' if rotate else 'center')
     ax.set_xlim(xs[0] - 0.7, xs[-1] + 0.7)
 
 # ── main ──────────────────────────────────────────────────────────────────────
@@ -104,6 +132,10 @@ def parse_args():
     p.add_argument('--knee',  type=int, default=None,
                    help='Thread count at saturation knee (default: max threads in sat CSV)')
     p.add_argument('--title', default='', help='Optional figure title')
+    p.add_argument('--color', default=None,
+                   help='Machine colour: a hex code (#2166ac) or an integer index '
+                        'into the shared palette (0=blue, 1=red-orange, …). '
+                        'Default: palette index 0.')
     p.add_argument('--dpi',   type=int, default=150)
     return p.parse_args()
 
@@ -118,205 +150,302 @@ def load_csv(path, sweep_col):
     df = df.sort_values(sweep_col).reset_index(drop=True)
     return df
 
-def build_xaxis(sat, slack, knee_threads):
+def build_xaxis(sat, slack, knee):
     """
-    Returns (all_xs, all_labels, divider_x, sat_xs, slack_xs).
+    Build a unified x-axis where the slack phase's +0W overlaps the knee point.
 
-    X positions are integers: 0..n_sat-1 for saturation,
-    then n_sat..n_sat+n_slack-1 for slack.
-    A gap of 1 unit is inserted between the phases for the divider line.
-    Labels: saturation side uses thread count ("Nt"), slack side uses worker count
-    ("+Nw") to make it clear that these are additive workers, NOT YCSB threads.
+    Returns (tick_xs, tick_labels, knee_idx, sat_xs, slack_xs).
+
+    Saturation occupies positions 0..n_sat-1.
+    Slack occupies positions knee_idx..knee_idx+n_slack-1, so +0W
+    lands on the same x-position as the knee thread count.
     """
-    sat_threads  = sat['threads'].tolist()
+    sat_threads   = sat['threads'].tolist()
     slack_workers = slack['workers'].tolist()
+
+    # Locate the knee in the saturation thread-count list.
+    try:
+        knee_idx = sat_threads.index(knee)
+    except ValueError:
+        # Fallback: closest thread count ≤ knee, or the last point.
+        candidates = [i for i, t in enumerate(sat_threads) if t <= knee]
+        knee_idx = candidates[-1] if candidates else len(sat_threads) - 1
 
     n_sat   = len(sat_threads)
     n_slack = len(slack_workers)
 
-    GAP = 1  # extra unit between phases
-
     sat_xs   = list(range(n_sat))
-    slack_xs = list(range(n_sat + GAP, n_sat + GAP + n_slack))
 
-    divider_x = n_sat - 1 + GAP / 2.0   # midpoint of gap
+    # Slack positions: log₂(w) + 1 offset from knee_idx (for w ≥ 1).
+    #   +0W (synthetic) → knee_idx + 0          (sat knee anchor)
+    #   +1W             → knee_idx + log₂(1)+1 = knee_idx + 1.000
+    #   +2W             → knee_idx + log₂(2)+1 = knee_idx + 2.000  gap = 1.00
+    #   +4W             → knee_idx + 3.000                          gap = 1.00
+    #   +8W             → knee_idx + 4.000                          gap = 1.00
+    #   +16W            → knee_idx + 5.000                          gap = 1.00
+    #   +32W            → knee_idx + 6.000                          gap = 1.00
+    #   +40W            → knee_idx + 6.322                          gap = 0.32
+    #   +48W            → knee_idx + 6.585                          gap = 0.26
+    #   +56W            → knee_idx + 6.807                          gap = 0.22
+    #   +64W            → knee_idx + 7.000                          gap = 0.19
+    # True doublings stay 1 unit apart; sub-doubling steps compress naturally.
+    slack_xs = [knee_idx + np.log2(w) + 1 for w in slack_workers]
 
-    sat_labels   = [f'{t}T'    for t in sat_threads]
-    slack_labels = [f'+{w}W'   for w in slack_workers]
+    # ── Tick labels ──────────────────────────────────────────────────────────
+    labels = {}
 
-    all_xs     = sat_xs + slack_xs
-    all_labels = sat_labels + slack_labels
+    # Pre-knee saturation labels.
+    for i in range(knee_idx):
+        labels[i] = f'{sat_threads[i]}T'
 
-    return all_xs, all_labels, divider_x, sat_xs, slack_xs
+    # Knee point — this is the +0W anchor shared by both phases.
+    labels[knee_idx] = f'{knee}T / +0W'
+
+    # All slack workers get their own label at their log₂-scaled position.
+    for j in range(n_slack):
+        labels[slack_xs[j]] = f'+{slack_workers[j]}W'
+
+    # Any post-knee saturation positions that fall beyond the slack range
+    # still need labels (shown in parentheses to signal "post-knee").
+    max_slack_x = slack_xs[-1] if slack_xs else knee_idx
+    for i in range(knee_idx + 1, n_sat):
+        if float(i) > max_slack_x:
+            labels[i] = f'({sat_threads[i]}T)'
+
+    tick_xs    = sorted(labels.keys())
+    tick_labels = [labels[x] for x in tick_xs]
+
+    return tick_xs, tick_labels, knee_idx, sat_xs, slack_xs
 
 def main():
     args = parse_args()
+
+    # Resolve machine colour from --color (hex string or palette index).
+    if args.color is None:
+        MC = _PALETTE[0]
+    elif args.color.startswith('#'):
+        MC = args.color
+    else:
+        MC = _PALETTE[int(args.color) % len(_PALETTE)]
+
+    # Two-shade scheme: saturation uses the full (darkened) machine colour;
+    # slack uses a lighter tint of the same hue.  Post-knee stays gray (faded).
+    MC_SAT   = _shade(MC, -0.15)   # 15 % darker  — saturation phase
+    MC_SLACK = _shade(MC, +0.40)   # 40 % lighter — slack phase
 
     sat   = load_csv(args.sat,   'threads')
     slack = load_csv(args.slack, 'workers')
 
     knee = args.knee if args.knee is not None else int(sat['threads'].max())
 
-    all_xs, all_labels, div_x, sat_xs, slack_xs = build_xaxis(sat, slack, knee)
+    tick_xs, tick_labels, knee_idx, sat_xs, slack_xs = \
+        build_xaxis(sat, slack, knee)
+
+    # Convenience slices into the saturation DataFrame.
+    pre_end  = knee_idx + 1                     # exclusive — includes knee row
+    pre_xs   = sat_xs[:pre_end]                 # positions for pre-knee (coloured)
+    post_xs  = sat_xs[knee_idx:]                # positions for post-knee (faded)
+
+    # ── Augmented slack x/y arrays that treat the sat knee as +0W ────────────
+    # The slack line is drawn starting at the knee point (sat data) and then
+    # through each slack data point, giving a continuous connection.
+    knee_row = sat.iloc[knee_idx]
+    slack_xs_aug = [knee_idx] + list(slack_xs)   # prepend the +0W position
+
+    def _aug_slack(slack_col, sat_col, fill_zero=False):
+        """Slack array prepended with the sat knee value as the +0W anchor."""
+        getter = _seg0 if fill_zero else _seg
+        arr = getter(slack, slack_col)
+        knee_val = float(knee_row[sat_col]) if sat_col in sat.columns else np.nan
+        return np.concatenate([[knee_val], arr])
 
     # ── figure layout ─────────────────────────────────────────────────────────
     plt.rcParams.update({
         'figure.dpi'        : args.dpi,
         'font.family'       : 'sans-serif',
-        'font.size'         : 11,
+        'font.size'         : 15,
         'axes.spines.top'   : False,
         'axes.spines.right' : False,
         'axes.grid'         : True,
         'grid.alpha'        : 0.3,
-        'axes.labelsize'    : 11,
-        'xtick.labelsize'   : 9,
-        'ytick.labelsize'   : 10,
+        'axes.labelsize'    : 16,
+        'xtick.labelsize'   : 12,
+        'ytick.labelsize'   : 12,
+        'axes.titlesize'    : 16,
+        'legend.fontsize'   : 14,
     })
 
-    fig = plt.figure(figsize=(14, 12))
+    fig = plt.figure(figsize=(14, 9))   # reduced from 12 → 10
     if args.title:
-        fig.suptitle(args.title, fontsize=13, fontweight='bold', y=0.98)
-    gs  = gridspec.GridSpec(3, 1, hspace=0.55, top=0.93, bottom=0.08)
+        fig.suptitle(args.title, fontsize=14, fontweight='bold', y=0.98)
+    gs  = gridspec.GridSpec(3, 1, hspace=0.21, top=0.93, bottom=0.10)  # tighter hspace
     ax_xput = fig.add_subplot(gs[0])
     ax_disk = fig.add_subplot(gs[1], sharex=ax_xput)
     ax_cpu  = fig.add_subplot(gs[2], sharex=ax_xput)
 
+    # ── helpers for phased segments ───────────────────────────────────────────
+    def _seg(df, name, slc=None):
+        """Column values as float numpy array, optionally sliced."""
+        v = col(df, name).values.astype(float)
+        return v[slc] if slc is not None else v
+
+    def _seg0(df, name, slc=None):
+        """Like _seg but fills NaN with 0 (for std-dev columns)."""
+        v = _seg(df, name, slc)
+        return np.where(np.isfinite(v), v, 0.0)
+
+    def _phase(ax, xs, mean, std, color, fmt='o-', label=None,
+               lo=None, hi=None, band_alpha=0.18, minmax_alpha=0.10):
+        """Plot one segment: errorbars + std band + optional min/max band."""
+        errbar(ax, xs, mean, std, color, label=label, fmt=fmt)
+        s = np.where(np.isfinite(std), std, 0.0)
+        m = np.asarray(mean, dtype=float)
+        band(ax, xs, m - s, m + s, color, alpha=band_alpha)
+        if lo is not None and hi is not None:
+            band(ax, xs, lo, hi, color, alpha=minmax_alpha)
+
     # ── Panel 1: Throughput ───────────────────────────────────────────────────
     ax = ax_xput
 
-    # Saturation phase
-    sat_lo  = col(sat, 'xput_min');  sat_hi  = col(sat, 'xput_max')
-    band(ax, sat_xs,
-         col(sat,'xput_mean') - col(sat,'xput_std', pd.Series([0]*len(sat))),
-         col(sat,'xput_mean') + col(sat,'xput_std', pd.Series([0]*len(sat))),
-         C_SAT, alpha=0.18)
-    band(ax, sat_xs, sat_lo, sat_hi, C_SAT, alpha=0.10)
-    errbar(ax, sat_xs, col(sat,'xput_mean'), col(sat,'xput_std'),
-           C_SAT, label=f'Saturation (YCSB threads, knee={knee}T)')
+    # Pre-knee saturation — darker shade
+    _phase(ax, pre_xs,
+           _seg(sat, 'xput_mean', slice(0, pre_end)),
+           _seg0(sat, 'xput_std',  slice(0, pre_end)),
+           MC_SAT,
+           lo=_seg(sat, 'xput_min', slice(0, pre_end)),
+           hi=_seg(sat, 'xput_max', slice(0, pre_end)))
 
-    # Slack phase
-    slk_lo = col(slack, 'xput_min');  slk_hi = col(slack, 'xput_max')
-    band(ax, slack_xs,
-         col(slack,'xput_mean') - col(slack,'xput_std', pd.Series([0]*len(slack))),
-         col(slack,'xput_mean') + col(slack,'xput_std', pd.Series([0]*len(slack))),
-         C_SLACK, alpha=0.18)
-    band(ax, slack_xs, slk_lo, slk_hi, C_SLACK, alpha=0.10)
-    errbar(ax, slack_xs, col(slack,'xput_mean'), col(slack,'xput_std'),
-           C_SLACK, label=f'CPU slack ({knee}T + N iBench workers)')
+    # Post-knee saturation (dashed gray)
+    _phase(ax, post_xs,
+           _seg(sat, 'xput_mean', slice(knee_idx, None)),
+           _seg0(sat, 'xput_std',  slice(knee_idx, None)),
+           C_FADE, fmt='o--', band_alpha=0.10, minmax_alpha=0.06)
 
-    add_divider(ax, div_x)
-    ax.set_ylabel('Throughput (ops/s)')
-    ax.set_title('Write Throughput', fontsize=11, fontweight='bold')
-    ax.legend(fontsize=9, loc='upper left')
+    # Slack phase — lighter tint, starts from sat knee as +0W anchor
+    _phase(ax, slack_xs_aug,
+           _aug_slack('xput_mean', 'xput_mean'),
+           _aug_slack('xput_std',  'xput_std',  fill_zero=True),
+           MC_SLACK,
+           lo=_aug_slack('xput_min', 'xput_min'),
+           hi=_aug_slack('xput_max', 'xput_max'))
 
-    # Phase labels inside the plot
-    sat_mid_x  = np.mean(sat_xs)
-    slk_mid_x  = np.mean(slack_xs)
-    ylim = ax.get_ylim()
-    ax.text(sat_mid_x,  ylim[1] * 0.95, 'Saturation phase',
-            ha='center', va='top', fontsize=8, color='gray', style='italic')
-    ax.text(slk_mid_x,  ylim[1] * 0.95, 'Slack phase',
-            ha='center', va='top', fontsize=8, color='gray', style='italic')
+    add_divider(ax, knee_idx)
+    ax.set_ylabel('Throughput (QPS)')
+    ax.set_title('Query Throughput', fontweight='bold')
+    ax.yaxis.set_major_formatter(
+        mticker.FuncFormatter(lambda x, _: f'{x/1000:.0f}K' if x >= 1000 else f'{x:.0f}')
+    )
+    # No legend on panel 1.
 
-    # ── Panel 2: Disk bandwidth ───────────────────────────────────────────────
+    # ── Panel 2: Disk BW utilization (disk_bw_avg × 100) ─────────────────────
     ax = ax_disk
 
-    for df, xs, phase_alpha in [(sat, sat_xs, 0.15), (slack, slack_xs, 0.15)]:
-        # Read
-        dr_mean = col(df, 'disk_read_mb/s')
-        dr_std  = col(df, 'disk_read_mb/s_std')
-        dr_lo   = col(df, 'disk_read_mb/s_min')
-        dr_hi   = col(df, 'disk_read_mb/s_max')
-        band(ax, xs, dr_lo, dr_hi, C_READ, alpha=phase_alpha)
-        band(ax, xs, dr_mean - dr_std, dr_mean + dr_std, C_READ, alpha=0.20)
+    # Pre-knee saturation — darker shade
+    _phase(ax, pre_xs,
+           _seg(sat, 'disk_bw_avg', slice(0, pre_end)) * 100,
+           _seg0(sat, 'disk_bw_stddev', slice(0, pre_end)) * 100,
+           MC_SAT)
 
-        # Write
-        dw_mean = col(df, 'disk_write_mb/s')
-        dw_std  = col(df, 'disk_write_mb/s_std')
-        dw_lo   = col(df, 'disk_write_mb/s_min')
-        dw_hi   = col(df, 'disk_write_mb/s_max')
-        band(ax, xs, dw_lo, dw_hi, C_WRITE, alpha=phase_alpha)
-        band(ax, xs, dw_mean - dw_std, dw_mean + dw_std, C_WRITE, alpha=0.20)
+    # Post-knee saturation (faded)
+    _phase(ax, post_xs,
+           _seg(sat, 'disk_bw_avg', slice(knee_idx, None)) * 100,
+           _seg0(sat, 'disk_bw_stddev', slice(knee_idx, None)) * 100,
+           C_FADE, fmt='o--', band_alpha=0.10)
 
-    # Plot lines once per colour with labels (sat + slack share colour → one legend entry)
-    errbar(ax, sat_xs + slack_xs,
-           list(col(sat,'disk_read_mb/s'))  + list(col(slack,'disk_read_mb/s')),
-           list(col(sat,'disk_read_mb/s_std')) + list(col(slack,'disk_read_mb/s_std')),
-           C_READ,  label='Disk read')
-    errbar(ax, sat_xs + slack_xs,
-           list(col(sat,'disk_write_mb/s'))  + list(col(slack,'disk_write_mb/s')),
-           list(col(sat,'disk_write_mb/s_std')) + list(col(slack,'disk_write_mb/s_std')),
-           C_WRITE, label='Disk write')
+    # Slack — lighter tint, starts from sat knee as +0W anchor
+    _phase(ax, slack_xs_aug,
+           _aug_slack('disk_bw_avg',    'disk_bw_avg')    * 100,
+           _aug_slack('disk_bw_stddev', 'disk_bw_stddev', fill_zero=True) * 100,
+           MC_SLACK)
 
-    add_divider(ax, div_x)
-    ax.set_ylabel('Bandwidth (MB/s)')
-    ax.set_title('Disk Bandwidth', fontsize=11, fontweight='bold')
-    ax.legend(fontsize=9, loc='upper left')
+    add_divider(ax, knee_idx)
+    ax.set_ylabel('Disk BW utilization (%)')
+    ax.set_ylim(bottom=0)
+    ax.set_title('Disk Bandwidth', fontweight='bold')
+    # No legend on panel 2.
 
     # ── Panel 3: CPU utilization ──────────────────────────────────────────────
     ax = ax_cpu
 
-    for df, xs in [(sat, sat_xs), (slack, slack_xs)]:
-        # cpu_schedule (incl. iowait) — upper envelope
-        cs_mean = col(df, 'cpu_schedule_mean')
-        cs_std  = col(df, 'cpu_schedule_std')
-        cs_lo   = col(df, 'cpu_schedule_min')
-        cs_hi   = col(df, 'cpu_schedule_max')
-        band(ax, xs, cs_lo, cs_hi, C_SCHEDULE, alpha=0.12)
-        band(ax, xs, cs_mean - cs_std, cs_mean + cs_std, C_SCHEDULE, alpha=0.20)
+    # Pre-knee saturation — compute (triangle) and schedule (square), darker shade.
+    cc_pre = _seg(sat, 'cpu_compute_mean',  slice(0, pre_end))
+    cs_pre = _seg(sat, 'cpu_schedule_mean', slice(0, pre_end))
+    _phase(ax, pre_xs, cc_pre,
+           _seg0(sat, 'cpu_compute_std', slice(0, pre_end)), MC_SAT, fmt='^-')
+    _phase(ax, pre_xs, cs_pre,
+           _seg0(sat, 'cpu_schedule_std', slice(0, pre_end)), MC_SAT, fmt='s-',
+           band_alpha=0.10)
+    ax.fill_between(pre_xs, cc_pre, cs_pre,
+                    facecolor='none', edgecolor=MC_SAT,
+                    hatch='xxx', alpha=0.30, linewidth=0, zorder=2)
 
-        # cpu_compute (excl. iowait) — lower line below schedule
-        cc_mean = col(df, 'cpu_compute_mean')
-        cc_std  = col(df, 'cpu_compute_std')
-        cc_lo   = col(df, 'cpu_compute_min')
-        cc_hi   = col(df, 'cpu_compute_max')
-        band(ax, xs, cc_lo, cc_hi, C_COMPUTE, alpha=0.12)
-        band(ax, xs, cc_mean - cc_std, cc_mean + cc_std, C_COMPUTE, alpha=0.20)
+    # Post-knee saturation — compute and schedule, gray dashed.
+    cc_post = _seg(sat, 'cpu_compute_mean',  slice(knee_idx, None))
+    cs_post = _seg(sat, 'cpu_schedule_mean', slice(knee_idx, None))
+    _phase(ax, post_xs, cc_post,
+           _seg0(sat, 'cpu_compute_std', slice(knee_idx, None)),
+           C_FADE, fmt='^--', band_alpha=0.06)
+    _phase(ax, post_xs, cs_post,
+           _seg0(sat, 'cpu_schedule_std', slice(knee_idx, None)),
+           C_FADE, fmt='s--', band_alpha=0.06)
 
-    errbar(ax, sat_xs + slack_xs,
-           list(col(sat,'cpu_schedule_mean')) + list(col(slack,'cpu_schedule_mean')),
-           list(col(sat,'cpu_schedule_std'))  + list(col(slack,'cpu_schedule_std')),
-           C_SCHEDULE, label='CPU busy (incl. iowait, 100−idle)')
-    errbar(ax, sat_xs + slack_xs,
-           list(col(sat,'cpu_compute_mean')) + list(col(slack,'cpu_compute_mean')),
-           list(col(sat,'cpu_compute_std'))  + list(col(slack,'cpu_compute_std')),
-           C_COMPUTE, label='CPU compute (excl. iowait, 100−idle−iowait)')
+    # Slack — lighter tint. Starts from sat knee as +0W anchor.
+    cc_slk = _aug_slack('cpu_compute_mean',  'cpu_compute_mean')
+    cs_slk = _aug_slack('cpu_schedule_mean', 'cpu_schedule_mean')
+    _phase(ax, slack_xs_aug, cc_slk,
+           _aug_slack('cpu_compute_std',  'cpu_compute_std',  fill_zero=True),
+           MC_SLACK, fmt='^-')
+    _phase(ax, slack_xs_aug, cs_slk,
+           _aug_slack('cpu_schedule_std', 'cpu_schedule_std', fill_zero=True),
+           MC_SLACK, fmt='s-', band_alpha=0.10)
+    ax.fill_between(slack_xs_aug, cc_slk, cs_slk,
+                    facecolor='none', edgecolor=MC_SLACK,
+                    hatch='xxx', alpha=0.30, linewidth=0, zorder=2)
 
-    add_divider(ax, div_x)
+    add_divider(ax, knee_idx)
     ax.set_ylabel('CPU utilization (%)')
     ax.set_ylim(bottom=0, top=105)
-    ax.set_title('CPU Utilization', fontsize=11, fontweight='bold')
-    ax.legend(fontsize=9, loc='upper left')
+    ax.set_title('CPU Utilization', fontweight='bold')
+
+    # Panel 3 legend — explains metric markers + phase encoding.
+    from matplotlib.patches import Patch
+    C_LEG = '#555555'   # neutral gray for legend icons
+    legend_handles = [
+        Line2D([0],[0], color=C_LEG, lw=2, marker='s', ms=5, ls='-',
+               label='CPU compute+iowait'),
+        Line2D([0],[0], color=C_LEG, lw=2, marker='^', ms=5, ls='-',
+               label='CPU compute'),
+        Patch(facecolor='none', edgecolor=C_LEG, hatch='xxx', linewidth=0.5,
+              label='I/O wait (gap)'),
+        Line2D([0],[0], color=C_FADE, lw=2, ls='--',
+               label='post-knee (faded)'),
+    ]
+    ax.legend(handles=legend_handles, loc='upper left', ncol=2)
 
     # ── Shared x-axis labels ──────────────────────────────────────────────────
-    # Apply to the bottom panel only (sharex handles the rest).
-    set_xticks(ax_cpu, all_xs, all_labels, div_x)
+    set_xticks(ax_cpu, tick_xs, tick_labels)
     ax_cpu.set_xlabel(
-        f'← YCSB threads (saturation)   |   iBench workers added at {knee}T (slack) →'
+        f'\u2190 YCSB threads (saturation)   |   '
+        f'iBench workers added at {knee}T (slack) \u2192',
+        fontsize=18,
+        x=0.465
     )
-    # Hide tick labels on the upper panels (sharex will propagate them anyway
-    # but we only want text on the bottom one).
     plt.setp(ax_xput.get_xticklabels(), visible=False)
     plt.setp(ax_disk.get_xticklabels(), visible=False)
 
-    # ── Phase-boundary annotation (top panel) ────────────────────────────────
+    # ── Knee annotation (top panel) ──────────────────────────────────────────
     ax_xput.annotate(
-        f'Knee\n{knee}T / 0W',
-        xy=(div_x, ax_xput.get_ylim()[0]),
-        xytext=(div_x + 0.3, ax_xput.get_ylim()[0] +
+        f'Knee\n{knee}T / +0W',
+        xy=(knee_idx, ax_xput.get_ylim()[0]),
+        xytext=(knee_idx + 0.5,
+                ax_xput.get_ylim()[0] +
                 0.08 * (ax_xput.get_ylim()[1] - ax_xput.get_ylim()[0])),
-        fontsize=8, color='gray',
+        fontsize=11, color='gray',
         arrowprops=dict(arrowstyle='->', color='gray', lw=0.8),
     )
 
-    # ── Legend entries for phase shading ─────────────────────────────────────
-    phase_handles = [
-        Line2D([0], [0], color=C_SAT,   lw=2, label='Saturation phase'),
-        Line2D([0], [0], color=C_SLACK,  lw=2, label='Slack phase'),
-    ]
-
     fig.savefig(args.out, bbox_inches='tight', dpi=args.dpi)
-    print(f'Saved → {args.out}')
+    print(f'Saved \u2192 {args.out}')
 
 if __name__ == '__main__':
     main()
