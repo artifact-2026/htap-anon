@@ -56,6 +56,7 @@ def main():
 
     required = {'disk_read_mb/s', 'disk_read_mb/s_std',
                 'disk_write_mb/s', 'disk_write_mb/s_std'}
+
     missing = required - set(df.columns)
     if missing:
         sys.exit(f'ERROR: input CSV is missing columns: {sorted(missing)}')

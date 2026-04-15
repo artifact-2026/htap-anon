@@ -745,7 +745,7 @@ def build_fig4_machines(datasets, args):
     legend_handles = [
         Line2D([0],[0], color=C_LEG, lw=lw, ms=ms+1, label='CPU compute',
                **RS_CPUC),
-        Line2D([0],[0], color=C_LEG, lw=lw, ms=ms+1, label='CPU compute+IOwait',
+        Line2D([0],[0], color=C_LEG, lw=lw, ms=ms+1, label='CPU scheduled',
                **RS_CPUS),
         Patch(facecolor='none', edgecolor=C_LEG, hatch='xxx', linewidth=0.5,
               label='I/O wait (gap)'),
