@@ -88,25 +88,47 @@ struct run_result DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, 
   int oks = 0;
   uint64_t exectime = 0;
   int i = 0;
-  std::chrono::time_point start = std::chrono::steady_clock::now();
-  std::chrono::time_point step = start;
-  uint64_t exec_start = 0;
+  auto start    = std::chrono::steady_clock::now();
+  auto step     = start;
+  // Hard wall-clock deadline: exit the loop at runTime seconds regardless of
+  // how long individual DoTransaction() calls block (e.g. RocksDB write stalls
+  // caused by compaction back-pressure).  The old tick-based loop incremented
+  // `i` only on 1-second wall-clock gates, so stalls silently extended the run
+  // well beyond the intended window.
+  auto deadline = start + std::chrono::seconds(runTime);
 
-  while (i < runTime) {
-    if (std::chrono::steady_clock::now() - step >= std::chrono::seconds(1)) {
-      td_oks.xput[i] = oks;
-      td_oks.exec_time[i] = (oks > 0) ? double(exectime)/double(oks) : 0.0;
-      i += 1;
-      oks = 0;
+  while (true) {
+    auto now = std::chrono::steady_clock::now();
+
+    // Primary exit: wall-clock deadline reached.
+    if (now >= deadline) break;
+
+    // Secondary exit: all per-second buckets filled (defensive, normally the
+    // deadline fires first once clock-skew between `step` snaps is corrected).
+    if (i >= runTime) break;
+
+    // Flush the current 1-second bucket if a full second has elapsed.
+    if (now - step >= std::chrono::seconds(1)) {
+      td_oks.xput[i]     = oks;
+      td_oks.exec_time[i] = (oks > 0) ? double(exectime) / double(oks) : 0.0;
+      i       += 1;
+      oks      = 0;
       exectime = 0;
-      step = std::chrono::steady_clock::now();
+      step     = now;
     }
 
-    exec_start = get_now_micros();
+    uint64_t exec_start = get_now_micros();
     // Follow the workload spec's operation mix (read/update/insert/scan/rmw).
     oks += client.DoTransaction();
     exectime += (get_now_micros() - exec_start);
   }
+
+  // Flush the last (possibly partial) bucket so no ops are lost.
+  if (i < runTime && oks > 0) {
+    td_oks.xput[i]     = oks;
+    td_oks.exec_time[i] = double(exectime) / double(oks);
+  }
+
   return td_oks;
 }
 

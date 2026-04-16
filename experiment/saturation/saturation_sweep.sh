@@ -75,9 +75,9 @@ RECORD_COUNT="${RECORD_COUNT:-10000000}"
 
 # Total experiment duration per thread count (seconds).
 # YCSB discards the first WARMUP_SKIP_S seconds; throughput is averaged over
-# [WARMUP_SKIP_S, RUNTIME_SECS].  With WARMUP_SKIP_S=0 the entire 10-minute
+# [WARMUP_SKIP_S, RUNTIME_SECS].  With WARMUP_SKIP_S=0 the entire 15-minute
 # window contributes to the throughput/s reported in summary.csv.
-RUNTIME_SECS="${RUNTIME_SECS:-600}"
+RUNTIME_SECS="${RUNTIME_SECS:-900}"
 
 # Block device for disk I/O monitoring.  Find yours with: lsblk / df -h <dbpath>
 # Use the block device name as it appears in /proc/diskstats (e.g. nvme0n1, sda).
@@ -394,6 +394,7 @@ sweep_dir              = sys.argv[1]
 output_csv             = sys.argv[2]
 warmup_skip            = int(sys.argv[3])
 workload_label         = sys.argv[4]
+runtime_s              = int(sys.argv[5]) if len(sys.argv) > 5 else 600
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -452,7 +453,11 @@ def parse_system_csv(path, skip_s):
     try:
         df = pd.read_csv(path)
         df['elapsed_s'] = df['timestamp_s'] - df['timestamp_s'].iloc[0]
-        steady = df[df['elapsed_s'] >= skip_s]
+        # Clip to the intended measurement window [skip_s, runtime_s].
+        # Lower bound removes warmup; upper bound removes the compaction-drain
+        # tail that accumulates after YCSB finishes its timed window but before
+        # RocksDB background threads stop writing to disk.
+        steady = df[(df['elapsed_s'] >= skip_s) & (df['elapsed_s'] <= runtime_s)]
         if steady.empty:
             steady = df
         # cpu_active excludes iowait so it matches what `top` shows as "CPU busy"
@@ -670,7 +675,8 @@ run_summarizer() {
         "$OUTPUT_DIR/sweep" \
         "$OUTPUT_DIR/summary.csv" \
         "$WARMUP_SKIP_S" \
-        "$WORKLOAD_LABEL"
+        "$WORKLOAD_LABEL" \
+        "$RUNTIME_SECS"
     log "  → $OUTPUT_DIR/summary.csv"
 }
 

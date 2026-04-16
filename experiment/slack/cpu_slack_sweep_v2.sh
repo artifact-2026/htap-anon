@@ -55,8 +55,8 @@ WORKER_COUNTS="${WORKER_COUNTS:-0 1 2 4 8 16 32}"
 TRIALS_PER_POINT="${TRIALS_PER_POINT:-1}"
 
 # Total experiment duration per point in seconds (= full YCSB runtime).
-# With WARMUP_SKIP_S=0 the entire window contributes to the reported mean.
-RUNTIME_SECS="${RUNTIME_SECS:-600}"
+# With WARMUP_SKIP_S=0 the entire 15-minute window contributes to the reported mean.
+RUNTIME_SECS="${RUNTIME_SECS:-900}"
 
 # Warmup seconds to discard from per-second system CSV when summarising.
 # Set to 0 to report over the full RUNTIME_SECS window.
@@ -400,6 +400,7 @@ sweep_dir      = sys.argv[1]
 output_csv     = sys.argv[2]
 warmup_skip    = int(sys.argv[3])
 workload_label = sys.argv[4]
+runtime_s      = int(sys.argv[5]) if len(sys.argv) > 5 else 600
 
 nan = float('nan')
 
@@ -449,7 +450,11 @@ def parse_system_csv(path, skip_s):
     try:
         df = pd.read_csv(path)
         df['elapsed_s'] = df['timestamp_s'] - df['timestamp_s'].iloc[0]
-        steady = df[df['elapsed_s'] >= skip_s]
+        # Clip to the intended measurement window [skip_s, runtime_s].
+        # Lower bound removes warmup; upper bound removes the compaction-drain
+        # tail that accumulates after YCSB finishes its timed window but before
+        # RocksDB background threads stop writing to disk.
+        steady = df[(df['elapsed_s'] >= skip_s) & (df['elapsed_s'] <= runtime_s)]
         if steady.empty: steady = df
 
         iowait = steady['cpu_iowait_pct'] if 'cpu_iowait_pct' in steady.columns \
@@ -617,7 +622,8 @@ run_summarizer() {
         "$OUTPUT_DIR/sweep" \
         "$OUTPUT_DIR/summary.csv" \
         "$WARMUP_SKIP_S" \
-        "$WORKLOAD_LABEL"
+        "$WORKLOAD_LABEL" \
+        "$RUNTIME_SECS"
     log "  → $OUTPUT_DIR/summary.csv"
 }
 
