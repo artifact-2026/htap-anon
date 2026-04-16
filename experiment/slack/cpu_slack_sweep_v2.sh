@@ -223,8 +223,8 @@ compile_transform_binary() {
     [[ -f "$src_cc" ]] || die "iBench_cpu.cc not found at '$src_cc'"
     TRANSFORM_BINARY=$(mktemp "${SAT_TMPDIR}/slack2_cpu_XXXXX")
     log "Compiling iBench_cpu.cc → $TRANSFORM_BINARY"
-    g++ -O2 -fopenmp -o "$TRANSFORM_BINARY" "$src_cc" -lrt \
-        || die "Failed to compile iBench_cpu.cc. Need g++ and OpenMP."
+    g++ -O2 -o "$TRANSFORM_BINARY" "$src_cc" -lpthread \
+        || die "Failed to compile iBench_cpu.cc. Need g++ (no special flags required)."
     chmod +x "$TRANSFORM_BINARY"
 }
 

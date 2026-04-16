@@ -54,7 +54,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <omp.h>
+#include <pthread.h>
+#include <unistd.h>   /* sysconf */
 
 #define NS_PER_S  (1000000000L)
 
@@ -82,16 +83,61 @@ static inline uint64_t getNs(void) {
 }
 
 /**
- * Sleep until the target wall-clock nanosecond.
- * Uses CLOCK_MONOTONIC + TIMER_ABSTIME for jitter-free scheduling.
+ * Sleep for approximately 'ns' nanoseconds.
+ * Uses nanosleep (portable: Linux + macOS). On EINTR, retries with the
+ * remaining time so the total sleep is at least 'ns' nanoseconds.
  */
-static inline void sleepUntilNs(uint64_t targetNs) {
+static inline void sleepNs(uint64_t ns) {
     struct timespec ts;
-    ts.tv_sec  = targetNs / NS_PER_S;
-    ts.tv_nsec = targetNs % NS_PER_S;
-    /* Loop on EINTR. */
-    while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL) != 0)
-        ;
+    ts.tv_sec  = (time_t)(ns / NS_PER_S);
+    ts.tv_nsec = (long)(ns % NS_PER_S);
+    while (nanosleep(&ts, &ts) != 0)
+        ;   /* retry remainder on EINTR */
+}
+
+/* ── Per-thread state passed through pthread_create ───────────────────── */
+typedef struct {
+    int      tid;
+    uint64_t endNs;
+    uint64_t intervalNs;
+    uint32_t rounds;
+    volatile uint64_t *sink;
+    uint64_t           count;   /* transforms completed by this thread */
+} WorkerArgs;
+
+static void *worker(void *arg) {
+    WorkerArgs *a       = (WorkerArgs *)arg;
+    uint64_t    state   = (uint64_t)a->tid * 0x9E3779B97F4A7C15ULL;
+    uint64_t    nextNs  = getNs() + a->intervalNs;
+    uint64_t    count   = 0;
+
+    while (getNs() < a->endNs) {
+        /* ── one transform: `rounds` mix iterations ─────────────────── */
+        uint64_t x = state;
+        for (uint32_t r = 0; r < a->rounds; r++) {
+            x = mix64(x);
+        }
+        state = x;   /* data-dependent: feeds back into next transform */
+        count++;
+
+        /* ── rate limiting ──────────────────────────────────────────── */
+        if (a->intervalNs > 0) {
+            uint64_t now = getNs();
+            if (nextNs > now) {
+                sleepNs(nextNs - now);
+            }
+            /* Don't try to catch up if we fell behind. */
+            now = getNs();
+            nextNs = (nextNs + a->intervalNs > now)
+                   ? nextNs + a->intervalNs
+                   : now + a->intervalNs;
+        }
+    }
+
+    /* Prevent the compiler from eliding the entire loop. */
+    *a->sink = state;
+    a->count = count;
+    return NULL;
 }
 
 int main(int argc, const char** argv) {
@@ -109,7 +155,7 @@ int main(int argc, const char** argv) {
 
     int      durationSec   = atoi(argv[1]);
     uint32_t numThreads    = (argc >= 3) ? (uint32_t)atoi(argv[2])
-                                         : (uint32_t)omp_get_num_procs();
+                                         : (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
     uint64_t ratePerThread = (argc >= 4) ? (uint64_t)atoll(argv[3]) : 0;
     uint32_t rounds        = (argc >= 5) ? (uint32_t)atoi(argv[4])  : 512;
 
@@ -121,7 +167,7 @@ int main(int argc, const char** argv) {
     uint64_t endNs      = getNs() + (uint64_t)durationSec * NS_PER_S;
     uint64_t intervalNs = (ratePerThread > 0) ? NS_PER_S / ratePerThread : 0;
 
-    printf("iBench CPU: %d threads × %ds, %u rounds/transform",
+    printf("iBench CPU: %u threads x %ds, %u rounds/transform",
            numThreads, durationSec, rounds);
     if (ratePerThread > 0)
         printf(", rate=%lu transforms/s/thread", (unsigned long)ratePerThread);
@@ -130,48 +176,41 @@ int main(int argc, const char** argv) {
     printf("\n");
 
     /* ── Launch workers ──────────────────────────────────────────────── */
-    omp_set_num_threads(numThreads);
-
-    /*
-     * volatile prevents the compiler from optimising away the entire
-     * mix chain (the result is "used" by writing to this sink).
-     */
     volatile uint64_t sink = 0;
 
-#pragma omp parallel
-    {
-        int tid = omp_get_thread_num();
-        /* Per-thread state seeded by thread ID × golden ratio. */
-        uint64_t state = (uint64_t)tid * 0x9E3779B97F4A7C15ULL;
-        uint64_t nextNs = getNs() + intervalNs;
-
-        while (getNs() < endNs) {
-            /* ── one transform: `rounds` mix iterations ────────────── */
-            uint64_t x = state;
-            for (uint32_t r = 0; r < rounds; r++) {
-                x = mix64(x);
-            }
-            state = x;   /* data-dependent: feeds back into next transform */
-
-            /* ── rate limiting ─────────────────────────────────────── */
-            if (intervalNs > 0) {
-                uint64_t now = getNs();
-                if (nextNs > now) {
-                    sleepUntilNs(nextNs);
-                }
-                /* Don't try to catch up if we fell behind. */
-                now = getNs();
-                nextNs = (nextNs + intervalNs > now)
-                       ? nextNs + intervalNs
-                       : now + intervalNs;
-            }
-        }
-
-        /* Prevent the compiler from eliding the entire loop. */
-        sink = state;
+    WorkerArgs *args    = (WorkerArgs *)calloc(numThreads, sizeof(WorkerArgs));
+    pthread_t  *threads = (pthread_t  *)calloc(numThreads, sizeof(pthread_t));
+    if (!args || !threads) {
+        fprintf(stderr, "ERROR: out of memory\n");
+        return 1;
     }
 
+    for (uint32_t i = 0; i < numThreads; i++) {
+        args[i].tid        = (int)i;
+        args[i].endNs      = endNs;
+        args[i].intervalNs = intervalNs;
+        args[i].rounds     = rounds;
+        args[i].sink       = &sink;
+        if (pthread_create(&threads[i], NULL, worker, &args[i]) != 0) {
+            fprintf(stderr, "ERROR: pthread_create failed for thread %u\n", i);
+            return 1;
+        }
+    }
+
+    for (uint32_t i = 0; i < numThreads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    uint64_t totalTransforms = 0;
+    for (uint32_t i = 0; i < numThreads; i++) {
+        totalTransforms += args[i].count;
+    }
+
+    free(args);
+    free(threads);
+
     (void)sink;
-    printf("iBench CPU: done\n");
+    printf("iBench CPU: done  transforms=%lu  threads=%u  duration=%ds\n",
+           (unsigned long)totalTransforms, numThreads, durationSec);
     return 0;
 }
