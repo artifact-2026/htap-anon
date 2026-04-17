@@ -51,6 +51,9 @@
 #   IO_DATA_SIZE_MB   Scratch file size in MiB.
 #   IO_SCRATCH_DIR    Directory for IO scratch files — MUST be on the same
 #                     device as the RocksDB data for real I/O contention.
+#   IBENCH_IO_SATURATE_MBS  Override IO calibration result (MB/s). If set, skips
+#                     the calibration probe and uses this value. Useful when
+#                     calibration shows high variance between runs.
 #
 # ── Output ────────────────────────────────────────────────────────────────────
 # <OUTPUT_DIR>/
@@ -509,16 +512,28 @@ calibrate_io_rate() {
         return
     fi
 
+    # Normalize system state before calibration: drop page cache and wait for any
+    # pending I/O from previous runs to complete.
     log "Calibrating IO worker saturate BW (2 s full-blast on $IO_SCRATCH_DIR) ..."
+    log "  Normalizing system state (dropping cache, syncing filesystem) ..."
+    drop_page_cache
+    sync; sleep 1  # Allow pending I/O to complete and settle thermal state
+
     local calib_file="$IO_SCRATCH_DIR/ibench_io_calib.dat"
-    # Pre-allocate a small (128 MiB) calibration file.
+    # Pre-allocate calibration file (512 MiB).
     dd if=/dev/zero of="$calib_file" bs=1M count=512 conv=fdatasync 2>/dev/null \
         || { log "  WARNING: calibration alloc failed; defaulting MAX_IO_BW to 500 MB/s"
              MAX_IO_BW_MBS_PER_WORKER=500; return; }
 
+    # Warmup run (1s) to stabilize I/O scheduler and device state, then measure (2s)
+    log "  Warmup run (1s)..."
+    python3 "$IO_WORKER_SCRIPT" "$calib_file" 0 "$IO_BLOCK_SIZE" 1 >/dev/null 2>&1 || true
+
+    log "  Measurement run (2s)..."
     local calib_out
     calib_out=$(python3 "$IO_WORKER_SCRIPT" "$calib_file" 0 "$IO_BLOCK_SIZE" 2 2>&1) || true
     rm -f "$calib_file" 2>/dev/null || true
+    sync  # Ensure file deletion is persisted
 
     MAX_IO_BW_MBS_PER_WORKER=$(python3 -c "
 import re, sys

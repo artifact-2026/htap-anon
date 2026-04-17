@@ -107,14 +107,16 @@ struct run_result DelegateForThroughput(ycsbc::DB *db, ycsbc::CoreWorkload *wl, 
     // deadline fires first once clock-skew between `step` snaps is corrected).
     if (i >= runTime) break;
 
-    // Flush the current 1-second bucket if a full second has elapsed.
-    if (now - step >= std::chrono::seconds(1)) {
+    // Flush 1-second buckets for each complete second elapsed.
+    // This loop handles cases where the thread was preempted for multiple
+    // seconds, ensuring no buckets are lost during high CPU contention.
+    while (now - step >= std::chrono::seconds(1)) {
       td_oks.xput[i]     = oks;
       td_oks.exec_time[i] = (oks > 0) ? double(exectime) / double(oks) : 0.0;
       i       += 1;
       oks      = 0;
       exectime = 0;
-      step     = now;
+      step   += std::chrono::seconds(1);
     }
 
     uint64_t exec_start = get_now_micros();
