@@ -80,6 +80,14 @@ TRANSFORMS_PER_WORKER="${TRANSFORMS_PER_WORKER:-0}"
 # Arithmetic rounds per transform.
 WORKER_ROUNDS_MULTIPLIER="${WORKER_ROUNDS_MULTIPLIER:-8}"
 
+# Optional CPU affinity base for iBench_cpu workers.
+# When set, worker i is pinned to CPU (CPU_AFFINITY_BASE + i).
+# Prevents Linux CFS "sleeper fairness" from boosting YCSB threads above the
+# busy-loop iBench workers and causing throughput to *increase* with workers.
+# Leave unset (default) to let the OS schedule freely.
+#   Example: CPU_AFFINITY_BASE=32  # pin workers to cores 32, 33, 34, ...
+CPU_AFFINITY_BASE="${CPU_AFFINITY_BASE:-}"
+
 # =============================================================================
 # Internals
 # =============================================================================
@@ -310,14 +318,24 @@ run_one() {
     local ycsb_pid=$!
 
     # ── Start n_workers iBench_cpu workers alongside YCSB ────────────────────
+    # n_workers may be a float (e.g. 6.4 = 6 full cores + 0.4 fractional core).
+    # bash (( )) only handles integers, so use awk for the float-safe guard.
     TRANSFORM_PIDS=()
-    if (( n_workers > 0 )); then
-        local rounds_per_xfm=$((  1024 * WORKER_ROUNDS_MULTIPLIER ))
+    if awk "BEGIN { exit (${n_workers} > 0 ? 0 : 1) }"; then
+        local rounds_per_xfm=$(( 1024 * WORKER_ROUNDS_MULTIPLIER ))
+        # CPU affinity: pass the per-process base CPU ID when CPU_AFFINITY_BASE
+        # is set; pass -1 otherwise (no pinning).
+        local cpu_arg=-1
+        if [[ -n "${CPU_AFFINITY_BASE:-}" ]]; then
+            cpu_arg="${CPU_AFFINITY_BASE}"
+        fi
         log "  Starting ${n_workers} iBench_cpu worker(s)" \
-            "(rounds=${rounds_per_xfm}, rate=${TRANSFORMS_PER_WORKER}/s, duration=${RUNTIME_SECS}s)"
+            "(rounds=${rounds_per_xfm}, rate=${TRANSFORMS_PER_WORKER}/s," \
+            "cpu_base=${cpu_arg}, duration=${RUNTIME_SECS}s)"
         "$TRANSFORM_BINARY" \
             "$RUNTIME_SECS" "$n_workers" \
-            "$TRANSFORMS_PER_WORKER" "$rounds_per_xfm" &
+            "$TRANSFORMS_PER_WORKER" "$rounds_per_xfm" \
+            "$cpu_arg" &
         TRANSFORM_PIDS=($!)
     fi
 
@@ -405,8 +423,15 @@ runtime_s      = int(sys.argv[5]) if len(sys.argv) > 5 else 600
 nan = float('nan')
 
 def worker_from_path(p):
-    m = re.search(r'_w(\d+)', os.path.basename(p))
-    return int(m.group(1)) if m else 0
+    # Matches both integer ("run_w8") and fractional ("run_w6.4") directory names.
+    m = re.search(r'_w([\d.]+)', os.path.basename(p))
+    return float(m.group(1)) if m else 0.0
+
+def fmt_w(w):
+    """Reproduce bash's ${n_workers} literal so file-name lookups succeed.
+    Whole numbers (0.0, 32.0) are formatted without the decimal point to match
+    what bash writes; fractional values (6.4) include it."""
+    return str(int(w)) if w == int(w) else str(w)
 
 def parse_ycsb_log(path):
     """Return (xput_mean, xput_std, xput_min, xput_max, cache_hits, cache_misses)."""
@@ -512,8 +537,9 @@ def parse_system_csv(path, skip_s):
         return empty
 
 def collect_trial(td, w):
-    xm, xs, xlo, xhi, ch, cm = parse_ycsb_log(os.path.join(td, f'ycsb_w{w}.log'))
-    ss = parse_system_csv(os.path.join(td, f'system_w{w}.csv'), warmup_skip)
+    wl = fmt_w(w)   # e.g. 6.4 → "6.4",  8.0 → "8"
+    xm, xs, xlo, xhi, ch, cm = parse_ycsb_log(os.path.join(td, f'ycsb_w{wl}.log'))
+    ss = parse_system_csv(os.path.join(td, f'system_w{wl}.csv'), warmup_skip)
     return xm, xs, xlo, xhi, ch, cm, ss
 
 run_dirs = sorted(
@@ -546,9 +572,10 @@ for rd in run_dirs:
         cache_misses = float(np.nanmedian(trial_cm))
         sys_stats  = {k: float(np.nanmedian(vs)) for k, vs in trial_sys.items()}
     else:
+        wl = fmt_w(w)
         xput_mean, xput_std, xput_min, xput_max, cache_hits, cache_misses = \
-            parse_ycsb_log(os.path.join(rd, f'ycsb_w{w}.log'))
-        sys_stats = parse_system_csv(os.path.join(rd, f'system_w{w}.csv'), warmup_skip)
+            parse_ycsb_log(os.path.join(rd, f'ycsb_w{wl}.log'))
+        sys_stats = parse_system_csv(os.path.join(rd, f'system_w{wl}.csv'), warmup_skip)
 
     total_c = (cache_hits + cache_misses) if not (np.isnan(cache_hits) or np.isnan(cache_misses)) else 0
     hit_rate = cache_hits / total_c if total_c > 0 else nan
