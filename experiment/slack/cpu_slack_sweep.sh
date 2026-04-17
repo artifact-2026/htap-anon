@@ -126,6 +126,25 @@ TRANSFORMS_PER_WORKER="${TRANSFORMS_PER_WORKER:-1000}"
 # Values beyond ~8 have no additional effect once the worker is a busy loop.
 WORKER_ROUNDS_MULTIPLIER="${WORKER_ROUNDS_MULTIPLIER:-8}"
 
+# ── CPU affinity for iBench workers ──────────────────────────────────────────
+#
+# When set to a non-negative integer, worker W is pinned to CPU
+#   CPU_AFFINITY_BASE + (W - 1)
+# via sched_setaffinity (Linux only).
+#
+# Why this matters: without pinning, the Linux CFS scheduler gives YCSB
+# threads a "sleeper fairness" scheduling bonus each time they wake from an
+# I/O wait.  At high worker counts (e.g. 64), this bonus can outweigh the
+# actual CPU stolen by iBench, making YCSB throughput appear flat or even
+# increase.  Pinning each worker to a dedicated core removes the scheduling
+# asymmetry: the worker truly occupies its core at 100 % and YCSB runs on
+# the remaining cores.
+#
+# Example: if YCSB uses CPUs 0–15 (KNEE_THREADS=16 on a 32-core machine),
+# set CPU_AFFINITY_BASE=16 so workers are pinned to CPUs 16, 17, 18, …
+# Leave empty (default) to let the OS schedule freely (original behaviour).
+CPU_AFFINITY_BASE="${CPU_AFFINITY_BASE:-}"
+
 # ── Experiment timing ─────────────────────────────────────────────────────────
 
 # Block device to monitor for disk I/O (passed to the system monitor).
@@ -588,17 +607,31 @@ run_sweep() {
         (( remaining <= 0 )) && break
 
         local rounds_per_xfm=$(( FIELD_COUNT * (FIELD_LENGTH / 8) * WORKER_ROUNDS_MULTIPLIER ))
+
+        # Compute CPU affinity argument for this worker.
+        # cpu_arg=-1 → no pinning (OS schedules freely).
+        # cpu_arg>=0 → pin to that specific CPU via sched_setaffinity.
+        local cpu_arg=-1
+        if [[ -n "${CPU_AFFINITY_BASE:-}" ]]; then
+            cpu_arg=$(( CPU_AFFINITY_BASE + w - 1 ))
+        fi
+
+        local affinity_msg=""
+        [[ "$cpu_arg" -ge 0 ]] && affinity_msg=", pinned to cpu=${cpu_arg}"
+
         log "  Window ${w}: launching iBench_cpu worker ${w}" \
             "(~${remaining}s remaining," \
             "total ~$((w * TRANSFORMS_PER_WORKER)) transforms/s," \
-            "rounds=${rounds_per_xfm})"
+            "rounds=${rounds_per_xfm}${affinity_msg})"
 
         # Rate=0 → saturate mode (busy-loop): each worker pegs one core at 100%.
         # The sweep varies the *number* of fully-loaded workers, not per-worker
         # intensity.  Passing TRANSFORMS_PER_WORKER as the rate limit made each
         # worker sleep ~98% of the time (effectively invisible on CPU metrics).
+        # cpu_arg pins the worker to a specific CPU so CFS cannot give YCSB
+        # threads extra time-slices that make throughput appear to increase.
         "$TRANSFORM_BINARY" \
-            "$remaining" 1 0 "$rounds_per_xfm" &
+            "$remaining" 1 0 "$rounds_per_xfm" "$cpu_arg" &
         TRANSFORM_PIDS+=($!)
 
         sleep "$XPUT_WINDOW"
@@ -1270,6 +1303,11 @@ main() {
     log "  Runtime:         ${RUNTIME_SECS}s  ÷  window ${XPUT_WINDOW}s  = $((RUNTIME_SECS / XPUT_WINDOW)) windows"
     log "  Worker schedule: +1 worker per window (window 0 = baseline, no workers)"
     log "  Degrad. thresh:  ${DEGRADATION_THRESHOLD}  (plot annotation only)"
+    log "  CPU affinity:    ${CPU_AFFINITY_BASE:-<disabled — CFS free scheduling>}"
+    if [[ -n "${CPU_AFFINITY_BASE:-}" ]]; then
+        log "                   Workers pinned to CPUs ${CPU_AFFINITY_BASE}..$((CPU_AFFINITY_BASE + RUNTIME_SECS / XPUT_WINDOW - 2))"
+        log "                   (prevents CFS from boosting YCSB above iBench workers)"
+    fi
     log "  Sat. summary:    ${SATURATION_SUMMARY:-<not set>}"
     log "  Sat. color:      ${SAT_COLOR}  (combined plot)"
     log "  Disk read max:   ${DISK_READ_MAX_BW} MB/s  (0 = raw MB/s fallback)"
