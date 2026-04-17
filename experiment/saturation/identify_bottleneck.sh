@@ -23,6 +23,7 @@
 #   return cpu_bound, io_bound
 #
 # Key properties:
+#   • Baseline probe (no interference) establishes reference throughput.
 #   • Both probes run every iteration — both can trigger simultaneously.
 #   • CPU target  = Intensity × CPU_UNIT_PCT % of ALL system cores.
 #   • IO  target  = Intensity × IO_UNIT_PCT  % of device write bandwidth.
@@ -37,11 +38,9 @@
 #
 # ── Key knobs ─────────────────────────────────────────────────────────────────
 #   KNEE_THREADS      Fixed YCSB thread count (the saturation knee).
-#   KNEE_XPUT         Peak throughput at KNEE_THREADS from the saturation sweep
-#                     (ops/s). REQUIRED — read from summary.csv xput_mean column.
 #   PROBE_RUNTIME_SECS  Wall-clock seconds per probe window (default 300).
 #   PROBE_WARMUP_S    Warmup seconds excluded from throughput avg (default 60).
-#   DROP_THRESHOLD_PCT  % drop vs KNEE_XPUT to declare a bottleneck (default 3).
+#   DROP_THRESHOLD_PCT  % drop vs baseline (no interference) to declare a bottleneck (default 3).
 #   MAX_INTENSITY     Intensity ceiling; declared inconclusive if exceeded.
 #   INTENSITY_STEP    Step between intensity levels (default 1).
 #   CPU_UNIT_PCT      % of ALL system cores per intensity unit (default 10).
@@ -81,9 +80,6 @@ PROBE_WARMUP_S="${PROBE_WARMUP_S:-60}"
 
 # Bottleneck decision.
 DROP_THRESHOLD_PCT="${DROP_THRESHOLD_PCT:-3}"
-# Peak throughput from the saturation sweep (ops/s).  Required — no default.
-# Pass the value from summary.csv at KNEE_THREADS.
-KNEE_XPUT="${KNEE_XPUT:-0}"
 
 # Sweep: intensity steps from 1 up by INTENSITY_STEP to MAX_INTENSITY.
 # At intensity=I: CPU uses I × CPU_UNIT_PCT% of all cores,
@@ -187,8 +183,6 @@ check_prereqs() {
         die "IO_BLOCK_SIZE ($IO_BLOCK_SIZE) must be a multiple of 512 for O_DIRECT"
     (( MAX_INTENSITY >= 2 )) || \
         die "MAX_INTENSITY must be >= 2 (inner loop runs Intensity 1..MAX_INTENSITY-1)"
-    python3 -c "import sys; v=float('${KNEE_XPUT}'); sys.exit(0 if v > 0 else 1)" \
-        || die "KNEE_XPUT must be set to the peak throughput (ops/s) from the saturation sweep."
 }
 
 # ── Per-second system monitor (identical to saturation_sweep.sh) ──────────────
@@ -695,6 +689,37 @@ preallocate_io_scratch() {
     log "  IO scratch pre-allocation complete."
 }
 
+# ── Baseline probe (no interference) ──────────────────────────────────────────
+
+run_baseline_probe() {
+    local dbpath="$1"
+    local baseline_dir="$OUTPUT_DIR/baseline_probe"
+    mkdir -p "$baseline_dir"
+
+    sep
+    log "▶ Running baseline probe (no interference) to establish reference throughput"
+
+    # Load the DB once
+    rm -rf "$dbpath"
+    load_db "$dbpath" "$baseline_dir/load.log"
+    drop_page_cache
+
+    # Run with KNEE_THREADS threads, no CPU/IO interference
+    run_probe "$baseline_dir" "$dbpath" 0 0 0 0
+
+    local baseline_xput
+    baseline_xput=$(parse_xput "$baseline_dir/ycsb.log" 2>/dev/null) || baseline_xput="nan"
+
+    if python3 -c "import math; sys.exit(0 if not math.isnan(float('$baseline_xput')) and float('$baseline_xput') > 0 else 1)" 2>/dev/null; then
+        log "  Baseline throughput: $baseline_xput ops/s"
+    else
+        log "  ERROR: Failed to parse baseline throughput from $baseline_dir/ycsb.log"
+        baseline_xput="nan"
+    fi
+
+    echo "$baseline_xput"
+}
+
 # ── Main identification sweep ─────────────────────────────────────────────────
 
 run_identification() {
@@ -705,9 +730,15 @@ run_identification() {
     printf 'probe_label,intensity,n_cpu_full,cpu_partial_pct,' > "$result_csv"
     printf 'io_rate_mbs,xput_mean,xput_drop_pct,triggered,verdict\n' >> "$result_csv"
 
-    local baseline_xput="$KNEE_XPUT"
-    sep
-    log "Using KNEE_XPUT=$baseline_xput ops/s as baseline (from saturation sweep)."
+    # Run baseline probe to measure throughput with no interference
+    local baseline_xput
+    baseline_xput=$(run_baseline_probe "$dbpath")
+
+    if python3 -c "import math; sys.exit(0 if not math.isnan(float('$baseline_xput')) and float('$baseline_xput') > 0 else 1)" 2>/dev/null; then
+        log "  Baseline established: $baseline_xput ops/s (measured with KNEE_THREADS=$KNEE_THREADS, no interference)"
+    else
+        die "Baseline probe failed to produce valid throughput measurement"
+    fi
 
     # ── Intensity sweep ───────────────────────────────────────────────────────
     local found_bottleneck="false"
@@ -877,8 +908,6 @@ main() {
         case "$1" in
             --knee-threads=*)       KNEE_THREADS="${1#*=}" ;;
             --knee-threads)         KNEE_THREADS="$2"; shift ;;
-            --knee-xput=*)          KNEE_XPUT="${1#*=}" ;;
-            --knee-xput)            KNEE_XPUT="$2"; shift ;;
             --probe-runtime=*)      PROBE_RUNTIME_SECS="${1#*=}" ;;
             --probe-runtime)        PROBE_RUNTIME_SECS="$2"; shift ;;
             --probe-warmup=*)       PROBE_WARMUP_S="${1#*=}" ;;
@@ -923,7 +952,7 @@ import math; print(math.ceil($MAX_INTENSITY / $INTENSITY_STEP))")
     log "  Output dir:       $OUTPUT_DIR"
     log "  Workload:         $WORKLOAD_LABEL"
     log "  Knee threads:     $KNEE_THREADS"
-    log "  Knee xput:        $KNEE_XPUT ops/s  (from saturation sweep)"
+    log "  Baseline:         (will be measured from baseline probe)"
     log "  Probe runtime:    ${PROBE_RUNTIME_SECS}s  (warmup: ${PROBE_WARMUP_S}s)"
     log "  Drop threshold:   ${DROP_THRESHOLD_PCT}%"
     log "  Sweep:            Intensity 1..${MAX_INTENSITY}  step=${INTENSITY_STEP}"
@@ -932,7 +961,7 @@ import math; print(math.ceil($MAX_INTENSITY / $INTENSITY_STEP))")
     log "  IO scratch dir:   $IO_SCRATCH_DIR"
     echo ""
     log "  DB size:          ~${load_gib} GiB  (${RECORD_COUNT} records)"
-    log "  Worst-case probes: 2 × ${inner_steps} = ${total_probes} DB loads"
+    log "  Worst-case probes: 1 (baseline) + 2 × ${inner_steps} = $((1 + total_probes)) DB loads"
     echo ""
 
     mkdir -p "$OUTPUT_DIR"
