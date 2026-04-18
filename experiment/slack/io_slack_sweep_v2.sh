@@ -89,7 +89,11 @@ DROP_CACHES="${DROP_CACHES:-true}"
 IO_RATE_PER_WORKER="${IO_RATE_PER_WORKER:-0}"
 
 # Bytes per IO operation.  Must be a multiple of 512 (O_DIRECT alignment).
-IO_SIZE="${IO_SIZE:-4096}"
+#
+# Leave unset (default) to auto-compute from DISK_WRITE_MAX_BW, IO_BW_FRACTION,
+# and DISK_WRITE_LATENCY_US (see resolve_io_size() below).  Falls back to 4096
+# if those knobs are not provided.  Set explicitly to bypass auto-compute.
+IO_SIZE="${IO_SIZE:-}"
 
 # ── Auto-compute IO_RATE_PER_WORKER from disk bandwidth ──────────────────────
 #
@@ -258,6 +262,94 @@ with open(outfile, 'w', newline='') as fh:
         prev_rd, prev_wr, prev_rc, prev_wc = cur_rd, cur_wr, cur_rc, cur_wc
         prev_t = now
 PYMON
+}
+
+# ── IO_SIZE auto-compute from bandwidth target and device latency ─────────────
+#
+# The minimum IO_SIZE for one synchronous (QD=1) worker to sustain the target
+# bandwidth comes from the device's per-write round-trip time:
+#
+#   max_worker_bw  = IO_SIZE / write_latency          [MB/s at QD=1]
+#   target_bw      = DISK_WRITE_MAX_BW × IO_BW_FRACTION
+#
+# Setting max_worker_bw = target_bw and solving for IO_SIZE:
+#
+#   IO_SIZE = target_bw_bytes_s × latency_s
+#           = DISK_WRITE_MAX_BW × IO_BW_FRACTION × 1024² × DISK_WRITE_LATENCY_US / 1e6
+#
+# Rounded up to the nearest multiple of 512 for O_DIRECT alignment.
+#
+# Required inputs (the only two things the caller must know):
+#   DISK_WRITE_MAX_BW     — peak sequential write bandwidth of the device (MB/s)
+#                           Measure on an idle disk:
+#                             fio --name=bw --rw=write --bs=128k --direct=1 \
+#                               --ioengine=libaio --iodepth=32 \
+#                               --size=2g --runtime=30 --time_based \
+#                               --filename=<path-on-target-disk>
+#                           Read "bw=... MB/s" (the parenthetical SI value).
+#
+#   DISK_WRITE_LATENCY_US — QD=1 sequential write latency (µs) measured
+#                           **while the YCSB/RocksDB workload is running**.
+#                           An idle-disk measurement (fio alone) underestimates
+#                           this by 5–15× because RocksDB compaction competes for
+#                           the same disk queue, inflating the per-write round-trip
+#                           time seen by iBench_io.
+#
+#                           Measure under load (run this while YCSB is running):
+#                             fio --name=lat --rw=write --bs=4k --direct=1 \
+#                               --ioengine=sync --fdatasync=1 --iodepth=1 \
+#                               --runtime=30 --time_based \
+#                               --filename=<same-disk-as-rocksdb>/fio_probe.tmp
+#                           Read "lat (usec): ... avg=<VALUE>" — that is your number.
+#
+#                           Alternatively, back-compute from a prior iBench_io run:
+#                             DISK_WRITE_LATENCY_US = IO_SIZE / (actual_MB_s × 1048576)
+#                           e.g.  5632 B / (21.1 MB/s × 1048576) ≈ 254 µs
+#
+# Skipped when IO_SIZE is set explicitly by the caller (non-empty).
+# Skipped when either input knob is 0/unset; falls back to IO_SIZE=4096.
+resolve_io_size() {
+    # Caller explicitly provided IO_SIZE — honour it, skip auto-compute.
+    if [[ -n "${IO_SIZE}" ]]; then
+        return
+    fi
+
+    # Both BW and latency required; fall back to 4096 if either is missing.
+    if [[ "${DISK_WRITE_MAX_BW:-0}"     == "0" || \
+          "${DISK_WRITE_LATENCY_US:-0}" == "0" ]]; then
+        IO_SIZE=4096
+        if [[ "${DISK_WRITE_MAX_BW:-0}" != "0" ]]; then
+            log "WARNING: IO_SIZE not set and DISK_WRITE_LATENCY_US=0 — falling back to" \
+                "IO_SIZE=4096.  Set DISK_WRITE_LATENCY_US to the device's QD=1 write" \
+                "latency (µs) so IO_SIZE can be auto-computed to hit the bandwidth target."
+        fi
+        return
+    fi
+
+    IO_SIZE=$(python3 -c "
+import math
+target_bw_bytes_s = ${DISK_WRITE_MAX_BW} * ${IO_BW_FRACTION} * 1024 * 1024
+latency_s         = ${DISK_WRITE_LATENCY_US} / 1_000_000
+raw               = target_bw_bytes_s * latency_s   # bytes needed per write
+# Round up to next multiple of 512 (O_DIRECT alignment requirement).
+io_size = int(math.ceil(raw / 512)) * 512
+print(max(512, io_size))   # 512 is the O_DIRECT minimum
+")
+
+    # Verify the result clears the ceiling (floating-point edge cases).
+    local check
+    check=$(python3 -c "
+io_size     = ${IO_SIZE}
+latency_s   = ${DISK_WRITE_LATENCY_US} / 1_000_000
+target_mbs  = ${DISK_WRITE_MAX_BW} * ${IO_BW_FRACTION}
+ceiling_mbs = io_size / 1024 / 1024 / latency_s
+ok = ceiling_mbs >= target_mbs
+print(f'{ceiling_mbs:.1f} MB/s  (target {target_mbs:.1f} MB/s)  ok={ok}')
+")
+    log "Auto-computed IO_SIZE=${IO_SIZE} bytes"
+    log "  formula : DISK_WRITE_MAX_BW(${DISK_WRITE_MAX_BW}) × IO_BW_FRACTION(${IO_BW_FRACTION})" \
+        "× DISK_WRITE_LATENCY_US(${DISK_WRITE_LATENCY_US} µs)"
+    log "  QD=1 ceiling check : ${check}"
 }
 
 # ── IO rate auto-compute from disk bandwidth ──────────────────────────────────
@@ -781,6 +873,7 @@ main() {
     done
 
     check_prereqs
+    resolve_io_size      # auto-compute IO_SIZE from BW target + device latency
     resolve_io_rate      # auto-compute IO_RATE_PER_WORKER from BW knobs if needed
     compile_io_binary
 
