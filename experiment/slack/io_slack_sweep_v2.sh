@@ -97,10 +97,17 @@ DROP_CACHES="${DROP_CACHES:-true}"
 # at the end of each run — use that to calibrate IO_SIZE for your device.
 IO_SIZE="${IO_SIZE:-65536}"
 
-# Size of each worker's temp file in MiB.  The file is pre-allocated with
-# posix_fallocate() and writes wrap at this limit, so disk usage stays
+# Size of each thread's temp file in MiB.  The file is pre-allocated with
+# posix_fallocate() and IOs wrap at this limit, so disk usage stays
 # bounded regardless of runtime.  Files are placed in the run_dir (same
-# disk as the RocksDB database) so writes create real IO interference.
+# disk as the RocksDB database) so both reads and writes create real IO
+# interference.
+#
+# NOTE: Each competitor unit uses TWO files — one for the write thread and
+# one for the read thread — so total on-disk usage per unit is
+# 2 × IO_DATA_SIZE_MB.  With N_WORKERS=4 and IO_DATA_SIZE_MB=512 the
+# sweep writes roughly 4 GiB of temp files to the data disk.
+#
 # Increase if your storage device is fast enough that 512 MiB wraps
 # too quickly and produces unrealistically cache-warm IO patterns.
 IO_DATA_SIZE_MB="${IO_DATA_SIZE_MB:-512}"
@@ -327,15 +334,19 @@ run_one() {
         2>&1 | tee "$log_file" &
     local ycsb_pid=$!
 
-    # ── Start n_workers iBench_io workers alongside YCSB ─────────────────────
-    # Each worker gets its own temp file in run_dir (same disk as the RocksDB
-    # database) so writes create genuine IO interference rather than hitting a
-    # tmpfs RAM disk.  The file is pre-allocated and wraps at IO_DATA_SIZE_MB.
+    # ── Start n_workers iBench_io competitor units alongside YCSB ────────────
+    # Each unit spawns one write thread + one read thread.  Both use files in
+    # run_dir (same physical disk as the RocksDB database) so they create
+    # genuine IO interference — writes compete with compaction, reads compete
+    # directly with YCSB's cache-missing reads.  Files are pre-allocated and
+    # wrap at IO_DATA_SIZE_MB to keep disk usage bounded.
     IO_PIDS=()
     if (( n_workers > 0 )); then
-        log "  Starting ${n_workers} iBench_io worker(s)" \
-            "(io_size=${IO_SIZE} B, saturate," \
-            "dir=${run_dir}, max_file=${IO_DATA_SIZE_MB} MiB, duration=${RUNTIME_SECS}s)"
+        log "  Starting ${n_workers} iBench_io competitor unit(s)" \
+            "(${n_workers} write + ${n_workers} read threads," \
+            "io_size=${IO_SIZE} B, dir=${run_dir}," \
+            "max_file=${IO_DATA_SIZE_MB} MiB/thread [2× per unit]," \
+            "duration=${RUNTIME_SECS}s)"
         "$IO_BINARY" \
             "$RUNTIME_SECS" "$n_workers" \
             "$IO_SIZE" \
@@ -367,9 +378,9 @@ run_sweep() {
     log "IO slack sweep v2: $WORKLOAD_LABEL"
     log "  Spec:         $WORKLOAD_SPEC"
     log "  Knee threads: $KNEE_THREADS"
-    log "  Workers:      $WORKER_COUNTS"
+    log "  Competitor units: $WORKER_COUNTS  (each = 1 write thread + 1 read thread)"
     log "  Runtime:      ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
-    log "  IO size:      ${IO_SIZE} bytes per write (saturate)"
+    log "  IO size:      ${IO_SIZE} bytes per op (write and read, saturate)"
 
     local sweep_dir="$OUTPUT_DIR/sweep"
     mkdir -p "$sweep_dir"
@@ -377,7 +388,7 @@ run_sweep() {
 
     for n_workers in $WORKER_COUNTS; do
         sep
-        log "Workers: $n_workers  (${TRIALS_PER_POINT} trial(s))"
+        log "Competitor units: $n_workers  (${n_workers} write + ${n_workers} read threads; ${TRIALS_PER_POINT} trial(s))"
         local run_dir="$sweep_dir/run_w${n_workers}"
         mkdir -p "$run_dir"
         if (( TRIALS_PER_POINT == 1 )); then
@@ -672,8 +683,8 @@ main() {
     log "  Runtime/pt:    ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
     log "  Trials/point:  ${TRIALS_PER_POINT}"
     log "  Device:        $DISK_DEVICE"
-    log "  IO size:       ${IO_SIZE} bytes per write (saturate, no rate limit)"
-    log "  IO file size:  ${IO_DATA_SIZE_MB} MiB per worker (pre-allocated, wraps at EOF)"
+    log "  IO size:       ${IO_SIZE} bytes per op (write+read, saturate, no rate limit)"
+    log "  IO file size:  ${IO_DATA_SIZE_MB} MiB per thread (2× per unit; pre-allocated, wraps at EOF)"
     echo ""
 
     python3 -c "import pandas, numpy" 2>/dev/null || {
