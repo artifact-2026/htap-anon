@@ -81,53 +81,21 @@ DROP_CACHES="${DROP_CACHES:-true}"
 
 # ── iBench_io worker knobs ────────────────────────────────────────────────────
 
-# Per-worker IO rate in operations per second.
-#
-# You can set this directly, OR set DISK_WRITE_MAX_BW + IO_BW_FRACTION and let
-# the script auto-compute it (see below).  Explicit IO_RATE_PER_WORKER takes
-# precedence.  0 = saturate (write as fast as possible).
-IO_RATE_PER_WORKER="${IO_RATE_PER_WORKER:-0}"
-
 # Bytes per IO operation.  Must be a multiple of 512 (O_DIRECT alignment).
 #
-# Leave unset (default) to auto-compute from DISK_WRITE_MAX_BW, IO_BW_FRACTION,
-# and DISK_WRITE_LATENCY_US (see resolve_io_size() below).  Falls back to 4096
-# if those knobs are not provided.  Set explicitly to bypass auto-compute.
-IO_SIZE="${IO_SIZE:-}"
-
-# ── Auto-compute IO_RATE_PER_WORKER from disk bandwidth ──────────────────────
+# Every worker writes continuously at full saturation (no rate limiting).
+# IO_SIZE is the sole bandwidth knob: larger writes transfer more bytes per
+# device round-trip, so each worker's throughput scales with IO_SIZE up to
+# the device's per-writer ceiling.
 #
-# When DISK_WRITE_MAX_BW is set to your storage device's peak sequential write
-# bandwidth (MB/s), IO_RATE_PER_WORKER is auto-computed so that each worker
-# consumes IO_BW_FRACTION of that bandwidth:
+# Rule of thumb: pick IO_SIZE large enough that each writer is genuinely
+# competing for disk bandwidth rather than just generating command overhead.
+# 65536 (64 KiB) is stressful on most NVMe and SSD devices.  Increase if
+# your device is very fast and you observe lower-than-expected interference.
 #
-#   IO_RATE_PER_WORKER = floor(DISK_WRITE_MAX_BW × IO_BW_FRACTION × 1024² / IO_SIZE)
-#
-# Example: 500 MB/s NVMe, 10% fraction, 4096-byte blocks:
-#   IO_RATE_PER_WORKER = floor(500 × 0.10 × 1048576 / 4096) = 12,800 ops/s
-#   Per-worker bandwidth = 12,800 × 4096 B = 50 MB/s
-#
-# This auto-compute is skipped when IO_RATE_PER_WORKER is set explicitly (or
-# left at its default of 0, which means saturate mode regardless of BW knobs).
-# Set IO_RATE_PER_WORKER=0 explicitly to force saturate mode.
-DISK_WRITE_MAX_BW="${DISK_WRITE_MAX_BW:-0}"   # MB/s; 0 = disabled (no auto-compute)
-IO_BW_FRACTION="${IO_BW_FRACTION:-0.10}"       # fraction of peak BW per worker (default 10%)
-
-# Single-write latency of your storage device in microseconds (QD=1 sequential write).
-# Used to verify that one iBench_io worker thread is physically capable of reaching
-# the target bandwidth: a single synchronous writer has a hard ceiling of
-#   max_bw = IO_SIZE / DISK_WRITE_LATENCY_US  (bytes/µs = MB/s)
-# because it issues one write at a time.  If the ceiling < target, you need a
-# larger IO_SIZE.
-#
-# Typical values:
-#   HDD             : 5000–15000 µs  (seek + rotation dominated)
-#   SATA SSD        :  100–200  µs
-#   NVMe (mid-range):   30– 80  µs
-#   NVMe (high-end) :   10– 30  µs
-#
-# 0 = skip the capacity check (default).
-DISK_WRITE_LATENCY_US="${DISK_WRITE_LATENCY_US:-0}"
+# The actual per-worker throughput is reported in the iBench IO summary line
+# at the end of each run — use that to calibrate IO_SIZE for your device.
+IO_SIZE="${IO_SIZE:-65536}"
 
 # Size of each worker's temp file in MiB.  The file is pre-allocated with
 # posix_fallocate() and writes wrap at this limit, so disk usage stays
@@ -264,184 +232,6 @@ with open(outfile, 'w', newline='') as fh:
 PYMON
 }
 
-# ── IO_SIZE auto-compute from bandwidth target and device latency ─────────────
-#
-# The minimum IO_SIZE for one synchronous (QD=1) worker to sustain the target
-# bandwidth comes from the device's per-write round-trip time:
-#
-#   max_worker_bw  = IO_SIZE / write_latency          [MB/s at QD=1]
-#   target_bw      = DISK_WRITE_MAX_BW × IO_BW_FRACTION
-#
-# Setting max_worker_bw = target_bw and solving for IO_SIZE:
-#
-#   IO_SIZE = target_bw_bytes_s × latency_s
-#           = DISK_WRITE_MAX_BW × IO_BW_FRACTION × 1024² × DISK_WRITE_LATENCY_US / 1e6
-#
-# Rounded up to the nearest multiple of 512 for O_DIRECT alignment.
-#
-# Required inputs (the only two things the caller must know):
-#   DISK_WRITE_MAX_BW     — peak sequential write bandwidth of the device (MB/s)
-#                           Measure on an idle disk:
-#                             fio --name=bw --rw=write --bs=128k --direct=1 \
-#                               --ioengine=libaio --iodepth=32 \
-#                               --size=2g --runtime=30 --time_based \
-#                               --filename=<path-on-target-disk>
-#                           Read "bw=... MB/s" (the parenthetical SI value).
-#
-#   DISK_WRITE_LATENCY_US — QD=1 sequential write latency (µs) measured
-#                           **while the YCSB/RocksDB workload is running**.
-#                           An idle-disk measurement (fio alone) underestimates
-#                           this by 5–15× because RocksDB compaction competes for
-#                           the same disk queue, inflating the per-write round-trip
-#                           time seen by iBench_io.
-#
-#                           Measure under load (run this while YCSB is running):
-#                             fio --name=lat --rw=write --bs=4k --direct=1 \
-#                               --ioengine=sync --fdatasync=1 --iodepth=1 \
-#                               --runtime=30 --time_based \
-#                               --filename=<same-disk-as-rocksdb>/fio_probe.tmp
-#                           Read "lat (usec): ... avg=<VALUE>" — that is your number.
-#
-#                           Alternatively, back-compute from a prior iBench_io run:
-#                             DISK_WRITE_LATENCY_US = IO_SIZE / (actual_MB_s × 1048576)
-#                           e.g.  5632 B / (21.1 MB/s × 1048576) ≈ 254 µs
-#
-# Skipped when IO_SIZE is set explicitly by the caller (non-empty).
-# Skipped when either input knob is 0/unset; falls back to IO_SIZE=4096.
-resolve_io_size() {
-    # Caller explicitly provided IO_SIZE — honour it, skip auto-compute.
-    if [[ -n "${IO_SIZE}" ]]; then
-        return
-    fi
-
-    # Both BW and latency required; fall back to 4096 if either is missing.
-    if [[ "${DISK_WRITE_MAX_BW:-0}"     == "0" || \
-          "${DISK_WRITE_LATENCY_US:-0}" == "0" ]]; then
-        IO_SIZE=4096
-        if [[ "${DISK_WRITE_MAX_BW:-0}" != "0" ]]; then
-            log "WARNING: IO_SIZE not set and DISK_WRITE_LATENCY_US=0 — falling back to" \
-                "IO_SIZE=4096.  Set DISK_WRITE_LATENCY_US to the device's QD=1 write" \
-                "latency (µs) so IO_SIZE can be auto-computed to hit the bandwidth target."
-        fi
-        return
-    fi
-
-    IO_SIZE=$(python3 -c "
-import math
-target_bw_bytes_s = ${DISK_WRITE_MAX_BW} * ${IO_BW_FRACTION} * 1024 * 1024
-latency_s         = ${DISK_WRITE_LATENCY_US} / 1_000_000
-raw               = target_bw_bytes_s * latency_s   # bytes needed per write
-# Round up to next multiple of 512 (O_DIRECT alignment requirement).
-io_size = int(math.ceil(raw / 512)) * 512
-print(max(512, io_size))   # 512 is the O_DIRECT minimum
-")
-
-    # Verify the result clears the ceiling (floating-point edge cases).
-    local check
-    check=$(python3 -c "
-io_size     = ${IO_SIZE}
-latency_s   = ${DISK_WRITE_LATENCY_US} / 1_000_000
-target_mbs  = ${DISK_WRITE_MAX_BW} * ${IO_BW_FRACTION}
-ceiling_mbs = io_size / 1024 / 1024 / latency_s
-ok = ceiling_mbs >= target_mbs
-print(f'{ceiling_mbs:.1f} MB/s  (target {target_mbs:.1f} MB/s)  ok={ok}')
-")
-    log "Auto-computed IO_SIZE=${IO_SIZE} bytes"
-    log "  formula : DISK_WRITE_MAX_BW(${DISK_WRITE_MAX_BW}) × IO_BW_FRACTION(${IO_BW_FRACTION})" \
-        "× DISK_WRITE_LATENCY_US(${DISK_WRITE_LATENCY_US} µs)"
-    log "  QD=1 ceiling check : ${check}"
-}
-
-# ── IO rate auto-compute from disk bandwidth ──────────────────────────────────
-#
-# Called from main() after variable defaults are set.  Populates IO_RATE_PER_WORKER
-# when DISK_WRITE_MAX_BW > 0 and IO_RATE_PER_WORKER has not been set explicitly
-# to a non-zero value by the caller.
-resolve_io_rate() {
-    # Only auto-compute when BW knob is provided AND the caller hasn't set a
-    # specific rate (i.e. IO_RATE_PER_WORKER is still at its default of 0).
-    if [[ "${DISK_WRITE_MAX_BW:-0}" == "0" || "${IO_RATE_PER_WORKER}" != "0" ]]; then
-        return
-    fi
-    IO_RATE_PER_WORKER=$(python3 -c "
-bw_bytes_s = ${DISK_WRITE_MAX_BW} * 1024 * 1024   # peak write BW in bytes/s
-target_bw  = bw_bytes_s * ${IO_BW_FRACTION}        # target bytes/s per worker
-rate       = int(target_bw / ${IO_SIZE})            # ops/s per worker
-print(max(1, rate))
-")
-    local per_worker_mbs
-    per_worker_mbs=$(python3 -c "print(f'{${IO_RATE_PER_WORKER} * ${IO_SIZE} / 1024 / 1024:.1f}')")
-    log "Auto-computed IO_RATE_PER_WORKER=${IO_RATE_PER_WORKER} ops/s" \
-        "(${DISK_WRITE_MAX_BW} MB/s × ${IO_BW_FRACTION} / ${IO_SIZE} B" \
-        "= ${per_worker_mbs} MB/s per worker)"
-
-    # ── Capacity check: can a single synchronous writer actually reach the target? ──
-    #
-    # A single iBench_io thread issues one blocking write() at a time (queue depth=1).
-    # Its peak throughput is bounded by:
-    #
-    #   max_worker_bw = IO_SIZE / DISK_WRITE_LATENCY_US   [bytes/µs = MB/s]
-    #
-    # If max_worker_bw < target_bw_per_worker, the worker can never reach the target
-    # no matter how fast the device is, because it spends all its time waiting for the
-    # single in-flight write to complete.  The fix is a larger IO_SIZE, since larger
-    # writes transfer more bytes per latency budget:
-    #
-    #   min_io_size = ceil(target_bw_per_worker_bytes/s × DISK_WRITE_LATENCY_US / 1e6)
-    #   (rounded up to next multiple of 512 for O_DIRECT alignment)
-    if [[ "${DISK_WRITE_LATENCY_US:-0}" != "0" ]]; then
-        python3 - <<PYCHECK
-import math, sys
-
-disk_bw_mbs      = ${DISK_WRITE_MAX_BW}
-bw_fraction      = ${IO_BW_FRACTION}
-io_size          = ${IO_SIZE}
-latency_us       = ${DISK_WRITE_LATENCY_US}
-io_rate          = ${IO_RATE_PER_WORKER}
-
-target_bw_mbs    = disk_bw_mbs * bw_fraction          # MB/s per worker
-target_bw_bs     = target_bw_mbs * 1024 * 1024        # bytes/s per worker
-latency_s        = latency_us / 1_000_000              # seconds
-
-# Queue-depth-1 ceiling (bytes per write / latency per write)
-max_worker_mbs   = io_size / 1024 / 1024 / latency_s  # MB/s at QD=1
-
-# Minimum io_size to sustain target_bw at this latency
-min_io_size_raw  = target_bw_bs * latency_s            # bytes (float)
-min_io_size      = int(math.ceil(min_io_size_raw / 512)) * 512  # round up to 512-byte multiple
-
-if max_worker_mbs < target_bw_mbs:
-    print(
-        f"WARNING: IO capacity check FAILED:\n"
-        f"  target bandwidth per worker : {target_bw_mbs:.1f} MB/s\n"
-        f"  queue-depth-1 ceiling       : {max_worker_mbs:.1f} MB/s\n"
-        f"    (IO_SIZE={io_size} B / DISK_WRITE_LATENCY_US={latency_us} µs)\n"
-        f"\n"
-        f"  A single synchronous writer cannot reach {target_bw_mbs:.1f} MB/s with\n"
-        f"  {io_size}-byte writes because it can only issue one write at a time.\n"
-        f"\n"
-        f"  Options:\n"
-        f"    1. Increase IO_SIZE to at least {min_io_size} bytes  ← recommended\n"
-        f"       (transfers enough bytes per write to hit the target at this latency)\n"
-        f"    2. Increase n_workers so that N workers × {max_worker_mbs:.1f} MB/s ≥ {target_bw_mbs:.1f} MB/s\n"
-        f"       (but each worker only achieves {max_worker_mbs:.1f} MB/s, so adjust IO_BW_FRACTION)\n"
-        f"    3. Lower IO_BW_FRACTION below {bw_fraction} so the target fits within one worker's ceiling\n",
-        file=sys.stderr
-    )
-    sys.exit(1)
-else:
-    print(
-        f"  IO capacity check passed: QD=1 ceiling {max_worker_mbs:.1f} MB/s"
-        f" ≥ target {target_bw_mbs:.1f} MB/s"
-        f" (IO_SIZE={io_size} B, latency={latency_us} µs)"
-    )
-PYCHECK
-        # python3 exits 1 when sys.exit(1) is called above; propagate as die.
-        local _cap_rc=$?
-        (( _cap_rc == 0 )) || die \
-            "Capacity check failed. Adjust IO_SIZE, IO_BW_FRACTION, or DISK_WRITE_LATENCY_US and retry."
-    fi
-}
 
 start_monitor() { python3 "$MONITOR_SCRIPT" "$1" "$DISK_DEVICE" & MONITOR_PID=$!; }
 stop_monitor() {
@@ -544,11 +334,11 @@ run_one() {
     IO_PIDS=()
     if (( n_workers > 0 )); then
         log "  Starting ${n_workers} iBench_io worker(s)" \
-            "(io_size=${IO_SIZE} B, rate=${IO_RATE_PER_WORKER}/s," \
+            "(io_size=${IO_SIZE} B, saturate," \
             "dir=${run_dir}, max_file=${IO_DATA_SIZE_MB} MiB, duration=${RUNTIME_SECS}s)"
         "$IO_BINARY" \
             "$RUNTIME_SECS" "$n_workers" \
-            "$IO_RATE_PER_WORKER" "$IO_SIZE" \
+            "$IO_SIZE" \
             "$run_dir" "$IO_DATA_SIZE_MB" &
         IO_PIDS=($!)
     fi
@@ -579,8 +369,7 @@ run_sweep() {
     log "  Knee threads: $KNEE_THREADS"
     log "  Workers:      $WORKER_COUNTS"
     log "  Runtime:      ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
-    log "  IO rate:      ${IO_RATE_PER_WORKER} ops/sec per worker"
-    log "  IO size:      ${IO_SIZE} bytes per operation"
+    log "  IO size:      ${IO_SIZE} bytes per write (saturate)"
 
     local sweep_dir="$OUTPUT_DIR/sweep"
     mkdir -p "$sweep_dir"
@@ -873,8 +662,6 @@ main() {
     done
 
     check_prereqs
-    resolve_io_size      # auto-compute IO_SIZE from BW target + device latency
-    resolve_io_rate      # auto-compute IO_RATE_PER_WORKER from BW knobs if needed
     compile_io_binary
 
     log "io_slack_sweep_v2.sh starting"
@@ -885,15 +672,7 @@ main() {
     log "  Runtime/pt:    ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
     log "  Trials/point:  ${TRIALS_PER_POINT}"
     log "  Device:        $DISK_DEVICE"
-    local io_rate_mbs="saturate"
-    if [[ "${IO_RATE_PER_WORKER}" != "0" ]]; then
-        io_rate_mbs=$(python3 -c "print(f'{${IO_RATE_PER_WORKER}*${IO_SIZE}/1024/1024:.2f} MB/s')" 2>/dev/null \
-                      || echo "?")
-    fi
-    log "  IO rate:       ${IO_RATE_PER_WORKER} ops/sec per worker  (${io_rate_mbs})"
-    log "  IO size:       ${IO_SIZE} bytes per operation"
-    log "  IO BW knobs:   DISK_WRITE_MAX_BW=${DISK_WRITE_MAX_BW} MB/s, IO_BW_FRACTION=${IO_BW_FRACTION}" \
-        "(0 MB/s = disabled; set to auto-compute IO_RATE_PER_WORKER)"
+    log "  IO size:       ${IO_SIZE} bytes per write (saturate, no rate limit)"
     log "  IO file size:  ${IO_DATA_SIZE_MB} MiB per worker (pre-allocated, wraps at EOF)"
     echo ""
 

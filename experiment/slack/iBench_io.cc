@@ -24,43 +24,51 @@
 /**
  * IO interference micro-benchmark.
  *
- * Each thread performs sequential writes to a pre-allocated file, wrapping
- * around at max_file_mb to keep disk usage bounded.  Writes use O_DIRECT to
- * bypass the page cache and hit the actual storage device, with automatic
- * fallback to buffered writes + fsync() on filesystems that don't support
- * O_DIRECT.  This matches the design of the Python IO worker embedded in
- * disk_io_slack_sweep.sh and is the C++ replacement for it.
+ * Each thread performs sequential O_DIRECT writes to a pre-allocated file as
+ * fast as the storage device allows (no rate limiting, no sleeping).  The
+ * write size (io_size) is the single knob that controls how much bandwidth
+ * each thread consumes: larger writes transfer more bytes per device round-
+ * trip, so bandwidth scales with io_size up to the device's per-writer ceiling.
+ *
+ * Launching N threads models N independent IO-intensive processes competing
+ * for the same disk.  Each thread runs at its own QD=1 saturation rate; the
+ * aggregate interference is the sum of all threads' throughputs.
  *
  * Usage:
- *   ./io <duration_s>                                     — 1 thread, saturate, /tmp, 512 MB file
- *   ./io <duration_s> <n_threads>                         — n_threads workers
- *   ./io <duration_s> <n_threads> <rate_ops_per_sec>      — rate-limited ops/s/thread
- *   ./io <duration_s> <n_threads> <rate> <io_size>        — bytes per write (must be ≥ 512, multiple of 512)
- *   ./io <duration_s> <n_threads> <rate> <io_size> <dir>  — write temp files into <dir>
- *   ./io <duration_s> <n_threads> <rate> <io_size> <dir> <max_mb>  — max file size in MiB
+ *   ./io <duration_s>                          — 1 thread, 64 KB writes, /tmp, 512 MB file
+ *   ./io <duration_s> <n_threads>              — n_threads competing writers
+ *   ./io <duration_s> <n_threads> <io_size>    — bytes per write (multiple of 512)
+ *   ./io <duration_s> <n_threads> <io_size> <dir>      — temp files in <dir>
+ *   ./io <duration_s> <n_threads> <io_size> <dir> <max_mb>  — file size cap in MiB
  *
  * Parameters:
- *   duration_s       run time in seconds
- *   n_threads        number of worker threads (default: 1)
- *   rate_ops_per_sec target IO ops per second per thread (0 = saturate, default)
- *   io_size          bytes per write (default: 4096; must be a multiple of 512
- *                    for O_DIRECT alignment)
- *   dir              directory for temp files — MUST be on the same disk as the
- *                    RocksDB database so writes create real IO interference.
- *                    Default: /tmp (often tmpfs; use the DB directory instead!)
- *   max_mb           pre-allocate and wrap at this many MiB per thread (default: 512)
- *                    Keeps disk usage bounded regardless of run duration.
+ *   duration_s   run time in seconds
+ *   n_threads    number of competing writer threads (default: 1)
+ *   io_size      bytes per write, must be a multiple of 512 for O_DIRECT
+ *                (default: 65536 = 64 KiB — stressful on most NVMe/SSD devices)
+ *                Larger values → more bytes per device round-trip → more bandwidth.
+ *   dir          directory for temp files; MUST be on the same physical disk as
+ *                the RocksDB database so writes create genuine IO interference.
+ *                Default: /tmp (often tmpfs — use the DB directory instead!)
+ *   max_mb       pre-allocate and wrap at this many MiB per thread (default: 512)
+ *                Keeps disk usage bounded regardless of run duration.
  *
  * Design notes:
- *   - Files are pre-allocated with posix_fallocate() so the OS does not need
- *     to allocate blocks on the fly during the benchmark, which would add
- *     metadata overhead and change the IO pattern.
- *   - O_DIRECT bypasses the page cache; fsync() is NOT called in O_DIRECT mode
- *     because writes are already synchronous to the device.  In buffered-IO
- *     fallback mode, fsync() is called after every write.
- *   - posix_memalign() provides a page-aligned buffer required by O_DIRECT.
- *   - Each thread wraps back to offset 0 when it reaches max_mb bytes, so
- *     the file acts as a circular write buffer.
+ *   - No rate limiting: every thread writes as fast as the device allows.
+ *     The bandwidth of each QD=1 writer is determined by the device latency
+ *     under the concurrent RocksDB load, not by any software throttle.
+ *   - io_size is the bandwidth knob.  In the overhead-dominated regime
+ *     (io_size small relative to device_rate × fixed_overhead), bandwidth
+ *     scales approximately linearly with io_size.  Above that crossover it
+ *     asymptotes toward the device's per-writer saturation rate.
+ *   - O_DIRECT bypasses the page cache so writes hit the storage device.
+ *     Falls back to buffered writes + fsync() on filesystems that don't
+ *     support O_DIRECT (e.g. tmpfs, older ext3).
+ *   - posix_fallocate() pre-allocates the file so the OS does not need to
+ *     allocate blocks on the fly during the run.
+ *   - posix_memalign() provides the page-aligned buffer required by O_DIRECT.
+ *   - Each thread wraps back to offset 0 when it reaches max_mb, so the
+ *     file acts as a circular write buffer and disk usage stays bounded.
  *   - Temp files are unlinked on clean exit and by the caller's cleanup trap.
  *
  * Compile:
@@ -83,11 +91,11 @@
 #include <errno.h>
 
 #define NS_PER_S         (1000000000L)
-#define DEFAULT_IO_SIZE  (4096)
+#define DEFAULT_IO_SIZE  (65536)        /* 64 KiB — stressful on most devices */
 #define DEFAULT_MAX_MB   (512)
 #define DEFAULT_DIR      "/tmp"
 
-/* ── Timing helpers (identical to iBench_cpu.cc) ─────────────────────── */
+/* ── Timing helper ────────────────────────────────────────────────────── */
 
 static inline uint64_t getNs(void) {
     struct timespec ts;
@@ -95,19 +103,10 @@ static inline uint64_t getNs(void) {
     return (uint64_t)ts.tv_sec * NS_PER_S + ts.tv_nsec;
 }
 
-static inline void sleepNs(uint64_t ns) {
-    struct timespec ts;
-    ts.tv_sec  = (time_t)(ns / NS_PER_S);
-    ts.tv_nsec = (long  )(ns % NS_PER_S);
-    while (nanosleep(&ts, &ts) != 0)
-        ;   /* retry remaining time on EINTR */
-}
-
 /* ── Per-thread state ─────────────────────────────────────────────────── */
 typedef struct {
     int      tid;
     uint64_t endNs;
-    uint64_t intervalNs;
     uint32_t io_size;        /* bytes per write()                         */
     uint64_t file_size;      /* pre-allocated file size in bytes           */
     char     path[1024];     /* path of this thread's temp file            */
@@ -123,12 +122,11 @@ static void *worker(void *arg) {
     /* Try O_DIRECT first so writes bypass the page cache and actually hit
      * the storage device.  Some filesystems (tmpfs, older ext3, etc.) don't
      * support O_DIRECT; if open() fails with EINVAL we fall back to buffered
-     * writes plus fsync() so at least the data is forced to disk eventually. */
+     * writes plus fsync() so at least the data is forced to disk.           */
     int use_direct = 1;
     int fd = open(a->path, O_WRONLY | O_CREAT | O_TRUNC | O_DIRECT, 0600);
     if (fd < 0) {
         if (errno == EINVAL || errno == ENOTSUP) {
-            /* O_DIRECT not supported on this filesystem — fall back. */
             use_direct = 0;
             fd = open(a->path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
         }
@@ -137,48 +135,41 @@ static void *worker(void *arg) {
                     a->tid, a->path, strerror(errno));
             return NULL;
         }
-        fprintf(stderr, "[tid %d] WARNING: O_DIRECT not supported on this path; "
+        fprintf(stderr, "[tid %d] WARNING: O_DIRECT not supported; "
                 "using buffered writes + fsync() instead.\n", a->tid);
     }
 
     /* ── Pre-allocate the file ─────────────────────────────────────────── */
-    /* posix_fallocate() reserves disk space without writing data, so the OS
-     * doesn't need to allocate blocks on the fly during the benchmark.      */
     int fa_ret = posix_fallocate(fd, 0, (off_t)a->file_size);
     if (fa_ret != 0) {
-        /* Non-fatal: some filesystems (e.g. tmpfs) don't support fallocate.
-         * The file will grow on demand; this changes the IO profile slightly
-         * but doesn't break correctness.                                     */
         fprintf(stderr, "[tid %d] WARNING: posix_fallocate failed (%s); "
                 "file will grow on demand.\n", a->tid, strerror(fa_ret));
     }
 
     /* ── Aligned write buffer ──────────────────────────────────────────── */
-    /* O_DIRECT requires both the buffer address and transfer length to be
-     * aligned to the logical block size (typically 512 B).  We align to the
-     * larger of 4096 B (page size) and io_size to be safe.                  */
-    size_t   alignment = 4096;
-    while (alignment < a->io_size) alignment <<= 1;  /* next power-of-2 ≥ io_size */
-    void    *buf_raw   = NULL;
+    /* O_DIRECT requires the buffer address to be aligned to the logical
+     * block size (typically 512 B).  Align to the next power-of-2 ≥ io_size
+     * to satisfy both address and length requirements.                       */
+    size_t alignment = 4096;
+    while (alignment < a->io_size) alignment <<= 1;
+    void *buf_raw = NULL;
     if (posix_memalign(&buf_raw, alignment, a->io_size) != 0) {
         fprintf(stderr, "[tid %d] ERROR: posix_memalign failed\n", a->tid);
         close(fd);
         unlink(a->path);
         return NULL;
     }
-    /* Fill with a non-zero pattern so the OS can't short-circuit the write. */
+    /* Non-zero pattern prevents the OS from short-circuiting the write. */
     memset(buf_raw, 0xAB ^ (unsigned char)a->tid, a->io_size);
 
-    /* ── Main write loop ───────────────────────────────────────────────── */
-    uint64_t count   = 0;
-    uint64_t bytes   = 0;
-    uint64_t pos     = 0;                   /* current file offset in bytes  */
-    uint64_t nextNs  = getNs() + a->intervalNs;
+    /* ── Main write loop (saturate — no rate limiting) ─────────────────── */
+    uint64_t count = 0;
+    uint64_t bytes = 0;
+    uint64_t pos   = 0;   /* current file offset in bytes */
 
     while (getNs() < a->endNs) {
-        /* Wrap around: seek back to 0 when the next write would exceed the
-         * pre-allocated region.  This keeps file size and disk usage bounded
-         * regardless of how long the benchmark runs.                         */
+        /* Wrap: seek back to 0 when the next write would exceed the
+         * pre-allocated region, keeping file size and disk usage bounded.   */
         if (pos + a->io_size > a->file_size) {
             if (lseek(fd, 0, SEEK_SET) < 0) {
                 fprintf(stderr, "[tid %d] ERROR: lseek failed: %s\n",
@@ -190,7 +181,7 @@ static void *worker(void *arg) {
 
         ssize_t written = write(fd, buf_raw, a->io_size);
         if (written < 0) {
-            if (errno == EINTR) continue;   /* interrupted — retry */
+            if (errno == EINTR) continue;
             fprintf(stderr, "[tid %d] ERROR: write failed: %s\n",
                     a->tid, strerror(errno));
             break;
@@ -200,9 +191,9 @@ static void *worker(void *arg) {
         bytes += (uint64_t)written;
         count++;
 
-        /* In buffered-IO fallback mode, fsync() forces data to disk; this is
-         * where the actual IO pressure comes from.  In O_DIRECT mode the write
-         * is already synchronous to the block layer so fsync is redundant.    */
+        /* In buffered-IO fallback mode, fsync() is where the actual IO
+         * pressure comes from.  O_DIRECT writes are already synchronous to
+         * the block layer so fsync is redundant there.                       */
         if (!use_direct) {
             if (fsync(fd) != 0) {
                 fprintf(stderr, "[tid %d] ERROR: fsync failed: %s\n",
@@ -210,23 +201,11 @@ static void *worker(void *arg) {
                 break;
             }
         }
-
-        /* ── Rate limiting (same logic as iBench_cpu.cc) ──────────────── */
-        if (a->intervalNs > 0) {
-            uint64_t now = getNs();
-            if (nextNs > now)
-                sleepNs(nextNs - now);
-            /* Don't try to catch up if we fell behind. */
-            now    = getNs();
-            nextNs = (nextNs + a->intervalNs > now)
-                   ? nextNs + a->intervalNs
-                   : now + a->intervalNs;
-        }
     }
 
     /* ── Cleanup ────────────────────────────────────────────────────────── */
     close(fd);
-    unlink(a->path);    /* temp file deleted on clean exit */
+    unlink(a->path);
     free(buf_raw);
 
     a->count         = count;
@@ -238,27 +217,23 @@ static void *worker(void *arg) {
 int main(int argc, const char **argv) {
     if (argc < 2) {
         fprintf(stderr,
-            "Usage: ./io <duration_s> [n_threads] [rate_ops_per_sec] [io_size] [dir] [max_mb]\n"
+            "Usage: ./io <duration_s> [n_threads] [io_size] [dir] [max_mb]\n"
             "\n"
-            "  duration_s       run time in seconds\n"
-            "  n_threads        worker threads (default: 1)\n"
-            "  rate_ops_per_sec IO ops/sec/thread (0 = saturate, default)\n"
-            "  io_size          bytes per write (default: 4096; must be multiple of 512)\n"
-            "  dir              directory for temp files (default: /tmp)\n"
-            "                   IMPORTANT: use the same directory as the RocksDB database\n"
-            "                   so that writes land on the same physical disk.\n"
-            "  max_mb           file size limit in MiB per thread (default: 512)\n"
-            "                   The file is pre-allocated and writes wrap at this limit\n"
-            "                   so disk usage stays bounded regardless of duration.\n");
+            "  duration_s   run time in seconds\n"
+            "  n_threads    competing writer threads (default: 1)\n"
+            "  io_size      bytes per write, multiple of 512 (default: 65536 = 64 KiB)\n"
+            "               Larger → more bytes per device round-trip → more bandwidth.\n"
+            "  dir          directory for temp files (default: /tmp)\n"
+            "               Use the RocksDB data directory so writes hit the same disk.\n"
+            "  max_mb       file size limit in MiB per thread (default: 512)\n");
         return 1;
     }
 
-    int         durationSec   = atoi(argv[1]);
-    uint32_t    numThreads    = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 1;
-    uint64_t    ratePerThread = (argc >= 4) ? (uint64_t)atoll(argv[3]) : 0;
-    uint32_t    io_size       = (argc >= 5) ? (uint32_t)atoi(argv[4]) : DEFAULT_IO_SIZE;
-    const char *data_dir      = (argc >= 6) ? argv[5] : DEFAULT_DIR;
-    uint64_t    max_mb        = (argc >= 7) ? (uint64_t)atoll(argv[6]) : DEFAULT_MAX_MB;
+    int         durationSec = atoi(argv[1]);
+    uint32_t    numThreads  = (argc >= 3) ? (uint32_t)atoi(argv[2]) : 1;
+    uint32_t    io_size     = (argc >= 4) ? (uint32_t)atoi(argv[3]) : DEFAULT_IO_SIZE;
+    const char *data_dir    = (argc >= 5) ? argv[4] : DEFAULT_DIR;
+    uint64_t    max_mb      = (argc >= 6) ? (uint64_t)atoll(argv[5]) : DEFAULT_MAX_MB;
 
     if (durationSec <= 0 || numThreads == 0 || io_size == 0) {
         fprintf(stderr, "ERROR: duration, threads, and io_size must be > 0\n");
@@ -274,19 +249,11 @@ int main(int argc, const char **argv) {
         return 1;
     }
 
-    uint64_t file_size  = max_mb * 1024ULL * 1024ULL;
-    uint64_t endNs      = getNs() + (uint64_t)durationSec * NS_PER_S;
-    uint64_t intervalNs = (ratePerThread > 0) ? NS_PER_S / ratePerThread : 0;
+    uint64_t file_size = max_mb * 1024ULL * 1024ULL;
+    uint64_t endNs     = getNs() + (uint64_t)durationSec * NS_PER_S;
 
-    printf("iBench IO: %u threads x %ds, %u bytes/op, dir=%s, max_file=%lu MiB",
+    printf("iBench IO: %u thread(s) x %ds, io_size=%u B, dir=%s, max_file=%lu MiB, saturate\n",
            numThreads, durationSec, io_size, data_dir, (unsigned long)max_mb);
-    if (ratePerThread > 0)
-        printf(", rate=%lu ops/s/thread (%.1f MB/s total)",
-               (unsigned long)ratePerThread,
-               (double)(ratePerThread * numThreads * io_size) / (1024.0 * 1024.0));
-    else
-        printf(", saturate (unlimited)");
-    printf("\n");
 
     /* ── Launch workers ──────────────────────────────────────────────── */
     WorkerArgs *args    = (WorkerArgs *)calloc(numThreads, sizeof(WorkerArgs));
@@ -296,17 +263,15 @@ int main(int argc, const char **argv) {
         return 1;
     }
 
-    /* Build per-thread file paths; include PID so concurrent invocations of
-     * this binary don't collide on the same directory.                      */
+    /* Include PID in file names so concurrent invocations don't collide. */
     pid_t pid = getpid();
     for (uint32_t i = 0; i < numThreads; i++) {
         args[i].tid          = (int)i;
         args[i].endNs        = endNs;
-        args[i].intervalNs   = intervalNs;
         args[i].io_size      = io_size;
         args[i].file_size    = file_size;
         args[i].count        = 0;
-        args[i].bytes_written= 0;
+        args[i].bytes_written = 0;
         snprintf(args[i].path, sizeof(args[i].path),
                  "%s/iBench_io_%d_%u.tmp", data_dir, (int)pid, i);
 
@@ -316,9 +281,8 @@ int main(int argc, const char **argv) {
         }
     }
 
-    for (uint32_t i = 0; i < numThreads; i++) {
+    for (uint32_t i = 0; i < numThreads; i++)
         pthread_join(threads[i], NULL);
-    }
 
     /* ── Aggregate and report ────────────────────────────────────────── */
     uint64_t totalOps   = 0;
@@ -327,7 +291,7 @@ int main(int argc, const char **argv) {
         totalOps   += args[i].count;
         totalBytes += args[i].bytes_written;
     }
-    double totalMB = (double)totalBytes / (1024.0 * 1024.0);
+    double totalMB  = (double)totalBytes / (1024.0 * 1024.0);
     double mbPerSec = totalMB / (durationSec > 0 ? durationSec : 1);
 
     printf("iBench IO: done\n");
