@@ -704,6 +704,7 @@ run_sweep() {
             log "  Wiping DB and loading fresh dataset ..."
             rm -rf "$dbpath"
             load_db "$dbpath" "$run_dir/load.log"
+            drop_page_cache
             run_one "$threads" "$run_dir" "$dbpath"
         else
             for (( trial=1; trial<=TRIALS_PER_THREAD; trial++ )); do
@@ -712,6 +713,7 @@ run_sweep() {
                 local trial_dir="$run_dir/trial_${trial}"
                 mkdir -p "$trial_dir"
                 load_db "$dbpath" "$trial_dir/load.log"
+                drop_page_cache
                 run_one "$threads" "$trial_dir" "$dbpath"
             done
         fi
