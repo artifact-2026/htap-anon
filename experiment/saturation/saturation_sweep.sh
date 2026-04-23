@@ -89,7 +89,7 @@ DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
 # Warmup seconds to skip.  Passed to the binary via -skip and used by the
 # system-monitor CSV trimmer so both see the same steady-state window.
 # Set to 0 to report total mean throughput over the entire RUNTIME_SECS window.
-WARMUP_SKIP_S="${WARMUP_SKIP_S:-0}"
+WARMUP_SKIP_S="${WARMUP_SKIP_S:-120}"
 
 # Number of independent trials to run for each thread count.
 # When > 1, each trial's output goes into run_t<N>/trial_<k>/ and the
@@ -97,7 +97,7 @@ WARMUP_SKIP_S="${WARMUP_SKIP_S:-0}"
 # is usually enough to filter out compaction-driven throughput spikes that
 # can shift a single 60 s window by 10-20 %.  Default 1 preserves the
 # original single-run behaviour and experiment duration.
-TRIALS_PER_THREAD="${TRIALS_PER_THREAD:-1}"
+TRIALS_PER_THREAD="${TRIALS_PER_THREAD:-3}"
 
 # Drop the OS page cache before every run so that disk reads are not silently
 # served from RAM.  Requires passwordless sudo for tee /proc/sys/vm/drop_caches,

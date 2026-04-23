@@ -52,7 +52,7 @@ KNEE_THREADS="${KNEE_THREADS:-16}"
 WORKER_COUNTS="${WORKER_COUNTS:-0 1 2 4 8 16 32}"
 
 # Number of independent trials per worker count (median is reported).
-TRIALS_PER_POINT="${TRIALS_PER_POINT:-1}"
+TRIALS_PER_POINT="${TRIALS_PER_POINT:-3}"
 
 # Total experiment duration per point in seconds (= full YCSB runtime).
 # With WARMUP_SKIP_S=0 the entire 15-minute window contributes to the reported mean.
@@ -60,7 +60,7 @@ RUNTIME_SECS="${RUNTIME_SECS:-900}"
 
 # Warmup seconds to discard from per-second system CSV when summarising.
 # Set to 0 to report over the full RUNTIME_SECS window.
-WARMUP_SKIP_S="${WARMUP_SKIP_S:-0}"
+WARMUP_SKIP_S="${WARMUP_SKIP_S:-120}"
 
 # Records to preload (default 5 M from spec; override here to take precedence).
 # Leave blank to use whatever recordcount is in WORKLOAD_SPEC.
