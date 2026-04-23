@@ -3,14 +3,24 @@
 plot_stitched.py — Multi-machine stitched saturation + IO/CPU-slack figure
 ==========================================================================
 
-Produces an N × 2 panel figure where each ROW is one machine and the two
+Produces an N × 3 panel figure where each ROW is one machine and the three
 COLUMNS are:
 
-  Col 0 — Disk IO (read + write MB/s)   [from --io]   + QPS overlay (right axis)
-  Col 1 — CPU utilization (%)            [from --slack] + QPS overlay (right axis)
+  Col 0 — Saturation phase:
+           QPS full sweep (all thread counts) [from --sat]
 
-Each row splices a saturation sweep and a slack sweep onto a shared x-axis.
-The knee point is the divider: left = YCSB threads, right = iBench workers.
+  Col 1 — Slack phase: I/O bandwidth:
+           QPS (sat pre-knee faded + slack) + Disk util. (%) [from --sat + --io]
+
+  Col 2 — Slack phase: CPU:
+           QPS (sat pre-knee faded + slack) + CPU compute (%) [from --sat + --slack]
+
+The knee divider (red line) marks the saturation→slack transition in all columns.
+
+Y-axis layout:
+  - Left column:   QPS on left y-axis only
+  - Middle column: no y-axis (scale readable from left col)
+  - Right column:  right y-axis only (CPU %)
 
 Usage
 -----
@@ -26,10 +36,6 @@ Usage
       [--out  stitched.pdf] \\
       [--title "All-machine comparison"] \\
       [--dpi 150]
-
-For a single machine you may provide just one --sat / --io / --slack / --knee tuple.
---knee defaults to the maximum thread count found in the saturation CSV.
---label defaults to the saturation CSV file stem.
 
 Column contract
 ---------------
@@ -58,38 +64,40 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+from matplotlib.legend_handler import HandlerBase
 import matplotlib.ticker as mticker
 
-# ── colour palette ──────────────────────────────────────────────────────────
-# Same order as plot_bottleneck.py — machine i always gets _PALETTE[i].
-_PALETTE = [
-    '#2166ac',   # blue
-    '#d6604d',   # red-orange
-    '#4dac26',   # green
-    '#8856a7',   # purple
-    '#b35806',   # brown-orange
-    '#1a9e77',   # teal
-    '#e7298a',   # pink
-    '#666666',   # gray
-]
+# ── custom legend handler: vertical knee line with hash marks ────────────────
 
-C_FADE   = '#bbbbbb'   # light gray — post-knee saturation (faded)
+class _HandlerKnee(HandlerBase):
+    """Renders the knee-divider legend icon as a vertical line with hash marks."""
+    def create_artists(self, legend, orig_handle,
+                       xdescent, ydescent, width, height, fontsize, trans):
+        x    = xdescent + width / 2
+        y0   = ydescent
+        y1   = ydescent + height
+        col  = orig_handle.get_color()
+        lw   = orig_handle.get_linewidth()
+        alp  = 0.70
+
+        vline = Line2D([x, x], [y0, y1],
+                       color=col, linewidth=lw, alpha=alp, transform=trans)
+        artists = [vline]
+        hw = width * 0.22          # half-width of each tick mark
+        for frac in (0.25, 0.50, 0.75):
+            y = y0 + (y1 - y0) * frac
+            tick = Line2D([x - hw, x + hw], [y, y],
+                          color=col, linewidth=lw * 0.7, alpha=alp, transform=trans)
+            artists.append(tick)
+        return artists
+
+
+# ── fixed metric colours ─────────────────────────────────────────────────────
+C_QPS    = '#777777'   # gray  — throughput (QPS), all panels
+C_DISK   = '#1b3a8c'   # navy  — disk bandwidth
+C_CPU    = '#2d8b37'   # green — CPU compute
+C_KNEE   = '#cc2222'   # red   — knee divider line
 C_LEG    = '#444444'   # neutral gray — legend icons
-QPS_C    = '#e08020'   # warm orange — QPS overlay on both panels
-
-
-# ── colour utilities ─────────────────────────────────────────────────────────
-
-def _shade(hex_color, factor):
-    """Lighten (factor > 0) or darken (factor < 0) a hex colour."""
-    import matplotlib.colors as mcolors
-    r, g, b = mcolors.to_rgb(hex_color)
-    if factor >= 0:
-        r, g, b = r + (1-r)*factor, g + (1-g)*factor, b + (1-b)*factor
-    else:
-        f = 1 + factor
-        r, g, b = r*f, g*f, b*f
-    return mcolors.to_hex((min(r, 1), min(g, 1), min(b, 1)))
 
 
 # ── low-level drawing helpers ────────────────────────────────────────────────
@@ -129,9 +137,20 @@ def _phase(ax, xs, mean, std, color, fmt='o-', lw=2, ms=6,
     if lo is not None and hi is not None:
         _band(ax, xs, lo, hi, color, alpha=minmax_alpha)
 
-def _divider(ax, x):
-    ax.axvline(x, color='#5A3E1B', linestyle='-', linewidth=1.8,
-               alpha=0.50, zorder=5)
+def _divider_hashed(ax, x):
+    """Red knee-divider line with small hash marks."""
+    ax.axvline(x, color=C_KNEE, linestyle='-', linewidth=1.8,
+               alpha=0.70, zorder=5)
+    yl = ax.get_ylim()
+    y_mid   = (yl[0] + yl[1]) / 2
+    y_range = yl[1] - yl[0]
+    hash_spacing = y_range * 0.08
+    n_hashes = 5
+    for i in range(n_hashes):
+        y = y_mid - (n_hashes // 2 - i) * hash_spacing
+        if yl[0] <= y <= yl[1]:
+            ax.plot([x - 0.15, x + 0.15], [y, y],
+                    color=C_KNEE, linewidth=1.2, alpha=0.70, zorder=5)
 
 def _set_xticks(ax, xs, labels):
     ax.set_xticks(xs)
@@ -200,34 +219,35 @@ def _load(path, sweep_col):
 
 # ── single-row (one machine) drawing ────────────────────────────────────────
 
-def _draw_row(ax_io, ax_io_r, ax_cpu, ax_cpu_r,
+def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
               sat, io_df, slack, knee, mc, row_label, fsz,
               lw=2.0, ms=6, show_xticks=True):
     """
-    Draw one machine row into 4 axes:
-      ax_io   — IO panel primary  (disk_bw_avg as %)
-      ax_io_r — IO panel secondary (QPS, right y-axis)
-      ax_cpu  — CPU panel primary  (cpu_compute + cpu_schedule)
-      ax_cpu_r— CPU panel secondary (QPS, right y-axis)
+    Draw one machine row.
 
-    The canonical x-axis is built from sat + slack.  io_df is plotted at
-    log₂-scaled positions derived from its own workers column.
+    Color scheme (fixed, not per-machine):
+      C_QPS  (gray)  — throughput in all three columns
+      C_DISK (navy)  — disk bandwidth (middle column right axis)
+      C_CPU  (green) — CPU compute   (right column right axis)
+      C_KNEE (red)   — knee divider  (all columns)
+
+    Col 0 — full saturation sweep, QPS only.
+    Col 1 — sat pre-knee QPS (same gray) + slack QPS + disk BW on right axis.
+    Col 2 — sat pre-knee QPS (same gray) + slack QPS + CPU %  on right axis.
     """
-    # ── X-axis construction (canonical: sat + slack) ─────────────────────────
+    # ── X-axis construction ──────────────────────────────────────────────────
     tick_xs, tick_labels, knee_idx, sat_xs, slack_xs = \
         build_xaxis(sat, slack, knee)
 
     pre_end = knee_idx + 1
-    pre_xs  = sat_xs[:pre_end]
+    pre_xs  = sat_xs[:pre_end]   # positions 0 .. knee_idx (inclusive)
 
-    # For both io and slack: workers==0 is the baseline / knee anchor.
-    # workers > 0 form the actual sweep.  log2(0) = -inf, so we must exclude
-    # workers==0 from position calculations.
+    # Split io / slack DataFrames at workers==0 (knee anchor).
     def _split_sweep(df):
         base  = df[df['workers'] == 0]
         sweep = df[df['workers'] >  0].reset_index(drop=True)
         baseline = base.iloc[0] if len(base) > 0 else None
-        if len(sweep) == 0:          # no workers==0 row → treat all as sweep
+        if len(sweep) == 0:
             sweep    = df.copy()
             baseline = None
         return sweep, baseline
@@ -237,11 +257,8 @@ def _draw_row(ax_io, ax_io_r, ax_cpu, ax_cpu_r,
 
     io_xs = [knee_idx + np.log2(w) + 1
              for w in io_df_sweep['workers'].tolist()]
-    io_xs_aug    = [knee_idx] + list(io_xs)
+    io_xs_aug    = [knee_idx] + list(io_xs)   # starts at knee
     slack_xs_aug = [knee_idx] + list(slack_xs)
-
-    MC_SAT   = _shade(mc, -0.15)
-    MC_SLACK = _shade(mc, +0.40)
 
     sat_knee_row = sat.iloc[knee_idx]
 
@@ -254,8 +271,11 @@ def _draw_row(ax_io, ax_io_r, ax_cpu, ax_cpu_r,
         v = _seg(df, name, slc)
         return np.where(np.isfinite(v), v, 0.0)
 
+    def _pct(arr):
+        a = np.array(arr, dtype=float)
+        return np.where(np.isfinite(a), a * 100.0, np.nan)
+
     def _aug_io(col, zero=False):
-        """Augment io sweep array with baseline (workers==0) value at knee."""
         getter = _seg0 if zero else _seg
         arr = getter(io_df_sweep, col)
         if io_baseline is not None and col in io_baseline.index:
@@ -265,8 +285,6 @@ def _draw_row(ax_io, ax_io_r, ax_cpu, ax_cpu_r,
         return np.concatenate([[knee_val], arr])
 
     def _aug_slack(col, zero=False):
-        """Augment slack sweep (workers>0) with workers==0 baseline at knee.
-        Falls back to sat knee row if no workers==0 row exists in slack."""
         getter = _seg0 if zero else _seg
         arr = getter(slack_df_sweep, col)
         if slack_baseline is not None and col in slack_baseline.index:
@@ -277,130 +295,180 @@ def _draw_row(ax_io, ax_io_r, ax_cpu, ax_cpu_r,
             knee_val = np.nan
         return np.concatenate([[knee_val], arr])
 
-    # ── IO Panel — primary: disk_bw_avg (%) ──────────────────────────────────
-    ax = ax_io
+    # ═══════════════════════════════════════════════════════════════════════════
+    # COLUMN 0: SATURATION — full sweep, QPS only
+    # ═══════════════════════════════════════════════════════════════════════════
+    ax = ax_sat
 
-    def _pct(arr):
-        """Convert fraction 0-1 to percent, preserving NaN."""
-        a = np.array(arr, dtype=float)
-        return np.where(np.isfinite(a), a * 100.0, np.nan)
+    _phase(ax, sat_xs,
+           _seg(sat, 'xput_mean'),
+           _seg0(sat, 'xput_std'),
+           C_QPS, fmt='D-', lw=lw, ms=ms)
 
-    # Saturation phase (pre-knee)
+    ax.set_ylim(bottom=0)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt_kps))
+    ax.set_ylabel('QPS', fontsize=fsz, color='black', labelpad=4)
+
+    _divider_hashed(ax, knee_idx)
+
+    if show_xticks:
+        sat_threads = sat['threads'].tolist()
+        sat_labels  = {i: f'{sat_threads[i]}T' for i in range(len(sat_threads))}
+        sat_tick_xs = sorted(sat_labels.keys())
+        _set_xticks(ax, sat_tick_xs, [sat_labels[x] for x in sat_tick_xs])
+    else:
+        ax.set_xticks(sat_xs)
+        ax.set_xlim(sat_xs[0] - 0.7, sat_xs[-1] + 0.7)
+        plt.setp(ax.get_xticklabels(), visible=False)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # COLUMN 1: SLACK PHASE — I/O bandwidth
+    #   Left axis:  QPS (sat pre-knee + io slack, same C_QPS gray)
+    #   Right axis: Disk BW % (navy)
+    # ═══════════════════════════════════════════════════════════════════════════
+    ax  = ax_io
+    ax_r = ax_io_r
+
+    # Pre-knee QPS from the saturation CSV (same color, connects at knee_idx).
     _phase(ax, pre_xs,
-           _pct(_seg(sat,  'disk_bw_avg',    slice(0, pre_end))),
+           _seg(sat, 'xput_mean', slice(0, pre_end)),
+           _seg0(sat, 'xput_std',  slice(0, pre_end)),
+           C_QPS, fmt='D-', lw=lw, ms=ms)
+
+    # Connector: line-only bridge from last sat point to first slack point.
+    if len(io_xs_aug) > 1:
+        ax.plot([pre_xs[-1], io_xs_aug[1]],
+                [_seg(sat, 'xput_mean')[knee_idx], _aug_io('xput_mean')[1]],
+                '-', color=C_QPS, lw=lw, zorder=2)
+
+    # Post-knee QPS from the IO CSV — skip the [0] knee anchor to avoid a
+    # duplicate marker on top of the saturation curve's last point.
+    _phase(ax, io_xs_aug[1:],
+           _aug_io('xput_mean')[1:],
+           _aug_io('xput_std', zero=True)[1:],
+           C_QPS, fmt='D-', lw=lw, ms=ms,
+           lo=_aug_io('xput_min')[1:],
+           hi=_aug_io('xput_max')[1:])
+
+    ax.set_ylim(bottom=0)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt_kps))
+    ax.set_ylabel('QPS', fontsize=fsz, color='black', labelpad=4)
+
+    # Right axis: Disk BW % — sat pre-knee from sat CSV, then slack phase from io CSV.
+    _phase(ax_r, pre_xs,
+           _pct(_seg(sat, 'disk_bw_avg',    slice(0, pre_end))),
            _pct(_seg0(sat, 'disk_bw_stddev', slice(0, pre_end))),
-           MC_SAT, fmt='x-', lw=lw, ms=ms)
+           C_DISK, fmt='x-', lw=lw, ms=ms)
+    if len(io_xs_aug) > 1:
+        ax_r.plot([pre_xs[-1], io_xs_aug[1]],
+                  [_pct(_seg(sat, 'disk_bw_avg'))[knee_idx],
+                   _pct(_aug_io('disk_bw_avg'))[1]],
+                  '-', color=C_DISK, lw=lw, zorder=2)
+    _phase(ax_r, io_xs_aug[1:],
+           _pct(_aug_io('disk_bw_avg'))[1:],
+           _pct(_aug_io('disk_bw_stddev', zero=True))[1:],
+           C_DISK, fmt='x-', lw=lw, ms=ms)
 
-    # IO-slack phase
-    _phase(ax, io_xs_aug,
-           _pct(_aug_io('disk_bw_avg')),
-           _pct(_aug_io('disk_bw_stddev', zero=True)),
-           _shade(mc, +0.40), fmt='x-', lw=lw, ms=ms)
+    ax_r.set_ylim(0, 110)
+    ax_r.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.4)
+    ax_r.set_ylabel('Disk BW %', fontsize=fsz, color=C_DISK, labelpad=4)
+    ax_r.tick_params(axis='y', colors=C_DISK, labelsize=fsz - 1)
+    ax_r.spines['right'].set_color(C_DISK)
 
-    _divider(ax, knee_idx)
-    ax.set_ylim(0, 110)
-    ax.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.4)
-    ax.set_ylabel(row_label, fontsize=fsz + 1, fontweight='bold', labelpad=6)
+    # X-axis ticks: full range (pre-knee T labels + post-knee W labels).
+    if show_xticks:
+        sat_threads = sat['threads'].tolist()
+        io_labels = {i: f'{sat_threads[i]}T' for i in range(pre_end)}
+        for j, w in enumerate(io_df_sweep['workers'].tolist()):
+            io_labels[io_xs_aug[j + 1]] = f'+{w}W'
+        io_tick_xs = sorted(io_labels.keys())
+        _set_xticks(ax, io_tick_xs, [io_labels[x] for x in io_tick_xs])
+    else:
+        combined_io_xs = list(range(pre_end)) + list(io_xs_aug[1:])
+        ax.set_xticks(combined_io_xs)
+        ax.set_xlim(0 - 0.7, (io_xs_aug[-1] if io_xs_aug else knee_idx) + 0.7)
+        plt.setp(ax.get_xticklabels(), visible=False)
 
-    # ── IO Panel — secondary: QPS (right y-axis) ─────────────────────────────
-    ax = ax_io_r
-    QPS_SAT   = _shade(QPS_C, -0.10)
-    QPS_SLACK = _shade(QPS_C, +0.30)
+    _divider_hashed(ax, knee_idx)
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # COLUMN 2: SLACK PHASE — CPU
+    #   Left axis:  QPS (sat pre-knee + cpu slack, same C_QPS gray)
+    #   Right axis: CPU compute % (green)
+    # ═══════════════════════════════════════════════════════════════════════════
+    ax  = ax_cpu
+    ax_r = ax_cpu_r
+
+    # Pre-knee QPS from the saturation CSV.
     _phase(ax, pre_xs,
            _seg(sat, 'xput_mean', slice(0, pre_end)),
            _seg0(sat, 'xput_std',  slice(0, pre_end)),
-           QPS_SAT, fmt='D--', lw=lw * 0.8, ms=ms * 0.8)
-    _phase(ax, io_xs_aug,
-           _aug_io('xput_mean'),
-           _aug_io('xput_std', zero=True),
-           QPS_SLACK, fmt='D--', lw=lw * 0.8, ms=ms * 0.8,
-           lo=_aug_io('xput_min'),
-           hi=_aug_io('xput_max'))
+           C_QPS, fmt='D-', lw=lw, ms=ms)
+
+    # Connector: line-only bridge from last sat point to first slack point.
+    if len(slack_xs_aug) > 1:
+        ax.plot([pre_xs[-1], slack_xs_aug[1]],
+                [_seg(sat, 'xput_mean')[knee_idx], _aug_slack('xput_mean')[1]],
+                '-', color=C_QPS, lw=lw, zorder=2)
+
+    # Post-knee QPS from the CPU-slack CSV — skip the [0] knee anchor.
+    _phase(ax, slack_xs_aug[1:],
+           _aug_slack('xput_mean')[1:],
+           _aug_slack('xput_std', zero=True)[1:],
+           C_QPS, fmt='D-', lw=lw, ms=ms,
+           lo=_aug_slack('xput_min')[1:],
+           hi=_aug_slack('xput_max')[1:])
 
     ax.set_ylim(bottom=0)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt_kps))
-    ax.set_ylabel('QPS', fontsize=fsz, color=QPS_C, labelpad=4)
-    ax.tick_params(axis='y', colors=QPS_C, labelsize=fsz - 1)
-    ax.spines['right'].set_color(QPS_C)
+    ax.set_ylabel('QPS', fontsize=fsz, color='black', labelpad=4)
 
-    # ── CPU Panel — primary: cpu_compute + cpu_schedule ───────────────────────
-    ax = ax_cpu
-    cc_pre = _seg(sat, 'cpu_compute_mean',  slice(0, pre_end))
-    cs_pre = _seg(sat, 'cpu_schedule_mean', slice(0, pre_end))
-    cc_slk = _aug_slack('cpu_compute_mean')
-    cs_slk = _aug_slack('cpu_schedule_mean')
+    # Right axis: CPU compute % — sat pre-knee from sat CSV, then slack phase.
+    _phase(ax_r, pre_xs,
+           _seg(sat, 'cpu_compute_mean',    slice(0, pre_end)),
+           _seg0(sat, 'cpu_compute_std',     slice(0, pre_end)),
+           C_CPU, fmt='^-', lw=lw, ms=ms)
+    if len(slack_xs_aug) > 1:
+        ax_r.plot([pre_xs[-1], slack_xs_aug[1]],
+                  [_seg(sat, 'cpu_compute_mean')[knee_idx],
+                   _aug_slack('cpu_compute_mean')[1]],
+                  '-', color=C_CPU, lw=lw, zorder=2)
+    _phase(ax_r, slack_xs_aug[1:],
+           _aug_slack('cpu_compute_mean')[1:],
+           _aug_slack('cpu_compute_std', zero=True)[1:],
+           C_CPU, fmt='^-', lw=lw, ms=ms)
 
-    _phase(ax, pre_xs, cc_pre,
-           _seg0(sat, 'cpu_compute_std',  slice(0, pre_end)),
-           MC_SAT, fmt='^-', lw=lw, ms=ms)
-    _phase(ax, pre_xs, cs_pre,
-           _seg0(sat, 'cpu_schedule_std', slice(0, pre_end)),
-           MC_SAT, fmt='s-', lw=lw, ms=ms, band_alpha=0.10)
-    ax.fill_between(pre_xs, cc_pre, cs_pre,
-                    facecolor='none', edgecolor=MC_SAT,
-                    hatch='xxx', alpha=0.30, linewidth=0, zorder=2)
+    ax_r.set_ylim(0, 105)
+    ax_r.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.4)
+    ax_r.set_ylabel('Resource Utilization %', fontsize=fsz, color=C_CPU, labelpad=4)
+    ax_r.tick_params(axis='y', colors=C_CPU, labelsize=fsz - 1)
+    ax_r.spines['right'].set_color(C_CPU)
 
-    _phase(ax, slack_xs_aug, cc_slk,
-           _aug_slack('cpu_compute_std',  zero=True),
-           MC_SLACK, fmt='^-', lw=lw, ms=ms)
-    _phase(ax, slack_xs_aug, cs_slk,
-           _aug_slack('cpu_schedule_std', zero=True),
-           MC_SLACK, fmt='s-', lw=lw, ms=ms, band_alpha=0.10)
-    ax.fill_between(slack_xs_aug, cc_slk, cs_slk,
-                    facecolor='none', edgecolor=MC_SLACK,
-                    hatch='xxx', alpha=0.30, linewidth=0, zorder=2)
+    # X-axis ticks: full range (pre-knee T labels + post-knee W labels).
+    if show_xticks:
+        sat_threads = sat['threads'].tolist()
+        cpu_labels = {i: f'{sat_threads[i]}T' for i in range(pre_end)}
+        for j, w in enumerate(slack_df_sweep['workers'].tolist()):
+            cpu_labels[slack_xs_aug[j + 1]] = f'+{w}W'
+        cpu_tick_xs = sorted(cpu_labels.keys())
+        _set_xticks(ax, cpu_tick_xs, [cpu_labels[x] for x in cpu_tick_xs])
+    else:
+        combined_cpu_xs = list(range(pre_end)) + list(slack_xs_aug[1:])
+        ax.set_xticks(combined_cpu_xs)
+        ax.set_xlim(0 - 0.7, (slack_xs_aug[-1] if slack_xs_aug else knee_idx) + 0.7)
+        plt.setp(ax.get_xticklabels(), visible=False)
 
-    _divider(ax, knee_idx)
-    ax.set_ylim(bottom=0, top=105)
-    ax.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.4)
+    _divider_hashed(ax, knee_idx)
 
-    # ── CPU Panel — secondary: QPS (right y-axis) ────────────────────────────
-    ax = ax_cpu_r
-    _phase(ax, pre_xs,
-           _seg(sat, 'xput_mean', slice(0, pre_end)),
-           _seg0(sat, 'xput_std',  slice(0, pre_end)),
-           QPS_SAT, fmt='D--', lw=lw * 0.8, ms=ms * 0.8)
-    _phase(ax, slack_xs_aug,
-           _aug_slack('xput_mean'),
-           _aug_slack('xput_std', zero=True),
-           QPS_SLACK, fmt='D--', lw=lw * 0.8, ms=ms * 0.8,
-           lo=_aug_slack('xput_min'),
-           hi=_aug_slack('xput_max'))
-
-    ax.set_ylim(bottom=0)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt_kps))
-    ax.set_ylabel('QPS', fontsize=fsz, color=QPS_C, labelpad=4)
-    ax.tick_params(axis='y', colors=QPS_C, labelsize=fsz - 1)
-    ax.spines['right'].set_color(QPS_C)
-
-    # ── Shared x-axis ticks (primary axes only; twinx shares x-range) ────────
-    for a in (ax_io, ax_cpu):
-        if show_xticks:
-            _set_xticks(a, tick_xs, tick_labels)
-        else:
-            a.set_xticks(tick_xs)
-            a.set_xlim(tick_xs[0] - 0.7, tick_xs[-1] + 0.7)
-            plt.setp(a.get_xticklabels(), visible=False)
-
-    # ── Knee annotations on both primary panels ───────────────────────────────
-    for a in (ax_io, ax_cpu):
-        yl = a.get_ylim()
-        a.annotate(
-            f'Knee\n{knee}T',
-            xy=(knee_idx, yl[0]),
-            xytext=(knee_idx + 0.55,
-                    yl[0] + 0.10 * (yl[1] - yl[0])),
-            fontsize=fsz - 2, color='gray', fontweight='bold',
-            arrowprops=dict(arrowstyle='->', color='gray', lw=0.8),
-        )
+    # ── Row label on the left column ──────────────────────────────────────────
+    ax_sat.set_ylabel(row_label, fontsize=fsz + 1, fontweight='bold', labelpad=6)
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description='N × 2 stitched saturation + IO/CPU-slack figure (one row per machine).',
+        description='N × 3 stitched saturation + IO/CPU-slack figure (one row per machine).',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__)
     p.add_argument('--sat',   action='append', required=True, metavar='PATH',
@@ -421,7 +489,7 @@ def parse_args():
                         'Repeat per machine.')
     p.add_argument('--out',   default='stitched.pdf', help='Output file path.')
     p.add_argument('--title', default='',  help='Optional figure suptitle.')
-    p.add_argument('--width', type=float,  default=10.0, help='Figure width in inches.')
+    p.add_argument('--width', type=float,  default=15.0, help='Figure width in inches.')
     p.add_argument('--row-height', type=float, dest='row_height', default=2.5,
                    help='Height per machine row in inches.  Default: 2.5.')
     p.add_argument('--font-size', type=int, dest='font_size', default=11,
@@ -471,13 +539,13 @@ def main():
         io_df = _load(args.io[i],    'workers')
         slack = _load(args.slack[i], 'workers')
         knee  = knees[i] if knees[i] is not None else int(sat['threads'].max())
-        mc    = _PALETTE[i % len(_PALETTE)]
+        mc    = '#000000'   # mc kept for API compat but metric colors are now fixed
         machines.append(dict(sat=sat, io=io_df, slack=slack, knee=knee,
                              label=labels[i], mc=mc))
         print(f'[{labels[i]}]  sat={len(sat)} pts, io={len(io_df)} pts, '
-              f'slack={len(slack)} pts, knee={knee}T, color={mc}')
+              f'slack={len(slack)} pts, knee={knee}T')
 
-    # ── Figure layout: N rows × 2 cols ───────────────────────────────────────
+    # ── Figure layout: N rows × 3 cols ───────────────────────────────────────
     fsz = args.font_size
     plt.rcParams.update({
         'figure.dpi'        : args.dpi,
@@ -494,7 +562,7 @@ def main():
         'legend.fontsize'   : fsz,
     })
 
-    COL_TITLES = ['Disk BW util. (%)  ·  QPS →', 'CPU util. (%)  ·  QPS →']
+    COL_TITLES = ['Saturation phase', 'Slack phase: I/O bandwidth', 'Slack phase: CPU']
 
     fig_h = args.row_height * n + (1.0 if args.title else 0.5)
     fig   = plt.figure(figsize=(args.width, fig_h))
@@ -505,8 +573,8 @@ def main():
     # Reserve bottom space for the shared legend.
     LEGEND_H = 0.09
     gs = gridspec.GridSpec(
-        n, 2, figure=fig,
-        hspace=0.40, wspace=0.45,   # extra wspace for right-axis labels
+        n, 3, figure=fig,
+        hspace=0.40, wspace=0.08,
         top=0.96 if not args.title else 0.94,
         bottom=LEGEND_H + 0.03,
         left=0.10, right=0.95,
@@ -517,47 +585,61 @@ def main():
         ax0r = ax0.twinx()
         ax1  = fig.add_subplot(gs[i, 1])
         ax1r = ax1.twinx()
+        ax2  = fig.add_subplot(gs[i, 2])
+        ax2r = ax2.twinx()
 
         # Column titles on the first row only.
         if i == 0:
             ax0.set_title(COL_TITLES[0], fontsize=fsz + 1, fontweight='bold', pad=8)
             ax1.set_title(COL_TITLES[1], fontsize=fsz + 1, fontweight='bold', pad=8)
+            ax2.set_title(COL_TITLES[2], fontsize=fsz + 1, fontweight='bold', pad=8)
 
-        _draw_row(ax0, ax0r, ax1, ax1r,
+        _draw_row(ax0, ax0r, ax1, ax1r, ax2, ax2r,
                   m['sat'], m['io'], m['slack'], m['knee'],
                   m['mc'], m['label'], fsz,
                   show_xticks=True)
 
+        # ── Y-axis visibility per column ──────────────────────────────────────
+        # Left col (ax0): left y-axis shown; right y-axis (ax0r) hidden.
+        ax0r.tick_params(axis='y', right=False, labelright=False)
+        ax0r.set_ylabel('')
+        ax0r.spines['right'].set_visible(False)
+
+        # Middle col (ax1 / ax1r): no y-axis on either side.
+        ax1.tick_params(axis='y', left=False, labelleft=False)
+        ax1.set_ylabel('')
+        ax1.spines['left'].set_visible(False)
+        ax1r.tick_params(axis='y', right=False, labelright=False)
+        ax1r.set_ylabel('')
+        ax1r.spines['right'].set_visible(False)
+
+        # Right col (ax2 / ax2r): right y-axis only; hide left (QPS) side.
+        ax2.tick_params(axis='y', left=False, labelleft=False)
+        ax2.set_ylabel('')
+        ax2.spines['left'].set_visible(False)
+
     # ── Shared legend ────────────────────────────────────────────────────────
-    mc_ex = _PALETTE[0]   # example colour for legend icons
+    knee_handle = Line2D([0],[0], color=C_KNEE, lw=1.8, ls='-',
+                         label='Knee (sat→slack)')
     legend_handles = [
-        # Phase encoding
-        Line2D([0],[0], color=_shade(mc_ex,-0.15), lw=2.5, ls='-',
-               label='Saturation (pre-knee)'),
-        Line2D([0],[0], color=_shade(mc_ex,+0.40), lw=2.5, ls='-',
-               label='Slack phase (lighter)'),
-        # X-axis notation
-        Line2D([0],[0], color='none', label='T = YCSB threads'),
-        Line2D([0],[0], color='none', label='W = slack workers'),
-        # IO panel metric encoding
-        Line2D([0],[0], color=C_LEG, lw=2, marker='x', ms=5, ls='-',
-               label='Disk BW util. (%)'),
-        # CPU panel metric encoding
-        Line2D([0],[0], color=C_LEG, lw=2, marker='^', ms=5, ls='-',
-               label='CPU compute'),
-        Line2D([0],[0], color=C_LEG, lw=2, marker='s', ms=5, ls='-',
-               label='CPU scheduled'),
-        # QPS overlay
-        Line2D([0],[0], color=QPS_C, lw=2, marker='D', ms=5, ls='--',
-               label='QPS (right axis)'),
+        Line2D([0],[0], color='none', label='T = YCSB threads   W = SOI threads'),
+        Line2D([0],[0], color=C_QPS,  lw=2, marker='D', ms=5, ls='-',
+               label='Throughput (QPS)'),
+        Line2D([0],[0], color=C_DISK, lw=2, marker='x', ms=5, ls='-',
+               label='Disk BW %'),
+        Line2D([0],[0], color=C_CPU,  lw=2, marker='^', ms=5, ls='-',
+               label='CPU compute %'),
+        knee_handle,
     ]
     fig.legend(
         handles=legend_handles,
+        handler_map={knee_handle: _HandlerKnee()},
         loc='lower center',
-        bbox_to_anchor=(0.5, 0.0),
+        bbox_to_anchor=(0.5, -0.03),
         ncol=5,
         framealpha=0.88,
-        handlelength=2.0,
+        handlelength=1.0,   # narrow column so the vertical icon looks right
+        handleheight=1.8,   # taller handle gives room for the hash marks
         borderpad=0.5,
         columnspacing=1.2,
         fontsize=fsz - 1,
