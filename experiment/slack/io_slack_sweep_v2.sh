@@ -318,6 +318,38 @@ run_one() {
     log "  Running: KNEE_THREADS=${KNEE_THREADS}  workers=${n_workers}  runtime=${RUNTIME_SECS}s" \
         "(skip first ${WARMUP_SKIP_S}s)"
 
+    # ── Two-pass iBench pre-initialisation (runs BEFORE YCSB starts) ─────────
+    #
+    # Pass 1 (--init-only): write-initialise all read files synchronously so
+    # the full RUNTIME_SECS measurement window is free of init I/O.  Page cache
+    # is dropped after init so every Pass 2 read is a genuine NAND access.
+    # Monitor is not yet running — init I/O does not appear in system_wN.csv.
+    #
+    # ionice -c 2 -n 0: best-effort class, highest priority within that class.
+    # Ensures iBench IOs are not silently de-prioritised behind RocksDB's
+    # compaction and YCSB threads in the mq-deadline I/O scheduler queue.
+    IO_PIDS=()
+    local io_prefix=()
+    if (( n_workers > 0 )); then
+        if command -v ionice >/dev/null 2>&1; then
+            io_prefix=(ionice -c 2 -n 0)
+            log "  ionice available — iBench will run at best-effort highest I/O priority"
+        else
+            log "  WARNING: ionice not found — iBench runs at default I/O priority"
+        fi
+
+        log "  Pass 1 [init-only]: initialising ${n_workers} read file(s)" \
+            "(${IO_DATA_SIZE_MB} MiB each) in ${run_dir} — before YCSB starts ..."
+        "${io_prefix[@]}" "$IO_BINARY" \
+            1 "$n_workers" \
+            "$IO_SIZE" \
+            "$run_dir" "$IO_DATA_SIZE_MB" \
+            --init-only
+        log "  Pass 1 complete. Dropping page cache ..."
+        drop_page_cache
+        log "  Pre-init done. Starting monitor + YCSB + iBench Pass 2 now."
+    fi
+
     start_monitor "$sys_csv"
 
     # ── Start YCSB in the background ─────────────────────────────────────────
@@ -332,43 +364,10 @@ run_one() {
         2>&1 | tee "$log_file" &
     local ycsb_pid=$!
 
-    # ── Start n_workers iBench_io competitor units alongside YCSB ────────────
-    #
-    # Two-pass launch so large read files (IO_DATA_SIZE_MB = 4 GiB default)
-    # are fully initialised before the measurement window begins:
-    #
-    #   Pass 1 (--init-only, before YCSB): write-initialise all read files.
-    #     Runs synchronously; script blocks until init is complete.
-    #     Page cache is then dropped so Pass 2 reads hit real NAND.
-    #
-    #   Pass 2 (--skip-init, concurrent with YCSB): read threads open the
-    #     already-initialised files and issue O_DIRECT random reads immediately.
-    #     Write threads create fresh files.  Both run for RUNTIME_SECS.
-    #
-    # ionice -c 2 -n 0: best-effort class, highest priority within that class.
-    # Ensures iBench IOs are not silently de-prioritised behind RocksDB's
-    # compaction and YCSB threads in the mq-deadline I/O scheduler queue.
-    IO_PIDS=()
+    # ── Pass 2: launch iBench interference concurrent with YCSB ──────────────
+    # Read threads open pre-initialised files and begin O_DIRECT random reads
+    # immediately.  Write threads create fresh files.  Both run for RUNTIME_SECS.
     if (( n_workers > 0 )); then
-        # Build ionice prefix if available.
-        local io_prefix=()
-        if command -v ionice >/dev/null 2>&1; then
-            io_prefix=(ionice -c 2 -n 0)
-            log "  ionice -c 2 -n 0 available — iBench will run at best-effort highest priority"
-        else
-            log "  WARNING: ionice not found — iBench runs at default I/O priority"
-        fi
-
-        log "  Pass 1 [init-only]: initialising ${n_workers} read file(s)" \
-            "(${IO_DATA_SIZE_MB} MiB each) in ${run_dir} ..."
-        "${io_prefix[@]}" "$IO_BINARY" \
-            1 "$n_workers" \
-            "$IO_SIZE" \
-            "$run_dir" "$IO_DATA_SIZE_MB" \
-            --init-only
-        log "  Pass 1 complete. Dropping page cache before measurement ..."
-        drop_page_cache
-
         log "  Pass 2 [skip-init]: starting ${n_workers} iBench_io unit(s)" \
             "(${n_workers} write + ${n_workers} read threads," \
             "io_size=${IO_SIZE} B, file=${IO_DATA_SIZE_MB} MiB/thread," \
