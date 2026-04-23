@@ -621,7 +621,6 @@ def build_fig4_machines(datasets, args):
         Relevant flags: --no-bands, --width, --dpi, --font-size.
     """
     from matplotlib.ticker import FuncFormatter
-    from matplotlib.patches import Patch
 
     N   = len(datasets)
     lw, ms, fsz = 1.4, 4, args.font_size
@@ -630,7 +629,6 @@ def build_fig4_machines(datasets, args):
     # Each machine will use its own _PALETTE colour for ALL resources.
     RS_DISK  = dict(linestyle='-',  marker='x')   # solid  + cross
     RS_CPUC  = dict(linestyle='--', marker='^')    # dashed + triangle
-    RS_CPUS  = dict(linestyle='--', marker='s')    # dashed + square
     RS_MEM   = dict(linestyle=':',  marker='o')    # dotted + circle
 
     _apply_rcparams(fsz)
@@ -678,22 +676,12 @@ def build_fig4_machines(datasets, args):
 
         # -- Resource utilization (%) — all in the machine's colour ---------------
         cpu_comp  = np.asarray(df['cpu_compute_mean'],  dtype=float)
-        cpu_sched = np.asarray(df['cpu_schedule_mean'], dtype=float)
 
         # CPU compute — dashed + triangle
         _plot_line(ax0, x, cpu_comp,
                    np.asarray(df['cpu_compute_std'],  dtype=float),
                    mc, 'CPU compute',  lw, ms+3, args.no_bands,
                    **RS_CPUC)
-        # CPU schedule — dashed + square
-        _plot_line(ax0, x, cpu_sched,
-                   np.asarray(df['cpu_schedule_std'], dtype=float),
-                   mc, 'CPU schedule', lw, ms+3, args.no_bands,
-                   **RS_CPUS)
-        # I/O-wait hatch — machine colour
-        ax0.fill_between(x, cpu_comp, cpu_sched,
-                         facecolor='none', edgecolor=mc,
-                         hatch='xxx', alpha=0.40, linewidth=0, zorder=2)
 
         # Disk BW — solid + cross
         if 'disk_bw_avg' in df.columns and df['disk_bw_avg'].notna().any():
@@ -745,10 +733,6 @@ def build_fig4_machines(datasets, args):
     legend_handles = [
         Line2D([0],[0], color=C_LEG, lw=lw, ms=ms+1, label='CPU compute',
                **RS_CPUC),
-        Line2D([0],[0], color=C_LEG, lw=lw, ms=ms+1, label='CPU scheduled',
-               **RS_CPUS),
-        Patch(facecolor='none', edgecolor=C_LEG, hatch='xxx', linewidth=0.5,
-              label='I/O wait (gap)'),
         Line2D([0],[0], color=C_LEG, lw=lw, ms=ms+2, label='Disk BW',
                **RS_DISK),
         Line2D([0],[0], color=C_LEG, lw=lw, ms=ms+1, label='RAM',
