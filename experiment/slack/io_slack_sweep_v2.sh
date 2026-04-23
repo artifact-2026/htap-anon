@@ -83,34 +83,32 @@ DROP_CACHES="${DROP_CACHES:-true}"
 
 # Bytes per IO operation.  Must be a multiple of 512 (O_DIRECT alignment).
 #
-# Every worker writes continuously at full saturation (no rate limiting).
-# IO_SIZE is the sole bandwidth knob: larger writes transfer more bytes per
-# device round-trip, so each worker's throughput scales with IO_SIZE up to
-# the device's per-writer ceiling.
-#
-# Rule of thumb: pick IO_SIZE large enough that each writer is genuinely
-# competing for disk bandwidth rather than just generating command overhead.
-# 65536 (64 KiB) is stressful on most NVMe and SSD devices.  Increase if
-# your device is very fast and you observe lower-than-expected interference.
+# 2 MiB (2097152) matches RocksDB compaction's typical SST write granularity
+# (~684 KB average observed on SATA SSDs).  At this size each iBench write is
+# large enough to sit in the same I/O scheduler batch as compaction writes and
+# compete head-to-head for write bandwidth.  64 KiB was too small — it was
+# merged cheaply by the FTL and barely registered in total device bandwidth.
 #
 # The actual per-worker throughput is reported in the iBench IO summary line
-# at the end of each run — use that to calibrate IO_SIZE for your device.
-IO_SIZE="${IO_SIZE:-65536}"
+# at the end of each run — use that to verify interference is landing.
+IO_SIZE="${IO_SIZE:-2097152}"
 
-# Size of each thread's temp file in MiB.  The file is pre-allocated with
-# posix_fallocate() and IOs wrap at this limit, so disk usage stays
-# bounded regardless of runtime.  Files are placed in the run_dir (same
-# disk as the RocksDB database) so both reads and writes create real IO
-# interference.
+# Size of each thread's temp file in MiB.  Must be large enough to overflow
+# the SSD's internal SLC write-back cache (typically 1–32 GiB on consumer
+# drives, larger on enterprise).  At 4 GiB per file even budget SATA SSDs
+# will exhaust their SLC tier and route IOs to real NAND, ensuring iBench
+# competes on equal footing with compaction.
 #
 # NOTE: Each competitor unit uses TWO files — one for the write thread and
 # one for the read thread — so total on-disk usage per unit is
-# 2 × IO_DATA_SIZE_MB.  With N_WORKERS=4 and IO_DATA_SIZE_MB=512 the
-# sweep writes roughly 4 GiB of temp files to the data disk.
+# 2 × IO_DATA_SIZE_MB.  With N_WORKERS=8 and IO_DATA_SIZE_MB=4096 the
+# sweep requires ~64 GiB of free space on the data disk.
+# Reduce if disk space is tight; keep above 1 GiB to defeat SLC caching.
 #
-# Increase if your storage device is fast enough that 512 MiB wraps
-# too quickly and produces unrealistically cache-warm IO patterns.
-IO_DATA_SIZE_MB="${IO_DATA_SIZE_MB:-512}"
+# Because 4 GiB init writes would take too long if done inside the YCSB
+# window, run_one() uses two-pass mode: read files are initialised before
+# YCSB starts (--init-only), then reused during measurement (--skip-init).
+IO_DATA_SIZE_MB="${IO_DATA_SIZE_MB:-4096}"
 
 # =============================================================================
 # Internals
@@ -335,22 +333,51 @@ run_one() {
     local ycsb_pid=$!
 
     # ── Start n_workers iBench_io competitor units alongside YCSB ────────────
-    # Each unit spawns one write thread + one read thread.  Both use files in
-    # run_dir (same physical disk as the RocksDB database) so they create
-    # genuine IO interference — writes compete with compaction, reads compete
-    # directly with YCSB's cache-missing reads.  Files are pre-allocated and
-    # wrap at IO_DATA_SIZE_MB to keep disk usage bounded.
+    #
+    # Two-pass launch so large read files (IO_DATA_SIZE_MB = 4 GiB default)
+    # are fully initialised before the measurement window begins:
+    #
+    #   Pass 1 (--init-only, before YCSB): write-initialise all read files.
+    #     Runs synchronously; script blocks until init is complete.
+    #     Page cache is then dropped so Pass 2 reads hit real NAND.
+    #
+    #   Pass 2 (--skip-init, concurrent with YCSB): read threads open the
+    #     already-initialised files and issue O_DIRECT random reads immediately.
+    #     Write threads create fresh files.  Both run for RUNTIME_SECS.
+    #
+    # ionice -c 2 -n 0: best-effort class, highest priority within that class.
+    # Ensures iBench IOs are not silently de-prioritised behind RocksDB's
+    # compaction and YCSB threads in the mq-deadline I/O scheduler queue.
     IO_PIDS=()
     if (( n_workers > 0 )); then
-        log "  Starting ${n_workers} iBench_io competitor unit(s)" \
+        # Build ionice prefix if available.
+        local io_prefix=()
+        if command -v ionice >/dev/null 2>&1; then
+            io_prefix=(ionice -c 2 -n 0)
+            log "  ionice -c 2 -n 0 available — iBench will run at best-effort highest priority"
+        else
+            log "  WARNING: ionice not found — iBench runs at default I/O priority"
+        fi
+
+        log "  Pass 1 [init-only]: initialising ${n_workers} read file(s)" \
+            "(${IO_DATA_SIZE_MB} MiB each) in ${run_dir} ..."
+        "${io_prefix[@]}" "$IO_BINARY" \
+            1 "$n_workers" \
+            "$IO_SIZE" \
+            "$run_dir" "$IO_DATA_SIZE_MB" \
+            --init-only
+        log "  Pass 1 complete. Dropping page cache before measurement ..."
+        drop_page_cache
+
+        log "  Pass 2 [skip-init]: starting ${n_workers} iBench_io unit(s)" \
             "(${n_workers} write + ${n_workers} read threads," \
-            "io_size=${IO_SIZE} B, dir=${run_dir}," \
-            "max_file=${IO_DATA_SIZE_MB} MiB/thread [2× per unit]," \
+            "io_size=${IO_SIZE} B, file=${IO_DATA_SIZE_MB} MiB/thread," \
             "duration=${RUNTIME_SECS}s)"
-        "$IO_BINARY" \
+        "${io_prefix[@]}" "$IO_BINARY" \
             "$RUNTIME_SECS" "$n_workers" \
             "$IO_SIZE" \
-            "$run_dir" "$IO_DATA_SIZE_MB" &
+            "$run_dir" "$IO_DATA_SIZE_MB" \
+            --skip-init &
         IO_PIDS=($!)
     fi
 
@@ -380,7 +407,8 @@ run_sweep() {
     log "  Knee threads: $KNEE_THREADS"
     log "  Competitor units: $WORKER_COUNTS  (each = 1 write thread + 1 read thread)"
     log "  Runtime:      ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
-    log "  IO size:      ${IO_SIZE} bytes per op (write and read, saturate)"
+    log "  IO size:      ${IO_SIZE} bytes per op (2 MiB default — matches compaction SST write size)"
+    log "  IO file size: ${IO_DATA_SIZE_MB} MiB/thread (read files two-pass initialised before YCSB)"
 
     local sweep_dir="$OUTPUT_DIR/sweep"
     mkdir -p "$sweep_dir"
@@ -683,7 +711,8 @@ main() {
     log "  Runtime/pt:    ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
     log "  Trials/point:  ${TRIALS_PER_POINT}"
     log "  Device:        $DISK_DEVICE"
-    log "  IO size:       ${IO_SIZE} bytes per op (write+read, saturate, no rate limit)"
+    log "  IO size:       ${IO_SIZE} bytes per op (2 MiB default — matches compaction SST granularity)"
+    log "  IO file size:  ${IO_DATA_SIZE_MB} MiB per thread (2× per unit; two-pass init before YCSB)"
     log "  IO file size:  ${IO_DATA_SIZE_MB} MiB per thread (2× per unit; pre-allocated, wraps at EOF)"
     echo ""
 

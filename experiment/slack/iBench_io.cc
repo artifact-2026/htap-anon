@@ -24,45 +24,51 @@
 /**
  * IO interference micro-benchmark — read+write competitor units.
  *
- * Each competitor unit spawns one write thread and one read thread, both
- * running at full saturation (no rate limiting, no sleeping):
+ * Each competitor unit spawns one write thread and one read thread:
  *
- *   Write thread — sequential O_DIRECT writes to a pre-allocated temp file,
- *                  wrapping circularly.  Competes with RocksDB compaction writes.
+ *   Write thread — sequential O_DIRECT writes advancing through a large
+ *                  pre-allocated file, wrapping at EOF.  2 MiB block size
+ *                  matches RocksDB compaction's SST write granularity, so
+ *                  writes land in the same I/O scheduler batch as compaction
+ *                  and directly compete for write bandwidth.
  *
- *   Read thread  — sequential O_DIRECT reads from a pre-initialized temp file,
- *                  wrapping circularly.  Competes directly with YCSB's
- *                  cache-missing reads — the resource that most directly
- *                  affects YCSB throughput.
+ *   Read thread  — O_DIRECT reads with RANDOM offsets into a large
+ *                  pre-initialised file.  Random access mirrors YCSB's cache-
+ *                  missing point-lookup pattern, defeating the SSD's sequential
+ *                  read-ahead cache.  Each 2 MiB block read is a genuine NAND
+ *                  access that competes directly with YCSB's disk reads.
  *
- * Using both together hits both sides of the device simultaneously.  N units
- * produce monotonically increasing total device load: each additional unit
- * adds roughly one write stream + one read stream, regardless of the baseline
- * read/write mix already in flight from RocksDB and YCSB.
+ * File sizes are large (default 4 GiB per thread) to overflow the SSD's
+ * internal SLC write-back cache, ensuring every I/O reaches real NAND rather
+ * than being absorbed by the drive's fast tier.
  *
- * io_size is the single bandwidth knob: more bytes per round-trip → more
- * bandwidth per thread, up to the device's per-thread QD=1 ceiling.
+ * Two-pass mode (recommended for large files):
+ *   Pass 1  --init-only    Only initialise read files (buffered writes, not
+ *                          timed).  Write files are not created yet.  Run this
+ *                          before YCSB starts and then drop page cache.
+ *   Pass 2  --skip-init    Start with YCSB running.  Read threads open the
+ *                          already-initialised files from Pass 1 and start
+ *                          random-read immediately.  Write threads create fresh
+ *                          files.  Both run for the full RUNTIME_SECS window.
+ *
+ *   File naming is PID-free in two-pass mode so both passes use the same paths:
+ *     <dir>/iBench_io_r_<N>.tmp  (N = thread index, 0-based)
+ *     <dir>/iBench_io_w_<N>.tmp
+ *
+ * Normal (single-pass) mode:
+ *   PID is embedded in filenames to allow concurrent invocations.  Read files
+ *   are initialised at thread startup (may overlap with YCSB warm-up).
  *
  * Usage:
- *   ./io <duration_s> [n_workers] [io_size] [dir] [max_mb]
+ *   ./io <duration_s> [n_workers] [io_size] [dir] [max_mb] [--init-only] [--skip-init]
  *
  * Parameters:
- *   duration_s  run time in seconds
- *   n_workers   competitor units; spawns n_workers write + n_workers read
- *               threads (default: 1; total OS threads = 2 × n_workers)
- *   io_size     bytes per read or write op; must be a multiple of 512 for
- *               O_DIRECT alignment (default: 65536 = 64 KiB)
- *   dir         directory for temp files — MUST be on the same physical disk
- *               as the RocksDB database (default: /tmp, often tmpfs; override!)
- *   max_mb      file size per thread in MiB; pre-allocated and wrapped
- *               circularly to keep disk usage bounded (default: 512)
- *
- * Read-file initialisation:
- *   Before entering the timed read loop, each read thread writes the entire
- *   file sequentially (buffered, not counted in stats).  This commits the
- *   extents to disk so that O_DIRECT reads do not trigger on-demand kernel
- *   zero-fill writes during the benchmark, which would add spurious write
- *   traffic to the monitored device.
+ *   duration_s  run time in seconds (ignored for --init-only; init runs to completion)
+ *   n_workers   competitor units; spawns n_workers write + n_workers read threads
+ *               (--init-only only launches read threads)
+ *   io_size     bytes per read or write op; multiple of 512 for O_DIRECT (default: 2 MiB)
+ *   dir         directory for temp files — MUST be on the same physical disk as RocksDB
+ *   max_mb      file size per thread in MiB (default: 4096 = 4 GiB)
  *
  * Compile:
  *   g++ -O2 -pthread -o io iBench_io.cc
@@ -84,8 +90,8 @@
 #include <errno.h>
 
 #define NS_PER_S        (1000000000L)
-#define DEFAULT_IO_SIZE (65536)          /* 64 KiB */
-#define DEFAULT_MAX_MB  (512)
+#define DEFAULT_IO_SIZE (2 * 1024 * 1024)   /* 2 MiB — matches compaction SST write size */
+#define DEFAULT_MAX_MB  (4096)               /* 4 GiB — overflows typical SSD SLC cache    */
 #define DEFAULT_DIR     "/tmp"
 
 /* ── Timing ───────────────────────────────────────────────────────────── */
@@ -100,13 +106,16 @@ static inline uint64_t getNs(void) {
 
 typedef struct {
     int      tid;
-    int      is_writer;       /* 1 = write thread, 0 = read thread         */
+    int      is_writer;     /* 1 = write thread, 0 = read thread              */
+    int      skip_init;     /* read thread: skip Phase 1 file initialisation   */
+    int      init_only;     /* read thread: do Phase 1 only, skip timed loop   */
+    int      keep_file;     /* do not unlink file after thread exits            */
     uint64_t endNs;
-    uint32_t io_size;         /* bytes per op; multiple of 512              */
-    uint64_t file_size;       /* pre-allocated size; multiple of io_size    */
+    uint32_t io_size;       /* bytes per op; multiple of 512                   */
+    uint64_t file_size;     /* pre-allocated size; multiple of io_size          */
     char     path[1024];
-    uint64_t count;           /* ops completed in the timed window          */
-    uint64_t bytes_xfered;    /* bytes transferred in the timed window      */
+    uint64_t count;         /* ops completed in the timed window                */
+    uint64_t bytes_xfered;  /* bytes transferred in the timed window            */
 } WorkerArgs;
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -123,7 +132,7 @@ static int open_direct(const char *path, int base_flags, int *out_direct) {
     return -1;  /* genuine error */
 }
 
-/* Allocate a buffer aligned to the next power-of-2 ≥ io_size (required by
+/* Allocate a buffer aligned to the next power-of-2 >= io_size (required by
  * O_DIRECT for both address and transfer-length alignment).               */
 static void *alloc_aligned(uint32_t io_size, unsigned char fill) {
     size_t alignment = 4096;
@@ -158,7 +167,9 @@ static void *write_worker(void *arg) {
     void *buf = alloc_aligned(a->io_size, 0xAB ^ (unsigned char)a->tid);
     if (!buf) {
         fprintf(stderr, "[write %d] ERROR: posix_memalign failed\n", a->tid);
-        close(fd); unlink(a->path); return NULL;
+        close(fd);
+        if (!a->keep_file) unlink(a->path);
+        return NULL;
     }
 
     uint64_t count = 0, bytes = 0, pos = 0;
@@ -186,7 +197,9 @@ static void *write_worker(void *arg) {
         }
     }
 
-    close(fd); unlink(a->path); free(buf);
+    close(fd);
+    if (!a->keep_file) unlink(a->path);
+    free(buf);
     a->count = count; a->bytes_xfered = bytes;
     return NULL;
 }
@@ -199,11 +212,13 @@ static void *read_worker(void *arg) {
     /* ── Phase 1: write-initialise the file (buffered, not timed) ────────
      *
      * O_DIRECT reads from a posix_fallocate'd-but-never-written file may
-     * trigger on-demand kernel zero-fill writes to initialise the extents.
-     * Those spurious writes appear in the device's write counters and would
-     * pollute the disk_write metric in the system CSV.  A one-time buffered
-     * sequential write commits the extents cleanly before the timed loop.  */
-    {
+     * trigger on-demand kernel zero-fill writes, polluting the write metrics.
+     * A one-time buffered sequential write commits extents cleanly.
+     *
+     * In two-pass mode (--init-only), this is the entire job: write the file
+     * and return.  The file is left on disk for Pass 2 (--skip-init).
+     * In --skip-init mode this phase is skipped entirely.                   */
+    if (!a->skip_init) {
         int fd_init = open(a->path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
         if (fd_init < 0) {
             fprintf(stderr, "[read %d] ERROR: init open(%s): %s\n",
@@ -213,7 +228,9 @@ static void *read_worker(void *arg) {
         void *ibuf = malloc(a->io_size);
         if (!ibuf) {
             fprintf(stderr, "[read %d] ERROR: malloc for init failed\n", a->tid);
-            close(fd_init); unlink(a->path); return NULL;
+            close(fd_init);
+            if (!a->keep_file) unlink(a->path);
+            return NULL;
         }
         memset(ibuf, 0xCD ^ (unsigned char)a->tid, a->io_size);
 
@@ -229,18 +246,31 @@ static void *read_worker(void *arg) {
             }
             written += (uint64_t)n;
         }
-        fsync(fd_init);   /* ensure data is on disk before O_DIRECT reads */
+        fsync(fd_init);
         close(fd_init);
         free(ibuf);
+
+        if (a->init_only) {
+            /* Two-pass mode Pass 1: file is initialised and kept on disk.
+             * Do not proceed to the read loop.                             */
+            a->count = 0; a->bytes_xfered = 0;
+            return NULL;
+        }
     }
 
-    /* ── Phase 2: O_DIRECT read loop (timed) ─────────────────────────── */
+    /* ── Phase 2: O_DIRECT random-read loop (timed) ──────────────────────
+     *
+     * Uses random block offsets (pread) rather than sequential reads.
+     * This mirrors YCSB's random point-lookup pattern — every read lands on
+     * a different LBA, defeating the SSD's sequential read-ahead cache and
+     * ensuring genuine competition for read bandwidth with YCSB.           */
     int use_direct;
     int fd = open_direct(a->path, O_RDONLY, &use_direct);
     if (fd < 0) {
         fprintf(stderr, "[read %d] ERROR: open(%s) for reading: %s\n",
                 a->tid, a->path, strerror(errno));
-        unlink(a->path); return NULL;
+        if (!a->keep_file) unlink(a->path);
+        return NULL;
     }
     if (!use_direct)
         fprintf(stderr, "[read %d] WARNING: O_DIRECT not supported; "
@@ -249,33 +279,35 @@ static void *read_worker(void *arg) {
     void *buf = alloc_aligned(a->io_size, 0x00);
     if (!buf) {
         fprintf(stderr, "[read %d] ERROR: posix_memalign failed\n", a->tid);
-        close(fd); unlink(a->path); return NULL;
+        close(fd);
+        if (!a->keep_file) unlink(a->path);
+        return NULL;
     }
 
-    uint64_t count = 0, bytes = 0, pos = 0;
+    /* Number of full blocks in the file; each pread targets a random one. */
+    uint64_t n_blocks = a->file_size / a->io_size;
+    if (n_blocks == 0) n_blocks = 1;
+
+    /* Per-thread seed so different threads access different block streams. */
+    unsigned int seed = (unsigned int)a->tid * 2654435761U;
+
+    uint64_t count = 0, bytes = 0;
     while (getNs() < a->endNs) {
-        if (pos + a->io_size > a->file_size) {
-            if (lseek(fd, 0, SEEK_SET) < 0) {
-                fprintf(stderr, "[read %d] ERROR: lseek: %s\n",
-                        a->tid, strerror(errno));
-                break;
-            }
-            pos = 0;
-        }
-        ssize_t n = read(fd, buf, a->io_size);
+        uint64_t block = (uint64_t)rand_r(&seed) % n_blocks;
+        off_t off = (off_t)(block * (uint64_t)a->io_size);
+        ssize_t n = pread(fd, buf, a->io_size, off);
         if (n < 0) {
             if (errno == EINTR) continue;
-            fprintf(stderr, "[read %d] ERROR: read: %s\n",
-                    a->tid, strerror(errno));
+            fprintf(stderr, "[read %d] ERROR: pread at offset %ld: %s\n",
+                    a->tid, (long)off, strerror(errno));
             break;
         }
-        if (n == 0) {   /* unexpected EOF — wrap */
-            lseek(fd, 0, SEEK_SET); pos = 0; continue;
-        }
-        pos += (uint64_t)n; bytes += (uint64_t)n; count++;
+        bytes += (uint64_t)n; count++;
     }
 
-    close(fd); unlink(a->path); free(buf);
+    close(fd);
+    if (!a->keep_file) unlink(a->path);
+    free(buf);
     a->count = count; a->bytes_xfered = bytes;
     return NULL;
 }
@@ -292,14 +324,16 @@ static void *worker(void *arg) {
 int main(int argc, const char **argv) {
     if (argc < 2) {
         fprintf(stderr,
-            "Usage: ./io <duration_s> [n_workers] [io_size] [dir] [max_mb]\n"
+            "Usage: ./io <duration_s> [n_workers] [io_size] [dir] [max_mb]"
+            " [--init-only] [--skip-init]\n"
             "\n"
-            "  duration_s  run time in seconds\n"
-            "  n_workers   competitor units; each spawns 1 write + 1 read thread\n"
-            "              (default: 1; total OS threads = 2 × n_workers)\n"
-            "  io_size     bytes per op, multiple of 512 (default: 65536 = 64 KiB)\n"
-            "  dir         temp file directory; use the RocksDB data disk (default: /tmp)\n"
-            "  max_mb      file size per thread in MiB (default: 512)\n");
+            "  duration_s   run time in seconds (init-only: ignored; runs to completion)\n"
+            "  n_workers    competitor units; 1 write + 1 read thread each (default: 1)\n"
+            "  io_size      bytes per op, multiple of 512 (default: 2097152 = 2 MiB)\n"
+            "  dir          temp file directory; use the RocksDB data disk (default: /tmp)\n"
+            "  max_mb       file size per thread in MiB (default: 4096 = 4 GiB)\n"
+            "  --init-only  initialise read files only, then exit (two-pass Pass 1)\n"
+            "  --skip-init  skip read-file initialisation (two-pass Pass 2)\n");
         return 1;
     }
 
@@ -308,6 +342,20 @@ int main(int argc, const char **argv) {
     uint32_t    io_size     = (argc >= 4) ? (uint32_t)atoi(argv[3]) : DEFAULT_IO_SIZE;
     const char *data_dir    = (argc >= 5) ? argv[4] : DEFAULT_DIR;
     uint64_t    max_mb      = (argc >= 6) ? (uint64_t)atoll(argv[5]) : DEFAULT_MAX_MB;
+
+    /* Parse optional mode flags (may appear anywhere after positional args). */
+    int init_only = 0, skip_init = 0;
+    for (int ai = 6; ai < argc; ai++) {
+        if (strcmp(argv[ai], "--init-only") == 0) init_only = 1;
+        else if (strcmp(argv[ai], "--skip-init") == 0) skip_init = 1;
+        else {
+            fprintf(stderr, "WARNING: unknown flag '%s' ignored\n", argv[ai]);
+        }
+    }
+    if (init_only && skip_init) {
+        fprintf(stderr, "ERROR: --init-only and --skip-init are mutually exclusive\n");
+        return 1;
+    }
 
     if (durationSec <= 0 || n_workers == 0 || io_size == 0) {
         fprintf(stderr, "ERROR: duration, n_workers, and io_size must be > 0\n");
@@ -324,19 +372,38 @@ int main(int argc, const char **argv) {
         return 1;
     }
 
-    /* Round file_size down to a multiple of io_size so circular wrapping is
-     * exact and we never issue a short read/write at the end of the file.   */
+    /* Round file_size down to a multiple of io_size so n_blocks is exact.  */
     uint64_t file_size = (max_mb * 1024ULL * 1024ULL / io_size) * io_size;
     if (file_size == 0) file_size = io_size;
 
-    uint64_t endNs      = getNs() + (uint64_t)durationSec * NS_PER_S;
-    uint32_t numThreads = n_workers * 2;   /* n_workers write + n_workers read */
+    /* In two-pass mode, filenames omit PID so both passes use the same paths.
+     * In normal mode, embed PID so concurrent invocations don't collide.   */
+    int two_pass = (init_only || skip_init);
+    pid_t pid    = getpid();
 
-    printf("iBench IO: %u competitor unit(s) x %ds"
-           ", io_size=%u B, dir=%s, max_file=%lu MiB, saturate\n"
-           "           %u write thread(s) + %u read thread(s)\n",
-           n_workers, durationSec, io_size, data_dir, (unsigned long)max_mb,
-           n_workers, n_workers);
+    uint64_t endNs = getNs() + (uint64_t)durationSec * NS_PER_S;
+
+    /* In --init-only mode we only launch read threads (they do Phase 1).
+     * Write threads are not needed and would just waste time.              */
+    uint32_t numThreads = init_only ? n_workers : n_workers * 2;
+
+    if (init_only) {
+        printf("iBench IO [init-only]: initialising %u read file(s)"
+               ", io_size=%u B, dir=%s, file_size=%lu MiB each\n",
+               n_workers, io_size, data_dir, (unsigned long)max_mb);
+    } else if (skip_init) {
+        printf("iBench IO [skip-init]: %u unit(s) x %ds"
+               ", io_size=%u B, dir=%s, file_size=%lu MiB/thread\n"
+               "           %u write thread(s) + %u read thread(s) (random access)\n",
+               n_workers, durationSec, io_size, data_dir, (unsigned long)max_mb,
+               n_workers, n_workers);
+    } else {
+        printf("iBench IO: %u competitor unit(s) x %ds"
+               ", io_size=%u B, dir=%s, file_size=%lu MiB/thread\n"
+               "           %u write thread(s) + %u read thread(s) (random access)\n",
+               n_workers, durationSec, io_size, data_dir, (unsigned long)max_mb,
+               n_workers, n_workers);
+    }
 
     WorkerArgs *args    = (WorkerArgs *)calloc(numThreads, sizeof(WorkerArgs));
     pthread_t  *threads = (pthread_t  *)calloc(numThreads, sizeof(pthread_t));
@@ -345,25 +412,59 @@ int main(int argc, const char **argv) {
         return 1;
     }
 
-    /* Thread layout: slots [0, n_workers) = write, [n_workers, 2×n_workers) = read.
-     * Include PID in paths so concurrent invocations don't collide.              */
-    pid_t pid = getpid();
-    for (uint32_t i = 0; i < numThreads; i++) {
-        int is_writer       = (i < n_workers);
-        args[i].tid         = (int)i;
-        args[i].is_writer   = is_writer;
-        args[i].endNs       = endNs;
-        args[i].io_size     = io_size;
-        args[i].file_size   = file_size;
-        args[i].count       = 0;
-        args[i].bytes_xfered = 0;
-        snprintf(args[i].path, sizeof(args[i].path),
-                 "%s/iBench_io_%s_%d_%u.tmp",
-                 data_dir, is_writer ? "w" : "r", (int)pid, i);
+    if (init_only) {
+        /* Only read threads, indexed 0..n_workers-1.
+         * keep_file=1: leave files on disk for Pass 2.                     */
+        for (uint32_t j = 0; j < n_workers; j++) {
+            args[j].tid        = (int)j;
+            args[j].is_writer  = 0;
+            args[j].skip_init  = 0;
+            args[j].init_only  = 1;
+            args[j].keep_file  = 1;  /* persist for Pass 2 */
+            args[j].endNs      = endNs;
+            args[j].io_size    = io_size;
+            args[j].file_size  = file_size;
+            args[j].count      = 0;
+            args[j].bytes_xfered = 0;
+            snprintf(args[j].path, sizeof(args[j].path),
+                     "%s/iBench_io_r_%u.tmp", data_dir, j);
 
-        if (pthread_create(&threads[i], NULL, worker, &args[i]) != 0) {
-            fprintf(stderr, "ERROR: pthread_create failed for thread %u\n", i);
-            return 1;
+            if (pthread_create(&threads[j], NULL, worker, &args[j]) != 0) {
+                fprintf(stderr, "ERROR: pthread_create failed for thread %u\n", j);
+                return 1;
+            }
+        }
+    } else {
+        /* Normal or skip-init mode: write threads [0..n_workers), read threads [n_workers..2n). */
+        for (uint32_t i = 0; i < numThreads; i++) {
+            int is_writer = (i < n_workers);
+            uint32_t j    = is_writer ? i : (i - n_workers);  /* per-type index */
+
+            args[i].tid        = (int)i;
+            args[i].is_writer  = is_writer;
+            args[i].skip_init  = (!is_writer && skip_init) ? 1 : 0;
+            args[i].init_only  = 0;
+            args[i].keep_file  = 0;  /* unlink on exit */
+            args[i].endNs      = endNs;
+            args[i].io_size    = io_size;
+            args[i].file_size  = file_size;
+            args[i].count      = 0;
+            args[i].bytes_xfered = 0;
+
+            if (two_pass) {
+                snprintf(args[i].path, sizeof(args[i].path),
+                         "%s/iBench_io_%s_%u.tmp",
+                         data_dir, is_writer ? "w" : "r", j);
+            } else {
+                snprintf(args[i].path, sizeof(args[i].path),
+                         "%s/iBench_io_%s_%d_%u.tmp",
+                         data_dir, is_writer ? "w" : "r", (int)pid, j);
+            }
+
+            if (pthread_create(&threads[i], NULL, worker, &args[i]) != 0) {
+                fprintf(stderr, "ERROR: pthread_create failed for thread %u\n", i);
+                return 1;
+            }
         }
     }
 
@@ -387,13 +488,18 @@ int main(int argc, const char **argv) {
     double write_mb = (double)write_bytes / (1024.0 * 1024.0);
     double read_mb  = (double)read_bytes  / (1024.0 * 1024.0);
 
-    printf("iBench IO: done\n");
-    printf("  write: ops=%lu, %.1f MB, %.1f MB/s\n",
-           (unsigned long)write_ops, write_mb, write_mb / dur);
-    printf("  read:  ops=%lu, %.1f MB, %.1f MB/s\n",
-           (unsigned long)read_ops,  read_mb,  read_mb  / dur);
-    printf("  total: %.1f MB/s  (write %.1f + read %.1f)\n",
-           (write_mb + read_mb) / dur, write_mb / dur, read_mb / dur);
+    if (init_only) {
+        printf("iBench IO [init-only]: done — %u file(s) written to %s\n",
+               n_workers, data_dir);
+    } else {
+        printf("iBench IO: done\n");
+        printf("  write: ops=%lu, %.1f MB, %.1f MB/s\n",
+               (unsigned long)write_ops, write_mb, write_mb / dur);
+        printf("  read:  ops=%lu, %.1f MB, %.1f MB/s\n",
+               (unsigned long)read_ops,  read_mb,  read_mb  / dur);
+        printf("  total: %.1f MB/s  (write %.1f + read %.1f)\n",
+               (write_mb + read_mb) / dur, write_mb / dur, read_mb / dur);
+    }
 
     free(args);
     free(threads);
