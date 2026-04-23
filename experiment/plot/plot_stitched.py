@@ -74,8 +74,9 @@ class _HandlerKnee(HandlerBase):
     def create_artists(self, legend, orig_handle,
                        xdescent, ydescent, width, height, fontsize, trans):
         x    = xdescent + width / 2
-        y0   = ydescent
-        y1   = ydescent + height
+        # Shift the symbol downward so it sits in the lower-centre of the legend row.
+        y0   = ydescent - height * 0.10
+        y1   = ydescent + height * 0.40
         col  = orig_handle.get_color()
         lw   = orig_handle.get_linewidth()
         alp  = 0.70
@@ -138,16 +139,17 @@ def _phase(ax, xs, mean, std, color, fmt='o-', lw=2, ms=6,
         _band(ax, xs, lo, hi, color, alpha=minmax_alpha)
 
 def _divider_hashed(ax, x):
-    """Red knee-divider line with small hash marks."""
+    """Red knee-divider line with hash marks across full height."""
     ax.axvline(x, color=C_KNEE, linestyle='-', linewidth=1.8,
                alpha=0.70, zorder=5)
     yl = ax.get_ylim()
-    y_mid   = (yl[0] + yl[1]) / 2
     y_range = yl[1] - yl[0]
-    hash_spacing = y_range * 0.08
-    n_hashes = 5
+    # Spread hash marks across the full height of the plot (doubled density)
+    hash_spacing = y_range * 0.06
+    y_start = yl[0] + y_range * 0.05
+    n_hashes = 14
     for i in range(n_hashes):
-        y = y_mid - (n_hashes // 2 - i) * hash_spacing
+        y = y_start + i * hash_spacing
         if yl[0] <= y <= yl[1]:
             ax.plot([x - 0.15, x + 0.15], [y, y],
                     color=C_KNEE, linewidth=1.2, alpha=0.70, zorder=5)
@@ -190,13 +192,13 @@ def build_xaxis(sat, slack, knee):
     # Build label dict.
     labels = {}
     for i in range(knee_idx + 1):
-        labels[i] = f'{sat_threads[i]}T'
+        labels[i] = f'{sat_threads[i]}Y'
     for j, w in enumerate(slack_workers):
-        labels[slack_xs[j]] = f'+{w}W'
+        labels[slack_xs[j]] = f'+{w}S'
     max_slack_x = slack_xs[-1] if slack_xs else knee_idx
     for i in range(knee_idx + 1, n_sat):
         if float(i) > max_slack_x:
-            labels[float(i)] = f'({sat_threads[i]}T)'
+            labels[float(i)] = f'({sat_threads[i]}Y)'
 
     tick_xs     = sorted(labels.keys())
     tick_labels = [labels[x] for x in tick_xs]
@@ -313,7 +315,7 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
 
     if show_xticks:
         sat_threads = sat['threads'].tolist()
-        sat_labels  = {i: f'{sat_threads[i]}T' for i in range(len(sat_threads))}
+        sat_labels  = {i: f'{sat_threads[i]}Y' for i in range(len(sat_threads))}
         sat_tick_xs = sorted(sat_labels.keys())
         _set_xticks(ax, sat_tick_xs, [sat_labels[x] for x in sat_tick_xs])
     else:
@@ -329,6 +331,16 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     ax  = ax_io
     ax_r = ax_io_r
 
+    # ── normalization offsets for col 1 slack phase ──────────────────────────
+    # Shift each slack metric so its w0 baseline aligns with the sat knee value,
+    # making the two phases visually continuous. std is a spread — not shifted.
+    _w0_qps_io  = float(_aug_io('xput_mean')[0])
+    _w0_disk_io = float(_aug_io('disk_bw_avg')[0])
+    _sk_qps     = float(_seg(sat, 'xput_mean')[knee_idx])
+    _sk_disk    = float(_seg(sat, 'disk_bw_avg')[knee_idx])
+    qps_off_io  = (_sk_qps  - _w0_qps_io)         if (np.isfinite(_sk_qps)  and np.isfinite(_w0_qps_io))  else 0.0
+    disk_off    = (_sk_disk - _w0_disk_io) * 100.0 if (np.isfinite(_sk_disk) and np.isfinite(_w0_disk_io)) else 0.0
+
     # Pre-knee QPS from the saturation CSV (same color, connects at knee_idx).
     _phase(ax, pre_xs,
            _seg(sat, 'xput_mean', slice(0, pre_end)),
@@ -338,23 +350,23 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     # Connector: line-only bridge from last sat point to first slack point.
     if len(io_xs_aug) > 1:
         ax.plot([pre_xs[-1], io_xs_aug[1]],
-                [_seg(sat, 'xput_mean')[knee_idx], _aug_io('xput_mean')[1]],
+                [_seg(sat, 'xput_mean')[knee_idx],
+                 _aug_io('xput_mean')[1] + qps_off_io],
                 '-', color=C_QPS, lw=lw, zorder=2)
 
-    # Post-knee QPS from the IO CSV — skip the [0] knee anchor to avoid a
-    # duplicate marker on top of the saturation curve's last point.
+    # Post-knee QPS (normalized): add offset to mean/min/max, leave std alone.
     _phase(ax, io_xs_aug[1:],
-           _aug_io('xput_mean')[1:],
+           _aug_io('xput_mean')[1:] + qps_off_io,
            _aug_io('xput_std', zero=True)[1:],
            C_QPS, fmt='D-', lw=lw, ms=ms,
-           lo=_aug_io('xput_min')[1:],
-           hi=_aug_io('xput_max')[1:])
+           lo=_aug_io('xput_min')[1:] + qps_off_io,
+           hi=_aug_io('xput_max')[1:] + qps_off_io)
 
     ax.set_ylim(bottom=0)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt_kps))
     ax.set_ylabel('QPS', fontsize=fsz, color='black', labelpad=4)
 
-    # Right axis: Disk BW % — sat pre-knee from sat CSV, then slack phase from io CSV.
+    # Right axis: Disk BW % — sat pre-knee from sat CSV, then normalized slack.
     _phase(ax_r, pre_xs,
            _pct(_seg(sat, 'disk_bw_avg',    slice(0, pre_end))),
            _pct(_seg0(sat, 'disk_bw_stddev', slice(0, pre_end))),
@@ -362,10 +374,10 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     if len(io_xs_aug) > 1:
         ax_r.plot([pre_xs[-1], io_xs_aug[1]],
                   [_pct(_seg(sat, 'disk_bw_avg'))[knee_idx],
-                   _pct(_aug_io('disk_bw_avg'))[1]],
+                   _pct(_aug_io('disk_bw_avg'))[1] + disk_off],
                   '-', color=C_DISK, lw=lw, zorder=2)
     _phase(ax_r, io_xs_aug[1:],
-           _pct(_aug_io('disk_bw_avg'))[1:],
+           _pct(_aug_io('disk_bw_avg'))[1:]          + disk_off,
            _pct(_aug_io('disk_bw_stddev', zero=True))[1:],
            C_DISK, fmt='x-', lw=lw, ms=ms)
 
@@ -378,9 +390,9 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     # X-axis ticks: full range (pre-knee T labels + post-knee W labels).
     if show_xticks:
         sat_threads = sat['threads'].tolist()
-        io_labels = {i: f'{sat_threads[i]}T' for i in range(pre_end)}
+        io_labels = {i: f'{sat_threads[i]}Y' for i in range(pre_end)}
         for j, w in enumerate(io_df_sweep['workers'].tolist()):
-            io_labels[io_xs_aug[j + 1]] = f'+{w}W'
+            io_labels[io_xs_aug[j + 1]] = f'+{int(w)}S'
         io_tick_xs = sorted(io_labels.keys())
         _set_xticks(ax, io_tick_xs, [io_labels[x] for x in io_tick_xs])
     else:
@@ -399,6 +411,14 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     ax  = ax_cpu
     ax_r = ax_cpu_r
 
+    # ── normalization offsets for col 2 slack phase ──────────────────────────
+    _w0_qps_slk = float(_aug_slack('xput_mean')[0])
+    _w0_cpu_slk = float(_aug_slack('cpu_compute_mean')[0])
+    _sk_qps2    = float(_seg(sat, 'xput_mean')[knee_idx])
+    _sk_cpu     = float(_seg(sat, 'cpu_compute_mean')[knee_idx])
+    qps_off_slk = (_sk_qps2 - _w0_qps_slk) if (np.isfinite(_sk_qps2) and np.isfinite(_w0_qps_slk)) else 0.0
+    cpu_off     = (_sk_cpu  - _w0_cpu_slk)  if (np.isfinite(_sk_cpu)  and np.isfinite(_w0_cpu_slk))  else 0.0
+
     # Pre-knee QPS from the saturation CSV.
     _phase(ax, pre_xs,
            _seg(sat, 'xput_mean', slice(0, pre_end)),
@@ -408,22 +428,23 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     # Connector: line-only bridge from last sat point to first slack point.
     if len(slack_xs_aug) > 1:
         ax.plot([pre_xs[-1], slack_xs_aug[1]],
-                [_seg(sat, 'xput_mean')[knee_idx], _aug_slack('xput_mean')[1]],
+                [_seg(sat, 'xput_mean')[knee_idx],
+                 _aug_slack('xput_mean')[1] + qps_off_slk],
                 '-', color=C_QPS, lw=lw, zorder=2)
 
-    # Post-knee QPS from the CPU-slack CSV — skip the [0] knee anchor.
+    # Post-knee QPS (normalized).
     _phase(ax, slack_xs_aug[1:],
-           _aug_slack('xput_mean')[1:],
+           _aug_slack('xput_mean')[1:] + qps_off_slk,
            _aug_slack('xput_std', zero=True)[1:],
            C_QPS, fmt='D-', lw=lw, ms=ms,
-           lo=_aug_slack('xput_min')[1:],
-           hi=_aug_slack('xput_max')[1:])
+           lo=_aug_slack('xput_min')[1:] + qps_off_slk,
+           hi=_aug_slack('xput_max')[1:] + qps_off_slk)
 
     ax.set_ylim(bottom=0)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt_kps))
     ax.set_ylabel('QPS', fontsize=fsz, color='black', labelpad=4)
 
-    # Right axis: CPU compute % — sat pre-knee from sat CSV, then slack phase.
+    # Right axis: CPU compute % — sat pre-knee from sat CSV, then normalized slack.
     _phase(ax_r, pre_xs,
            _seg(sat, 'cpu_compute_mean',    slice(0, pre_end)),
            _seg0(sat, 'cpu_compute_std',     slice(0, pre_end)),
@@ -431,10 +452,10 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     if len(slack_xs_aug) > 1:
         ax_r.plot([pre_xs[-1], slack_xs_aug[1]],
                   [_seg(sat, 'cpu_compute_mean')[knee_idx],
-                   _aug_slack('cpu_compute_mean')[1]],
+                   _aug_slack('cpu_compute_mean')[1] + cpu_off],
                   '-', color=C_CPU, lw=lw, zorder=2)
     _phase(ax_r, slack_xs_aug[1:],
-           _aug_slack('cpu_compute_mean')[1:],
+           _aug_slack('cpu_compute_mean')[1:] + cpu_off,
            _aug_slack('cpu_compute_std', zero=True)[1:],
            C_CPU, fmt='^-', lw=lw, ms=ms)
 
@@ -447,9 +468,9 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     # X-axis ticks: full range (pre-knee T labels + post-knee W labels).
     if show_xticks:
         sat_threads = sat['threads'].tolist()
-        cpu_labels = {i: f'{sat_threads[i]}T' for i in range(pre_end)}
+        cpu_labels = {i: f'{sat_threads[i]}Y' for i in range(pre_end)}
         for j, w in enumerate(slack_df_sweep['workers'].tolist()):
-            cpu_labels[slack_xs_aug[j + 1]] = f'+{w}W'
+            cpu_labels[slack_xs_aug[j + 1]] = f'+{int(w)}S'
         cpu_tick_xs = sorted(cpu_labels.keys())
         _set_xticks(ax, cpu_tick_xs, [cpu_labels[x] for x in cpu_tick_xs])
     else:
@@ -543,7 +564,7 @@ def main():
         machines.append(dict(sat=sat, io=io_df, slack=slack, knee=knee,
                              label=labels[i], mc=mc))
         print(f'[{labels[i]}]  sat={len(sat)} pts, io={len(io_df)} pts, '
-              f'slack={len(slack)} pts, knee={knee}T')
+              f'slack={len(slack)} pts, knee={knee}Y')
 
     # ── Figure layout: N rows × 3 cols ───────────────────────────────────────
     fsz = args.font_size
@@ -622,7 +643,7 @@ def main():
     knee_handle = Line2D([0],[0], color=C_KNEE, lw=1.8, ls='-',
                          label='Knee (sat→slack)')
     legend_handles = [
-        Line2D([0],[0], color='none', label='T = YCSB threads   W = SOI threads'),
+        Line2D([0],[0], color='none', label='Y = YCSB threads   S = SOI threads'),
         Line2D([0],[0], color=C_QPS,  lw=2, marker='D', ms=5, ls='-',
                label='Throughput (QPS)'),
         Line2D([0],[0], color=C_DISK, lw=2, marker='x', ms=5, ls='-',
