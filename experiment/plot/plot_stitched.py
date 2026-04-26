@@ -321,7 +321,7 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     else:
         ax.set_xticks(sat_xs)
         ax.set_xlim(sat_xs[0] - 0.7, sat_xs[-1] + 0.7)
-        plt.setp(ax.get_xticklabels(), visible=False)
+        ax.tick_params(axis='x', labelbottom=False)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # COLUMN 1: SLACK PHASE — I/O bandwidth
@@ -399,7 +399,7 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
         combined_io_xs = list(range(pre_end)) + list(io_xs_aug[1:])
         ax.set_xticks(combined_io_xs)
         ax.set_xlim(0 - 0.7, (io_xs_aug[-1] if io_xs_aug else knee_idx) + 0.7)
-        plt.setp(ax.get_xticklabels(), visible=False)
+        ax.tick_params(axis='x', labelbottom=False)
 
     _divider_hashed(ax, knee_idx)
 
@@ -459,9 +459,9 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
            _aug_slack('cpu_compute_std', zero=True)[1:],
            C_CPU, fmt='^-', lw=lw, ms=ms)
 
-    ax_r.set_ylim(0, 105)
+    ax_r.set_ylim(0, 110)   # match col 1 so the 100 % axhline sits at the same height
     ax_r.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.4)
-    ax_r.set_ylabel('Resource Utilization %', fontsize=fsz, color=C_CPU, labelpad=4)
+    ax_r.set_ylabel('Resource Utilization %', fontsize=fsz+2, color=C_CPU, labelpad=5)
     ax_r.tick_params(axis='y', colors=C_CPU, labelsize=fsz - 1)
     ax_r.spines['right'].set_color(C_CPU)
 
@@ -477,7 +477,7 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
         combined_cpu_xs = list(range(pre_end)) + list(slack_xs_aug[1:])
         ax.set_xticks(combined_cpu_xs)
         ax.set_xlim(0 - 0.7, (slack_xs_aug[-1] if slack_xs_aug else knee_idx) + 0.7)
-        plt.setp(ax.get_xticklabels(), visible=False)
+        ax.tick_params(axis='x', labelbottom=False)
 
     _divider_hashed(ax, knee_idx)
 
@@ -583,7 +583,7 @@ def main():
         'legend.fontsize'   : fsz,
     })
 
-    COL_TITLES = ['Saturation phase', 'Slack phase: I/O bandwidth', 'Slack phase: CPU']
+    COL_TITLES = ['Saturation phase', 'Pre-knee Saturation + I/O Slack Sweep', 'Pre-knee Saturation + CPU Slack Sweep']
 
     fig_h = args.row_height * n + (1.0 if args.title else 0.5)
     fig   = plt.figure(figsize=(args.width, fig_h))
@@ -591,11 +591,34 @@ def main():
     if args.title:
         fig.suptitle(args.title, fontsize=fsz + 3, fontweight='bold', y=0.995)
 
+    # ── Column width ratios: proportional to each panel's x-tick count ──────
+    # For each machine compute the tick counts per column, then take the max
+    # across all machines so every row gets consistent proportions.
+    col_ticks = [0, 0, 0]
+    for m in machines:
+        _, _, ki, sat_xs, slack_xs = build_xaxis(m['sat'], m['slack'], m['knee'])
+        pre_end = ki + 1
+        n0 = len(sat_xs)                                         # col 0: all sat ticks
+        n1 = pre_end + len(m['io'][m['io']['workers'] > 0])     # col 1: pre-knee + io workers
+        n2 = pre_end + len(slack_xs)                             # col 2: pre-knee + slack workers
+        col_ticks[0] = max(col_ticks[0], n0)
+        col_ticks[1] = max(col_ticks[1], n1)
+        col_ticks[2] = max(col_ticks[2], n2)
+    print(f'Column tick counts → col0={col_ticks[0]}  col1={col_ticks[1]}  col2={col_ticks[2]}')
+
+    # Col 0 has a left y-axis and col 2 has a right y-axis; those label areas
+    # consume column width without adding data area, making col 1 (no y-axes)
+    # appear wider per tick.  Add an estimated correction so the data area per
+    # tick is equal across all three columns.  Tune _Y_CORR if needed.
+    _Y_CORR = 1.5   # y-axis label area expressed as equivalent tick count
+    width_ratios = [col_ticks[0] + _Y_CORR, col_ticks[1], col_ticks[2] + _Y_CORR]
+
     # Reserve bottom space for the shared legend.
     LEGEND_H = 0.09
     gs = gridspec.GridSpec(
         n, 3, figure=fig,
-        hspace=0.40, wspace=0.08,
+        width_ratios=width_ratios,
+        hspace=0.18, wspace=0.08,
         top=0.96 if not args.title else 0.94,
         bottom=LEGEND_H + 0.03,
         left=0.10, right=0.95,
@@ -603,11 +626,11 @@ def main():
 
     for i, m in enumerate(machines):
         ax0  = fig.add_subplot(gs[i, 0])
-        ax0r = ax0.twinx()
-        ax1  = fig.add_subplot(gs[i, 1])
-        ax1r = ax1.twinx()
-        ax2  = fig.add_subplot(gs[i, 2])
-        ax2r = ax2.twinx()
+        ax0r = ax0.twinx(); ax0r.grid(False)
+        ax1  = fig.add_subplot(gs[i, 1], sharey=ax0)  # lock QPS scale to col 0
+        ax1r = ax1.twinx(); ax1r.grid(False)
+        ax2  = fig.add_subplot(gs[i, 2], sharey=ax0)  # lock QPS scale to col 0
+        ax2r = ax2.twinx(); ax2r.grid(False)
 
         # Column titles on the first row only.
         if i == 0:
@@ -618,7 +641,7 @@ def main():
         _draw_row(ax0, ax0r, ax1, ax1r, ax2, ax2r,
                   m['sat'], m['io'], m['slack'], m['knee'],
                   m['mc'], m['label'], fsz,
-                  show_xticks=True)
+                  show_xticks=(i == n - 1))   # labels only on last row
 
         # ── Y-axis visibility per column ──────────────────────────────────────
         # Left col (ax0): left y-axis shown; right y-axis (ax0r) hidden.
