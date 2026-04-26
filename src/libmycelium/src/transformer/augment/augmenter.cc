@@ -13,8 +13,8 @@ std::vector<ParsedRow> Augmenter::Transform(std::string_view  key,
                                             const ParsedRow&  input) const {
   if (input.empty()) return {};
 
-  static constexpr std::string_view kFieldSep = "%%";
-  static constexpr std::string_view kKeySep   = "$$$KEY$$$";
+  // Use the public constants from augmenter.h (single source of truth).
+  // kFieldSep = "%%", kIndexKeySep = "$$$KEY$$$"
 
   std::vector<ParsedRow> outputs;
   outputs.reserve(index_positions_.size());
@@ -33,7 +33,7 @@ std::vector<ParsedRow> Augmenter::Transform(std::string_view  key,
       prefix.append(input.at(static_cast<size_t>(pos)).value.ToString());
     }
 
-    prefix.append(kKeySep);
+    prefix.append(kIndexKeySep);
     prefix.append(key.data(), key.size());
 
     // Emit a 3-field ParsedRow: { index_no, index_key, primary_key }

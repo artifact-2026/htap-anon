@@ -1,8 +1,16 @@
 #pragma once
+#include <string_view>
 #include <vector>
 #include "mycelium/transformer.h"
 
 namespace mycelium {
+
+// Key separator embedded in every secondary-index CF entry.
+// Index entry key format: field0%%field1%%...<kIndexKeySep><primary_key>
+// Having this as a public constant lets deletion code (RocksDBGroveManager,
+// MymBroker) perform suffix-scan deletes without hardcoding the string.
+inline constexpr std::string_view kFieldSep    = "%%";
+inline constexpr std::string_view kIndexKeySep = "$$$KEY$$$";
 
 // Augmenter: secondary-index transformer.
 // For each configured set of column positions it extracts index-key tuples and
