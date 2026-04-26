@@ -34,7 +34,7 @@ inline double BitsToDoubleLocal(uint64_t bits) {
 
 }  // namespace
 
-void EWMAAdmissionPolicy::UpdateEWMA(double observed) {
+void EWMAAdmissionPolicy::UpdateEWMA(double observed) const {
   uint64_t old_bits = ewma_bits_.load(std::memory_order_relaxed);
   uint64_t new_bits;
   do {
