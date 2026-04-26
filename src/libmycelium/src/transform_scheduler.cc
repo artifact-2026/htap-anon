@@ -62,10 +62,12 @@ double EWMAAdmissionPolicy::CurrentEWMA() const {
 
 TransformScheduler::TransformScheduler(const AdmissionPolicy* policy,
                                        CompactionSlackEstimator* estimator,
-                                       int compaction_level)
+                                       int compaction_level,
+                                       bool is_bottommost)
     : policy_(policy),
       estimator_(estimator),
-      compaction_level_(compaction_level) {
+      compaction_level_(compaction_level),
+      is_bottommost_(is_bottommost) {
   assert(policy_    != nullptr);
   assert(estimator_ != nullptr);
 }
@@ -77,6 +79,17 @@ void TransformScheduler::BeginFile(
   current_file_number_ = file_number;
   current_dest_cfs_    = dest_cf_names;
 
+  // Non-bottommost compactions always defer: the source CF may have a newer
+  // version of this key at a shallower level that hasn't been merged yet.
+  // Only at the bottommost level is it safe to transform, because the
+  // compaction iterator has resolved all versions in scope and the output
+  // is the canonical value for this key range below the input levels.
+  if (!is_bottommost_) {
+    current_decision_ = Decision::kDefer;
+    files_skipped_++;
+    return;
+  }
+
   double fraction = estimator_->TransformCpuFraction();
   bool admitted   = policy_->ShouldAdmit(fraction, compaction_level_,
                                           file_size_bytes);
@@ -86,12 +99,6 @@ void TransformScheduler::BeginFile(
   } else {
     current_decision_ = Decision::kDefer;
     files_skipped_++;
-    // Pre-populate deferred CFs and file numbers so even files with zero KVs
-    // are captured.
-    for (const auto& cf : dest_cf_names) {
-      all_deferred_cfs_.push_back(cf);
-    }
-    all_deferred_file_numbers_.push_back(file_number);
   }
 }
 

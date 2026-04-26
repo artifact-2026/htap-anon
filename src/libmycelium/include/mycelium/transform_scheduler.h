@@ -39,9 +39,9 @@
 #include <string>
 #include <vector>
 
-#include "mycelium/compaction_slack_estimator.h"
 #include "mycelium/admission_policy.h"
-#include "mycelium/transformer.h"   // for TransformerType
+#include "mycelium/compaction_slack_estimator.h"
+#include "mycelium/transformer.h" // for TransformerType
 
 namespace mycelium {
 
@@ -49,20 +49,28 @@ namespace mycelium {
 // TransformScheduler
 // ---------------------------------------------------------------------------
 class TransformScheduler {
- public:
+public:
   // Per-KV admission decision.
   enum class Decision {
-    kApply,   // Run the transform; write output to destination CF(s).
-    kDefer,   // Skip transform; passthrough write; record file as deferred.
-    kSkip,    // No transform configured (NOTRANSFORMATION); plain passthrough.
+    kApply, // Run the transform; write output to destination CF(s).
+    kDefer, // Skip transform; passthrough write; record file as deferred.
+    kSkip,  // No transform configured (NOTRANSFORMATION); plain passthrough.
   };
 
   // @param policy           Admission policy. Borrowed; must outlive this.
-  // @param estimator        CPU estimator for this job. Borrowed; must outlive this.
+  // @param estimator        CPU estimator for this job. Borrowed; must outlive
+  // this.
   // @param compaction_level Output level of the compaction (0 = L0→L1, etc.)
-  TransformScheduler(const AdmissionPolicy* policy,
-                     CompactionSlackEstimator* estimator,
-                     int compaction_level);
+  // @param is_bottommost    True iff the compaction output is the deepest level
+  //                         for this key range (no data exists below
+  //                         output_level). Transforms are only fired at the
+  //                         bottommost level to guarantee that a key's
+  //                         canonical (least-recent) value is what gets
+  //                         transformed and moved to the dest CF.
+  //                         Non-bottommost compactions always defer.
+  TransformScheduler(const AdmissionPolicy *policy,
+                     CompactionSlackEstimator *estimator, int compaction_level,
+                     bool is_bottommost);
 
   // ------- Per-file lifecycle (called from CompactionJob) -------
 
@@ -71,13 +79,14 @@ class TransformScheduler {
   // @param dest_cf_names  Destination CF names for all transforms.
   // @param file_size_bytes  Uncompressed size (used by policy).
   void BeginFile(uint64_t file_number,
-                 const std::vector<std::string>& dest_cf_names,
+                 const std::vector<std::string> &dest_cf_names,
                  uint64_t file_size_bytes = 0);
 
   // Call once after the last KV of the current file.
   void OnFileDone();
 
-  // ------- Per-KV decision (called from CompactionOutputs::AddToOutput) -------
+  // ------- Per-KV decision (called from CompactionOutputs::AddToOutput)
+  // -------
 
   // Returns the admission decision for the given KV pair.
   // @param transformer_type  The transformer type on this CF.
@@ -105,35 +114,37 @@ class TransformScheduler {
 
   // Admission stats for logging.
   int FilesAdmitted() const { return files_admitted_; }
-  int FilesSkipped()  const { return files_skipped_;  }
+  int FilesSkipped() const { return files_skipped_; }
 
-  // De-duplicated list of input SST file numbers whose transforms were deferred.
-  // Passed as the [file_numbers] hint to DeferCallback::ScheduleDeferred() so
-  // the engine can narrow the catch-up compaction range.
+  // De-duplicated list of input SST file numbers whose transforms were
+  // deferred. Passed as the [file_numbers] hint to
+  // DeferCallback::ScheduleDeferred() so the engine can narrow the catch-up
+  // compaction range.
   std::vector<uint64_t> DeferredFileNumbers() const;
 
- private:
-  const AdmissionPolicy*    policy_;
-  CompactionSlackEstimator* estimator_;
-  const int                 compaction_level_;
+private:
+  const AdmissionPolicy *policy_;
+  CompactionSlackEstimator *estimator_;
+  const int compaction_level_;
+  const bool is_bottommost_;
 
   // Decision set in BeginFile(), returned by Decide() for all KVs in the file.
-  Decision                  current_decision_ = Decision::kSkip;
-  uint64_t                  current_file_number_ = 0;
+  Decision current_decision_ = Decision::kSkip;
+  uint64_t current_file_number_ = 0;
 
   // Destination CF names for the current file.
-  std::vector<std::string>  current_dest_cfs_;
+  std::vector<std::string> current_dest_cfs_;
 
   // Accumulated deferred CF names across all files (may have duplicates;
   // de-dup happens in DeferredCFs()).
-  std::vector<std::string>  all_deferred_cfs_;
+  std::vector<std::string> all_deferred_cfs_;
 
   // Accumulated deferred SST file numbers (may have duplicates;
   // de-dup happens in DeferredFileNumbers()).
-  std::vector<uint64_t>     all_deferred_file_numbers_;
+  std::vector<uint64_t> all_deferred_file_numbers_;
 
   int files_admitted_ = 0;
-  int files_skipped_  = 0;
+  int files_skipped_ = 0;
 };
 
-}  // namespace mycelium
+} // namespace mycelium
