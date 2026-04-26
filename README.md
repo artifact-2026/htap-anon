@@ -145,8 +145,9 @@ echo "$PRETTY_NAME ($VERSION_CODENAME)"      // should see "jammy"
 ### To launch Claude CLI
 ## install nvm
 % curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-% source ~/.bashrc
-% source ~/.nvm/nvm.sh
+%  export NVM_DIR="$HOME/.nvm"
+%  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+%  [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
 % nvm install 22
 % nvm use 22
 % nvm alias default 22
