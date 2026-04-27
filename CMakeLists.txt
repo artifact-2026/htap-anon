@@ -61,6 +61,7 @@ target_include_directories(flatbuffers_generated INTERFACE ${FLATBUFFERS_GEN_DIR
 
 add_subdirectory(src/mycelium)
 add_subdirectory(src/test/ycsb)
+add_subdirectory(src/test/mycelium)
 
 include_directories(${CMAKE_SOURCE_DIR}/src/mycelium/include)
 include_directories(/usr/include)
