@@ -106,6 +106,37 @@ TEST(TransformScheduler, BottommostAlwaysAdmitApplies) {
 }
 
 // ---------------------------------------------------------------------------
+// nullptr policy — zero-overhead always-admit fast-path
+// ---------------------------------------------------------------------------
+
+TEST(TransformScheduler, NullPolicyBottommostAlwaysApplies) {
+  // nullptr admission_policy: transformers are configured but no policy is set.
+  // Must behave identically to AlwaysAdmitPolicy with no virtual dispatch.
+  // (Canonical RocksDB users with no transformers never construct a
+  // TransformScheduler at all — they never reach this code.)
+  auto est = MakeEstimator();
+  TransformScheduler sched(/*policy=*/nullptr, &est, /*level=*/3,
+                            /*is_bottommost=*/true);
+
+  sched.BeginFile(1, {"dest_cf"}, 1024);
+  EXPECT_EQ(sched.Decide(TransformerType::CONVERTER, 1), Decision::kApply);
+  EXPECT_EQ(sched.FilesAdmitted(), 1);
+  EXPECT_EQ(sched.FilesSkipped(), 0);
+}
+
+TEST(TransformScheduler, NullPolicyNonBottommostStillDefers) {
+  // The bottommost gate must fire before the nullptr fast-path: even with
+  // nullptr policy a non-bottommost compaction must defer.
+  auto est = MakeEstimator();
+  TransformScheduler sched(nullptr, &est, /*level=*/1, /*is_bottommost=*/false);
+
+  sched.BeginFile(1, {"dest_cf"}, 1024);
+  EXPECT_EQ(sched.Decide(TransformerType::CONVERTER, 1), Decision::kDefer);
+  EXPECT_EQ(sched.FilesAdmitted(), 0);
+  EXPECT_EQ(sched.FilesSkipped(), 1);
+}
+
+// ---------------------------------------------------------------------------
 // Bottommost + NeverAdmit → kDefer
 // ---------------------------------------------------------------------------
 

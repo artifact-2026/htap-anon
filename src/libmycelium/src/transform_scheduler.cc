@@ -68,8 +68,8 @@ TransformScheduler::TransformScheduler(const AdmissionPolicy* policy,
       estimator_(estimator),
       compaction_level_(compaction_level),
       is_bottommost_(is_bottommost) {
-  assert(policy_    != nullptr);
   assert(estimator_ != nullptr);
+  // policy_ may be nullptr: that means "always admit" with zero overhead.
 }
 
 void TransformScheduler::BeginFile(
@@ -87,6 +87,16 @@ void TransformScheduler::BeginFile(
   if (!is_bottommost_) {
     current_decision_ = Decision::kDefer;
     files_skipped_++;
+    return;
+  }
+
+  // nullptr policy means "always admit" — no virtual dispatch, no allocation.
+  // This is the path for Mycelium users who configure transformers but set no
+  // admission policy.  Canonical RocksDB users with no transformers never
+  // reach this point: TransformScheduler is not constructed at all for them.
+  if (policy_ == nullptr) {
+    current_decision_ = Decision::kApply;
+    files_admitted_++;
     return;
   }
 
