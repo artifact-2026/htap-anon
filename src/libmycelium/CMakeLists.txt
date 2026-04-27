@@ -117,8 +117,9 @@ if(DEFINED Protobuf_LIBRARIES AND Protobuf_LIBRARIES)
   target_link_libraries(mycelium PUBLIC ${Protobuf_LIBRARIES})
 endif()
 
-# ── Tests (populated in P3+) ─────────────────────────────────────────────────
-if(BUILD_TESTING)
+# ── Tests ────────────────────────────────────────────────────────────────────
+# Enabled by BUILD_TESTING (standard CMake) or WITH_TESTS (RocksDB/htap flag).
+if(BUILD_TESTING OR WITH_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
