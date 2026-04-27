@@ -9,6 +9,10 @@ if(NOT TARGET gtest)
       "${CMAKE_CURRENT_SOURCE_DIR}/../../mycelium/third-party/gtest-1.8.1/fused-src/gtest")
   if(EXISTS "${_GTEST_FUSED}/CMakeLists.txt")
     add_subdirectory("${_GTEST_FUSED}" "${CMAKE_CURRENT_BINARY_DIR}/gtest")
+    # The bundled CMakeLists.txt doesn't set include dirs; add them here so
+    # gtest-all.cc can resolve "gtest/gtest.h".
+    target_include_directories(gtest PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../mycelium/third-party/gtest-1.8.1/fused-src")
   else()
     find_package(GTest REQUIRED)
     add_library(gtest ALIAS GTest::gtest)
@@ -31,3 +35,4 @@ mycelium_test(test_ewma_admission_policy)
 mycelium_test(test_transform_scheduler)
 mycelium_test(test_compaction_slack_estimator)
 mycelium_test(test_transform_epoch_tracker)
+mycelium_test(test_scheduler_scenarios)   # Track B #6: synthetic scenario tests
