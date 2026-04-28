@@ -1,6 +1,7 @@
 // Copyright (c) 2024-present, Mycelium Authors.
 //
-// Integration test: bottommost compaction source-xor-dest invariant (Track B #5).
+// Integration test: bottommost compaction source-xor-dest invariant (Track B
+// #5).
 //
 // Claim: after a bottommost compaction with an admitting policy, every key
 // written to the source CF has moved to the dest CF and is no longer readable
@@ -9,7 +10,8 @@
 //
 // Tests:
 //   1. AlwaysAdmit_ConvertsAtBottommost  — key leaves source, arrives in dest
-//   2. NeverAdmit_KeyStaysInSource       — key stays in source, absent from dest
+//   2. NeverAdmit_KeyStaysInSource       — key stays in source, absent from
+//   dest
 //   3. DeferThenAdmit_NaturalCatchup     — key is deferred, then caught up when
 //                                          policy is relaxed and data is
 //                                          re-compacted at the bottommost level
@@ -20,14 +22,14 @@
 #include <string>
 #include <vector>
 
-#include "rocksdb/db.h"
-#include "rocksdb/mym_broker.h"
-#include "rocksdb/options.h"
 #include "mycelium/admission_policy.h"
 #include "mycelium/json_encoder.h"
 #include "mycelium/json_parser.h"
 #include "mycelium/mynooper.h"
 #include "mycelium/transformer.h"
+#include "rocksdb/db.h"
+#include "rocksdb/mym_broker.h"
+#include "rocksdb/options.h"
 
 #include "gtest/gtest.h"
 
@@ -43,7 +45,7 @@ using ROCKSDB_NAMESPACE::Status;
 // atomic boolean.  Starts as "never admit" (admit_ = false).
 
 class ToggleAdmissionPolicy : public mycelium::AdmissionPolicy {
- public:
+public:
   explicit ToggleAdmissionPolicy(bool initial = false) : admit_(initial) {}
 
   void SetAdmit(bool v) { admit_.store(v, std::memory_order_release); }
@@ -55,31 +57,31 @@ class ToggleAdmissionPolicy : public mycelium::AdmissionPolicy {
 
   std::string Name() const override { return "ToggleAdmissionPolicy"; }
 
- private:
+private:
   std::atomic<bool> admit_;
 };
 
 // ── Test fixture ─────────────────────────────────────────────────────────────
 
 class BottommostCompactionTest : public ::testing::Test {
- protected:
-  static std::string TmpDir(const std::string& suffix) {
+protected:
+  static std::string TmpDir(const std::string &suffix) {
     return "/tmp/mycelium_bmc_" + suffix;
   }
 
   // Build Options wired to a Mynooper (IDENTITY) transformer.
   // The dest CF is named <root>_identity_cf.
   // admission_policy: nullptr => always admit; otherwise use provided policy.
-  static ROCKSDB_NAMESPACE::Options MakeOptions(
-      std::shared_ptr<mycelium::AdmissionPolicy> policy = nullptr) {
+  static ROCKSDB_NAMESPACE::Options
+  MakeOptions(std::shared_ptr<mycelium::AdmissionPolicy> policy = nullptr) {
     ROCKSDB_NAMESPACE::Options opts;
-    opts.create_if_missing        = true;
-    opts.error_if_exists          = false;
-    opts.disable_auto_compactions = true;   // manual compaction control
-    opts.num_levels               = 3;
-    opts.num_columns              = 1;
+    opts.create_if_missing = true;
+    opts.error_if_exists = false;
+    opts.disable_auto_compactions = true; // manual compaction control
+    opts.num_levels = 3;
+    opts.num_columns = 1;
     opts.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleLevel;
-    opts.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::WARN_LEVEL;
+    opts.info_log_level = ROCKSDB_NAMESPACE::InfoLogLevel::WARN_LEVEL;
 
     opts.transformers.push_back(std::make_shared<mycelium::Mynooper>());
     opts.admission_policy = std::move(policy);
@@ -87,21 +89,23 @@ class BottommostCompactionTest : public ::testing::Test {
     // Minimal 1-column JSON schema — values look like {"col0":"v<n>"}
     const int kCols = 1;
     auto parser = std::make_shared<mycelium::JsonColsParser>(kCols, 0);
-    auto enc    = std::make_shared<mycelium::JsonEncoder>();
+    auto enc = std::make_shared<mycelium::JsonEncoder>();
     mycelium::Codec in_codec{parser, nullptr};
     mycelium::Codec out_codec{nullptr, enc};
-    std::vector<mycelium::FieldSchema> in_schema = parser->GetInputFieldSchema();
+    std::vector<mycelium::FieldSchema> in_schema =
+        parser->GetInputFieldSchema();
     std::vector<std::vector<mycelium::FieldSchema>> out_schemas;
     out_schemas.push_back(in_schema);
-    opts.schemaDescriptors.push_back(std::make_shared<mycelium::SchemaDescriptor>(
-        in_codec, out_codec, std::move(in_schema), std::move(out_schemas)));
+    opts.schemaDescriptors.push_back(
+        std::make_shared<mycelium::SchemaDescriptor>(
+            in_codec, out_codec, std::move(in_schema), std::move(out_schemas)));
 
     return opts;
   }
 
   // Write n keys of the form prefix+i → {"col0":"v<i>"} into the broker.
-  static std::vector<std::string> WriteKeys(MymBroker& broker, int n,
-                                             const std::string& prefix = "key") {
+  static std::vector<std::string> WriteKeys(MymBroker &broker, int n,
+                                            const std::string &prefix = "key") {
     std::vector<std::string> keys;
     keys.reserve(static_cast<size_t>(n));
     for (int i = 0; i < n; i++) {
@@ -114,8 +118,8 @@ class BottommostCompactionTest : public ::testing::Test {
   }
 
   // Flush the source CF to L0 then force a full bottommost compaction.
-  static void FlushAndCompact(ROCKSDB_NAMESPACE::DB* db,
-                               ROCKSDB_NAMESPACE::ColumnFamilyHandle* src_cf) {
+  static void FlushAndCompact(ROCKSDB_NAMESPACE::DB *db,
+                              ROCKSDB_NAMESPACE::ColumnFamilyHandle *src_cf) {
     FlushOptions fo;
     fo.wait = true;
     ASSERT_TRUE(db->Flush(fo, src_cf).ok()) << "Flush failed";
@@ -125,7 +129,9 @@ class BottommostCompactionTest : public ::testing::Test {
     cro.change_level = false;
     auto s = db->CompactRange(cro, src_cf, nullptr, nullptr);
     EXPECT_TRUE(s.ok()) << "CompactRange failed: " << s.ToString();
-    if(!s.ok()) { std::cout << "Compaction error: " << s.ToString() << std::endl; }
+    if (!s.ok()) {
+      std::cout << "Compaction error: " << s.ToString() << std::endl;
+    }
   }
 };
 
@@ -135,30 +141,30 @@ class BottommostCompactionTest : public ::testing::Test {
 
 TEST_F(BottommostCompactionTest, AlwaysAdmit_ConvertsAtBottommost) {
   const std::string kRoot = "myc_test";
-  const std::string kDB   = TmpDir("always_admit");
+  const std::string kDB = TmpDir("always_admit");
   std::filesystem::remove_all(kDB);
 
   // nullptr admission_policy => AlwaysAdmit (original behaviour)
   auto opts = MakeOptions(/*policy=*/nullptr);
-  MymBroker broker(kRoot, /*cf_created=*/false, kDB.c_str(), opts, /*splits=*/1);
+  MymBroker broker(kRoot, /*cf_created=*/false, kDB.c_str(), opts,
+                   /*splits=*/1);
 
   const auto keys = WriteKeys(broker, 5);
 
-  auto* db      = broker.GetDB();
-  auto* src_cf  = broker.GetCFHandle(kRoot);
-  auto* dest_cf = broker.GetCFHandle(kRoot + "_identity_cf");
-  ASSERT_NE(db,      nullptr) << "GetDB() returned null";
-  ASSERT_NE(src_cf,  nullptr) << "source CF handle not found";
+  auto *db = broker.GetDB();
+  auto *src_cf = broker.GetCFHandle(kRoot);
+  auto *dest_cf = broker.GetCFHandle(kRoot + "_identity_cf");
+  ASSERT_NE(db, nullptr) << "GetDB() returned null";
+  ASSERT_NE(src_cf, nullptr) << "source CF handle not found";
   ASSERT_NE(dest_cf, nullptr) << "dest CF handle not found";
 
   FlushAndCompact(db, src_cf);
 
-  
-    std::string num_files;
-    db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
-    std::cout << "dest_cf L0 files: " << num_files << std::endl;
+  std::string num_files;
+  db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
+  std::cout << "dest_cf L0 files: " << num_files << std::endl;
 
-  for (const auto& key : keys) {
+  for (const auto &key : keys) {
     std::string val;
     EXPECT_TRUE(db->Get(ReadOptions(), src_cf, key, &val).IsNotFound())
         << "Key '" << key << "' should have left source CF after transform";
@@ -175,7 +181,7 @@ TEST_F(BottommostCompactionTest, AlwaysAdmit_ConvertsAtBottommost) {
 
 TEST_F(BottommostCompactionTest, NeverAdmit_KeyStaysInSource) {
   const std::string kRoot = "myc_test";
-  const std::string kDB   = TmpDir("never_admit");
+  const std::string kDB = TmpDir("never_admit");
   std::filesystem::remove_all(kDB);
 
   auto opts = MakeOptions(std::make_shared<mycelium::NeverAdmitPolicy>());
@@ -183,21 +189,20 @@ TEST_F(BottommostCompactionTest, NeverAdmit_KeyStaysInSource) {
 
   const auto keys = WriteKeys(broker, 5);
 
-  auto* db      = broker.GetDB();
-  auto* src_cf  = broker.GetCFHandle(kRoot);
-  auto* dest_cf = broker.GetCFHandle(kRoot + "_identity_cf");
-  ASSERT_NE(db,      nullptr);
-  ASSERT_NE(src_cf,  nullptr);
+  auto *db = broker.GetDB();
+  auto *src_cf = broker.GetCFHandle(kRoot);
+  auto *dest_cf = broker.GetCFHandle(kRoot + "_identity_cf");
+  ASSERT_NE(db, nullptr);
+  ASSERT_NE(src_cf, nullptr);
   ASSERT_NE(dest_cf, nullptr);
 
   FlushAndCompact(db, src_cf);
 
-  
-    std::string num_files;
-    db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
-    std::cout << "dest_cf L0 files: " << num_files << std::endl;
+  std::string num_files;
+  db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
+  std::cout << "dest_cf L0 files: " << num_files << std::endl;
 
-  for (const auto& key : keys) {
+  for (const auto &key : keys) {
     std::string val;
     EXPECT_TRUE(db->Get(ReadOptions(), src_cf, key, &val).ok())
         << "Key '" << key << "' should remain in source CF (NeverAdmit)";
@@ -218,34 +223,34 @@ TEST_F(BottommostCompactionTest, NeverAdmit_KeyStaysInSource) {
 
 TEST_F(BottommostCompactionTest, DeferThenAdmit_NaturalCatchup) {
   const std::string kRoot = "myc_test";
-  const std::string kDB   = TmpDir("defer_then_admit");
+  const std::string kDB = TmpDir("defer_then_admit");
   std::filesystem::remove_all(kDB);
 
   auto toggle = std::make_shared<ToggleAdmissionPolicy>(/*initial=*/false);
-  auto opts   = MakeOptions(toggle);
+  auto opts = MakeOptions(toggle);
   MymBroker broker(kRoot, false, kDB.c_str(), opts, 1);
 
   const auto keys = WriteKeys(broker, 5);
 
-  auto* db      = broker.GetDB();
-  auto* src_cf  = broker.GetCFHandle(kRoot);
-  auto* dest_cf = broker.GetCFHandle(kRoot + "_identity_cf");
-  ASSERT_NE(db,      nullptr);
-  ASSERT_NE(src_cf,  nullptr);
+  auto *db = broker.GetDB();
+  auto *src_cf = broker.GetCFHandle(kRoot);
+  auto *dest_cf = broker.GetCFHandle(kRoot + "_identity_cf");
+  ASSERT_NE(db, nullptr);
+  ASSERT_NE(src_cf, nullptr);
   ASSERT_NE(dest_cf, nullptr);
 
   // ── Phase 1: policy OFF → deferred ────────────────────────────────────────
   FlushAndCompact(db, src_cf);
 
-  
-    std::string num_files;
-    db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
-    std::cout << "dest_cf L0 files: " << num_files << std::endl;
+  std::string num_files;
+  db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
+  std::cout << "dest_cf L0 files: " << num_files << std::endl;
 
-  for (const auto& key : keys) {
+  for (const auto &key : keys) {
     std::string val;
     EXPECT_TRUE(db->Get(ReadOptions(), src_cf, key, &val).ok())
-        << "Phase 1: key '" << key << "' should still be in source CF (deferred)";
+        << "Phase 1: key '" << key
+        << "' should still be in source CF (deferred)";
     EXPECT_TRUE(db->Get(ReadOptions(), dest_cf, key, &val).IsNotFound())
         << "Phase 1: key '" << key << "' should not yet be in dest CF";
   }
@@ -258,12 +263,11 @@ TEST_F(BottommostCompactionTest, DeferThenAdmit_NaturalCatchup) {
   ASSERT_TRUE(db->CompactRange(cro, src_cf, nullptr, nullptr).ok())
       << "Phase 2 CompactRange failed";
 
-  
-    std::string num_files;
-    db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
-    std::cout << "dest_cf L0 files: " << num_files << std::endl;
+  std::string num_files2;
+  db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files2);
+  std::cout << "dest_cf L0 files: " << num_files2 << std::endl;
 
-  for (const auto& key : keys) {
+  for (const auto &key : keys) {
     std::string val;
     EXPECT_TRUE(db->Get(ReadOptions(), src_cf, key, &val).IsNotFound())
         << "Phase 2: key '" << key << "' should have left source CF";
@@ -275,7 +279,7 @@ TEST_F(BottommostCompactionTest, DeferThenAdmit_NaturalCatchup) {
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
