@@ -124,7 +124,8 @@ class BottommostCompactionTest : public ::testing::Test {
     cro.bottommost_level_compaction = BottommostLevelCompaction::kForce;
     cro.change_level = false;
     auto s = db->CompactRange(cro, src_cf, nullptr, nullptr);
-    ASSERT_TRUE(s.ok()) << "CompactRange failed: " << s.ToString();
+    EXPECT_TRUE(s.ok()) << "CompactRange failed: " << s.ToString();
+    if(!s.ok()) { std::cout << "Compaction error: " << s.ToString() << std::endl; }
   }
 };
 
@@ -151,6 +152,11 @@ TEST_F(BottommostCompactionTest, AlwaysAdmit_ConvertsAtBottommost) {
   ASSERT_NE(dest_cf, nullptr) << "dest CF handle not found";
 
   FlushAndCompact(db, src_cf);
+
+  
+    std::string num_files;
+    db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
+    std::cout << "dest_cf L0 files: " << num_files << std::endl;
 
   for (const auto& key : keys) {
     std::string val;
@@ -185,6 +191,11 @@ TEST_F(BottommostCompactionTest, NeverAdmit_KeyStaysInSource) {
   ASSERT_NE(dest_cf, nullptr);
 
   FlushAndCompact(db, src_cf);
+
+  
+    std::string num_files;
+    db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
+    std::cout << "dest_cf L0 files: " << num_files << std::endl;
 
   for (const auto& key : keys) {
     std::string val;
@@ -226,6 +237,11 @@ TEST_F(BottommostCompactionTest, DeferThenAdmit_NaturalCatchup) {
   // ── Phase 1: policy OFF → deferred ────────────────────────────────────────
   FlushAndCompact(db, src_cf);
 
+  
+    std::string num_files;
+    db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
+    std::cout << "dest_cf L0 files: " << num_files << std::endl;
+
   for (const auto& key : keys) {
     std::string val;
     EXPECT_TRUE(db->Get(ReadOptions(), src_cf, key, &val).ok())
@@ -241,6 +257,11 @@ TEST_F(BottommostCompactionTest, DeferThenAdmit_NaturalCatchup) {
   cro.bottommost_level_compaction = BottommostLevelCompaction::kForce;
   ASSERT_TRUE(db->CompactRange(cro, src_cf, nullptr, nullptr).ok())
       << "Phase 2 CompactRange failed";
+
+  
+    std::string num_files;
+    db->GetProperty(dest_cf, "rocksdb.num-files-at-level0", &num_files);
+    std::cout << "dest_cf L0 files: " << num_files << std::endl;
 
   for (const auto& key : keys) {
     std::string val;
