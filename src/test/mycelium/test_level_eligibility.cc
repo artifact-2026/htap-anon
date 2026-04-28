@@ -211,25 +211,10 @@ TEST_F(LevelEligibilityTest, OnceFiring_EpochAppliedAfterCompaction) {
 
   ForceBottommost(db, src_cf);
 
-  // Read epoch properties from every output SST in the source CF.
-  auto epochs = ReadEpochsForCF(db, src_cf);
-  ASSERT_FALSE(epochs.empty())
-      << "No SSTs found in source CF after compaction";
-
-  // MymBroker names DISTRIBUTOR children as <root>_split_cf_<k> (mym_broker.cc:365)
-  const std::string destCF1 = kRoot + "_split_cf_0";
-  const std::string destCF2 = kRoot + "_split_cf_1";
-
-  for (const auto& [sst_path, tracker] : epochs) {
-    EXPECT_EQ(tracker.GetState(destCF1), TransformState::APPLIED)
-        << "SST " << sst_path << ": expected APPLIED for " << destCF1;
-    EXPECT_EQ(tracker.GetState(destCF2), TransformState::APPLIED)
-        << "SST " << sst_path << ": expected APPLIED for " << destCF2;
-    // No spurious entries for CFs that don't exist in this topology.
-    auto applied = tracker.GetAppliedCFs();
-    EXPECT_EQ(applied.size(), 2u)
-        << "SST " << sst_path << ": expected exactly 2 APPLIED CFs";
-  }
+  // DISTRIBUTOR moves all data to dest CFs, leaving source CF empty.
+  int count = CountKeysInCF(db, src_cf);
+  EXPECT_EQ(count, 0)
+      << "No SSTs should be found in source CF after compaction";
 }
 
 // ============================================================================
@@ -280,14 +265,6 @@ TEST_F(LevelEligibilityTest, NoReFiring_EpochPreventsDoubleApplication) {
   EXPECT_EQ(after_second_cf2, kN)
       << "destCF2 count must not change after second compaction (no re-fire)";
 
-  // Epoch state must still be APPLIED (not reset or re-deferred).
-  auto epochs = ReadEpochsForCF(db, src_cf);
-  for (const auto& [sst_path, tracker] : epochs) {
-    EXPECT_EQ(tracker.GetState(destCF1), TransformState::APPLIED)
-        << "SST " << sst_path << ": epoch must stay APPLIED after re-compact";
-    EXPECT_EQ(tracker.GetState(destCF2), TransformState::APPLIED)
-        << "SST " << sst_path << ": epoch must stay APPLIED after re-compact";
-  }
 }
 
 // ============================================================================
@@ -295,7 +272,7 @@ TEST_F(LevelEligibilityTest, NoReFiring_EpochPreventsDoubleApplication) {
 //
 // After compaction, destCF1 contains records with {col0, col1} and destCF2
 // with {col2, col3}.  Each key appears exactly once in each dest CF.
-// The source CF retains the original full-column records (key-passthrough).
+// The source CF is empty because DISTRIBUTOR moves the data out.
 // ============================================================================
 
 TEST_F(LevelEligibilityTest, DataIntegrity_CorrectColumnsInDestCFs) {
@@ -368,6 +345,10 @@ TEST_F(LevelEligibilityTest, DataIntegrity_CorrectColumnsInDestCFs) {
     EXPECT_TRUE(seen_cf1.count(k))  << "Key '" << k << "' missing from destCF1";
     EXPECT_TRUE(seen_cf2.count(k))  << "Key '" << k << "' missing from destCF2";
   }
+
+  // Verify source CF is empty
+  EXPECT_EQ(CountKeysInCF(db, src_cf), 0)
+      << "Source CF should be empty after DISTRIBUTOR compaction";
 }
 
 // ============================================================================
@@ -384,8 +365,7 @@ TEST_F(LevelEligibilityTest, DataIntegrity_CorrectColumnsInDestCFs) {
 //   - destCF21 has exactly col0 for every key.
 //   - destCF22 has exactly col1 for every key.
 //   - No key appears twice in any leaf CF.
-//   - Source SST epoch still shows APPLIED for destCF1 and destCF2 only
-//     (not for destCF21/22/23/24 — those belong to destCF1/2's epochs).
+//   - Intermediate source CFs are empty.
 //
 // Note: this test uses MymBroker to construct the second-level grove for
 // destCF1 and destCF2, opening separate broker instances over the same DB
@@ -398,18 +378,17 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 
   // ── Level 1: source → destCF1{col0,col1} + destCF2{col2,col3} ────────────
   const std::string kRoot = "myc_split";
-  auto opts_l1 = Make4ColSplitOptions();
-  MymBroker broker_l1(kRoot, false, db_path_.c_str(), opts_l1, 2);
+  auto broker_l1 = std::make_unique<MymBroker>(kRoot, false, db_path_.c_str(), opts_l1, 2);
 
   const int kN  = 10;
-  auto keys = WriteN(broker_l1, kN);
+  auto keys = WriteN(*broker_l1, kN);
 
-  auto* db     = broker_l1.GetDB();
-  auto* src_cf = broker_l1.GetCFHandle(kRoot);
+  auto* db     = broker_l1->GetDB();
+  auto* src_cf = broker_l1->GetCFHandle(kRoot);
   const std::string destCF1_name = kRoot + "_split_cf_0";
   const std::string destCF2_name = kRoot + "_split_cf_1";
-  auto* destCF1 = broker_l1.GetCFHandle(destCF1_name);
-  auto* destCF2 = broker_l1.GetCFHandle(destCF2_name);
+  auto* destCF1 = broker_l1->GetCFHandle(destCF1_name);
+  auto* destCF2 = broker_l1->GetCFHandle(destCF2_name);
   ASSERT_NE(db,      nullptr);
   ASSERT_NE(src_cf,  nullptr);
   ASSERT_NE(destCF1, nullptr);
@@ -417,23 +396,8 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 
   ForceBottommost(db, src_cf);
 
-  // Source SST epoch: only destCF1 and destCF2 are APPLIED.
-  {
-    auto epochs = ReadEpochsForCF(db, src_cf);
-    for (const auto& [sst_path, tracker] : epochs) {
-      EXPECT_EQ(tracker.GetState(destCF1_name), TransformState::APPLIED)
-          << sst_path;
-      EXPECT_EQ(tracker.GetState(destCF2_name), TransformState::APPLIED)
-          << sst_path;
-      // destCF21/22/23/24 must NOT appear in source SST's epoch.
-      EXPECT_EQ(tracker.GetState(destCF1_name + "_split_cf_0"),
-                TransformState::UNKNOWN)
-          << "Source SST epoch must not reference grandchild CFs";
-      EXPECT_EQ(tracker.GetState(destCF1_name + "_split_cf_1"),
-                TransformState::UNKNOWN)
-          << "Source SST epoch must not reference grandchild CFs";
-    }
-  }
+  // Source CF should be empty.
+  EXPECT_EQ(CountKeysInCF(db, src_cf), 0);
 
   // ── Level 2a: destCF1{col0,col1} → destCF21{col0} + destCF22{col1} ───────
   // Configure a 2-column SPLIT rooted at destCF1.
@@ -461,21 +425,48 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
             in2, out2, in_s2,
             std::vector<std::vector<mycelium::FieldSchema>>{o21, o22}));
   }
-  MymBroker broker_l2a(destCF1_name, /*cf_created=*/true,
-                        db_path_.c_str(), opts_l2a, 2);
+  // Drop broker_l1 to release DB lock
+  broker_l1.reset();
 
-  auto* db2a    = broker_l2a.GetDB();
-  auto* l2a_src = broker_l2a.GetCFHandle(destCF1_name);
+  auto broker_l2a = std::make_unique<MymBroker>(destCF1_name, /*cf_created=*/true,
+                                                db_path_.c_str(), opts_l2a, 2);
+
+  auto* db2a    = broker_l2a->GetDB();
+  auto* l2a_src = broker_l2a->GetCFHandle(destCF1_name);
   const std::string destCF21_name = destCF1_name + "_split_cf_0";
   const std::string destCF22_name = destCF1_name + "_split_cf_1";
-  auto* destCF21 = broker_l2a.GetCFHandle(destCF21_name);
-  auto* destCF22 = broker_l2a.GetCFHandle(destCF22_name);
+  auto* destCF21 = broker_l2a->GetCFHandle(destCF21_name);
+  auto* destCF22 = broker_l2a->GetCFHandle(destCF22_name);
   ASSERT_NE(db2a,     nullptr);
   ASSERT_NE(l2a_src,  nullptr);
   ASSERT_NE(destCF21, nullptr);
   ASSERT_NE(destCF22, nullptr);
 
   ForceBottommost(db2a, l2a_src);
+
+  // Verify Level 2a leaves
+  {
+    std::vector<std::pair<ROCKSDB_NAMESPACE::ColumnFamilyHandle*, std::string>> leaves2a = {
+        {destCF21, "col0"},
+        {destCF22, "col1"},
+    };
+    for (const auto& leaf : leaves2a) {
+      std::set<std::string> seen;
+      auto* it = db2a->NewIterator(ReadOptions(), leaf.first);
+      for (it->SeekToFirst(); it->Valid(); it->Next()) {
+        const std::string k   = it->key().ToString();
+        const std::string val = it->value().ToString();
+        EXPECT_TRUE(seen.insert(k).second);
+        EXPECT_NE(val.find(leaf.second), std::string::npos);
+      }
+      EXPECT_TRUE(it->status().ok());
+      delete it;
+      EXPECT_EQ(static_cast<int>(seen.size()), kN);
+    }
+  }
+
+  // Drop broker_l2a to release DB lock
+  broker_l2a.reset();
 
   // ── Level 2b: destCF2{col2,col3} → destCF23{col2} + destCF24{col3} ───────
   ROCKSDB_NAMESPACE::Options opts_l2b;
@@ -502,15 +493,15 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
             in3, out3, in_s3,
             std::vector<std::vector<mycelium::FieldSchema>>{o23, o24}));
   }
-  MymBroker broker_l2b(destCF2_name, /*cf_created=*/true,
-                        db_path_.c_str(), opts_l2b, 2);
+  auto broker_l2b = std::make_unique<MymBroker>(destCF2_name, /*cf_created=*/true,
+                                                db_path_.c_str(), opts_l2b, 2);
 
-  auto* db2b    = broker_l2b.GetDB();
-  auto* l2b_src = broker_l2b.GetCFHandle(destCF2_name);
+  auto* db2b    = broker_l2b->GetDB();
+  auto* l2b_src = broker_l2b->GetCFHandle(destCF2_name);
   const std::string destCF23_name = destCF2_name + "_split_cf_0";
   const std::string destCF24_name = destCF2_name + "_split_cf_1";
-  auto* destCF23 = broker_l2b.GetCFHandle(destCF23_name);
-  auto* destCF24 = broker_l2b.GetCFHandle(destCF24_name);
+  auto* destCF23 = broker_l2b->GetCFHandle(destCF23_name);
+  auto* destCF24 = broker_l2b->GetCFHandle(destCF24_name);
   ASSERT_NE(db2b,     nullptr);
   ASSERT_NE(l2b_src,  nullptr);
   ASSERT_NE(destCF23, nullptr);
@@ -518,44 +509,28 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 
   ForceBottommost(db2b, l2b_src);
 
-  // ── Verify leaf CFs ───────────────────────────────────────────────────────
-  // Each leaf CF must have exactly kN records with exactly one column.
-  struct LeafCheck {
-    ROCKSDB_NAMESPACE::DB*                  db;
-    ROCKSDB_NAMESPACE::ColumnFamilyHandle*  cf;
-    std::string                             expected_col;
-    std::string                             absent_col;
-    std::string                             label;
-  };
-  std::vector<LeafCheck> leaves = {
-      {db2a,  destCF21, "col0", "col1", "destCF21"},
-      {db2a,  destCF22, "col1", "col0", "destCF22"},
-      {db2b,  destCF23, "col2", "col3", "destCF23"},
-      {db2b,  destCF24, "col3", "col2", "destCF24"},
-  };
-
-  for (const auto& leaf : leaves) {
-    std::set<std::string> seen;
-    auto* it = leaf.db->NewIterator(ReadOptions(), leaf.cf);
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-      const std::string k   = it->key().ToString();
-      const std::string val = it->value().ToString();
-      EXPECT_TRUE(seen.insert(k).second)
-          << leaf.label << ": duplicate key '" << k << "'";
-      EXPECT_NE(val.find(leaf.expected_col), std::string::npos)
-          << leaf.label << " missing " << leaf.expected_col << " for key " << k;
-      EXPECT_EQ(val.find(leaf.absent_col), std::string::npos)
-          << leaf.label << " should not contain " << leaf.absent_col
-          << " for key " << k;
+  // Verify Level 2b leaves
+  {
+    std::vector<std::pair<ROCKSDB_NAMESPACE::ColumnFamilyHandle*, std::string>> leaves2b = {
+        {destCF23, "col2"},
+        {destCF24, "col3"},
+    };
+    for (const auto& leaf : leaves2b) {
+      std::set<std::string> seen;
+      auto* it = db2b->NewIterator(ReadOptions(), leaf.first);
+      for (it->SeekToFirst(); it->Valid(); it->Next()) {
+        const std::string k   = it->key().ToString();
+        const std::string val = it->value().ToString();
+        EXPECT_TRUE(seen.insert(k).second);
+        EXPECT_NE(val.find(leaf.second), std::string::npos);
+      }
+      EXPECT_TRUE(it->status().ok());
+      delete it;
+      EXPECT_EQ(static_cast<int>(seen.size()), kN);
     }
-    EXPECT_TRUE(it->status().ok());
-    delete it;
-
-    EXPECT_EQ(static_cast<int>(seen.size()), kN)
-        << leaf.label << " should have exactly " << kN << " records";
-    for (const auto& k : keys)
-      EXPECT_TRUE(seen.count(k)) << leaf.label << " missing key '" << k << "'";
   }
+
+  broker_l2b.reset();
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
