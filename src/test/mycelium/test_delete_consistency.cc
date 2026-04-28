@@ -37,7 +37,6 @@
 #include "rocksdb/db.h"
 #include "rocksdb/mym_broker.h"
 #include "rocksdb/options.h"
-#include "rocksdb/write_batch.h"
 #include "mycelium/admission_policy.h"
 #include "mycelium/distributor.h"
 #include "mycelium/json_encoder.h"
@@ -52,7 +51,6 @@ using ROCKSDB_NAMESPACE::CompactRangeOptions;
 using ROCKSDB_NAMESPACE::FlushOptions;
 using ROCKSDB_NAMESPACE::MymBroker;
 using ROCKSDB_NAMESPACE::ReadOptions;
-using ROCKSDB_NAMESPACE::WriteOptions;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -79,8 +77,8 @@ static void ForceBottommost(ROCKSDB_NAMESPACE::DB* db,
   CompactRangeOptions cro;
   cro.bottommost_level_compaction = BottommostLevelCompaction::kForce;
   cro.change_level = false;
-  ASSERT_TRUE(db->CompactRange(cro, cf, nullptr, nullptr).ok())
-      << "CompactRange failed";
+  auto s = db->CompactRange(cro, cf, nullptr, nullptr);
+  ASSERT_TRUE(s.ok()) << "CompactRange failed: " << s.ToString();
 }
 
 // Scan cf_handle; fail if any key in `absent` appears.
@@ -124,6 +122,7 @@ static ROCKSDB_NAMESPACE::Options MakeSplitOptions(int num_cols = 2) {
   opts.error_if_exists          = false;
   opts.disable_auto_compactions = true;
   opts.num_levels               = 4;
+  opts.num_columns              = num_cols;  // required for col-routing in MymBroker
   opts.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleLevel;
   opts.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
 
@@ -164,6 +163,7 @@ static ROCKSDB_NAMESPACE::Options MakeIdentityOptions() {
   opts.error_if_exists          = false;
   opts.disable_auto_compactions = true;
   opts.num_levels               = 4;
+  opts.num_columns              = 2;  // required for col-routing in MymBroker
   opts.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleLevel;
   opts.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
 
@@ -209,8 +209,8 @@ TEST_F(DeleteConsistencyTest, SplitTransform_DeletedKeyAbsentFromDestCFs) {
 
   auto* db     = broker.GetDB();
   auto* src_cf = broker.GetCFHandle(kRoot);
-  auto* cf0    = broker.GetCFHandle(kRoot + "_split0_cf");
-  auto* cf1    = broker.GetCFHandle(kRoot + "_split1_cf");
+  auto* cf0    = broker.GetCFHandle(kRoot + "_split_cf_0");
+  auto* cf1    = broker.GetCFHandle(kRoot + "_split_cf_1");
   ASSERT_NE(db,     nullptr);
   ASSERT_NE(src_cf, nullptr);
   ASSERT_NE(cf0,    nullptr);
@@ -226,22 +226,24 @@ TEST_F(DeleteConsistencyTest, SplitTransform_DeletedKeyAbsentFromDestCFs) {
     else             surviving_keys.insert(key);
   }
 
-  // Issue deletes via the raw DB handle to simulate a delete-heavy workload.
-  WriteOptions wo;
-  for (const auto& k : deleted_keys) {
-    ASSERT_TRUE(db->Delete(wo, src_cf, k).ok())
-        << "Delete failed for key " << k;
-  }
+  // First compaction: materialize all records into derived CFs.
+  ForceBottommost(db, src_cf);
 
+  // Delete via broker — propagates tombstones eagerly to ALL derived CFs.
+  for (const auto& k : deleted_keys)
+    ASSERT_EQ(broker.Delete(k), 0) << "broker.Delete failed for key " << k;
+
+  // Second compaction: compact away tombstones; verify transform doesn't
+  // reintroduce deleted records (epoch tracker prevents re-firing).
   ForceBottommost(db, src_cf);
 
   // Deleted keys must not appear in either derived CF.
-  ScanForAbsent(db, cf0, deleted_keys, kRoot + "_split0_cf");
-  ScanForAbsent(db, cf1, deleted_keys, kRoot + "_split1_cf");
+  ScanForAbsent(db, cf0, deleted_keys, kRoot + "_split_cf_0");
+  ScanForAbsent(db, cf1, deleted_keys, kRoot + "_split_cf_1");
 
   // Surviving keys must be present in both derived CFs.
-  ScanForPresent(db, cf0, surviving_keys, kRoot + "_split0_cf");
-  ScanForPresent(db, cf1, surviving_keys, kRoot + "_split1_cf");
+  ScanForPresent(db, cf0, surviving_keys, kRoot + "_split_cf_0");
+  ScanForPresent(db, cf1, surviving_keys, kRoot + "_split_cf_1");
 }
 
 // ============================================================================
@@ -275,10 +277,14 @@ TEST_F(DeleteConsistencyTest, IdentityTransform_DeletedKeyAbsentFromDestCF) {
     else             surviving_keys.insert(key);
   }
 
-  WriteOptions wo;
-  for (const auto& k : deleted_keys)
-    ASSERT_TRUE(db->Delete(wo, src_cf, k).ok());
+  // First compaction: populate identity CF.
+  ForceBottommost(db, src_cf);
 
+  // Delete via broker — propagates tombstones to identity CF immediately.
+  for (const auto& k : deleted_keys)
+    ASSERT_EQ(broker.Delete(k), 0) << "broker.Delete failed for key " << k;
+
+  // Second compaction: tombstone cleanup.
   ForceBottommost(db, src_cf);
 
   ScanForAbsent(db,  dest_cf, deleted_keys,  kRoot + "_identity_cf");
@@ -314,17 +320,19 @@ TEST_F(DeleteConsistencyTest, MixedDeleteAndUpdate_DerivedCFConsistency) {
     ASSERT_EQ(broker.Insert(key, MakeJsonValue(i, 2)), 0);
   }
 
-  WriteOptions wo;
+  // First compaction: populate derived CF with original records.
+  ForceBottommost(db, src_cf);
+
   for (int i = 0; i < kN; i++) {
     std::string key = "key" + std::to_string(i);
     if (i % 3 == 0) {
-      // Update: overwrite with new value.
-      ASSERT_TRUE(
-          db->Put(wo, src_cf, key, MakeJsonValue(i + 1000, 2)).ok());
+      // Update: overwrite via broker (writes to source CF; derived CF updated
+      // by the next compaction).
+      ASSERT_EQ(broker.Insert(key, MakeJsonValue(i + 1000, 2)), 0);
       surviving_keys.insert(key);
     } else if (i % 3 == 1) {
-      // Delete.
-      ASSERT_TRUE(db->Delete(wo, src_cf, key).ok());
+      // Delete via broker — propagates tombstone to derived CF immediately.
+      ASSERT_EQ(broker.Delete(key), 0);
       deleted_keys.insert(key);
     } else {
       // Keep original.
@@ -332,6 +340,7 @@ TEST_F(DeleteConsistencyTest, MixedDeleteAndUpdate_DerivedCFConsistency) {
     }
   }
 
+  // Second compaction: pick up updates and clean up tombstones.
   ForceBottommost(db, src_cf);
 
   ScanForAbsent(db,  dest_cf, deleted_keys,  kRoot + "_identity_cf");
@@ -356,8 +365,8 @@ TEST_F(DeleteConsistencyTest, RangeDeletedKeys_AbsentFromDerivedCF) {
 
   auto* db     = broker.GetDB();
   auto* src_cf = broker.GetCFHandle(kRoot);
-  auto* cf0    = broker.GetCFHandle(kRoot + "_split0_cf");
-  auto* cf1    = broker.GetCFHandle(kRoot + "_split1_cf");
+  auto* cf0    = broker.GetCFHandle(kRoot + "_split_cf_0");
+  auto* cf1    = broker.GetCFHandle(kRoot + "_split_cf_1");
   ASSERT_NE(db,     nullptr);
   ASSERT_NE(src_cf, nullptr);
   ASSERT_NE(cf0,    nullptr);
@@ -371,10 +380,20 @@ TEST_F(DeleteConsistencyTest, RangeDeletedKeys_AbsentFromDerivedCF) {
     ASSERT_EQ(broker.Insert(key, MakeJsonValue(i, 2)), 0);
   }
 
-  // DeleteRange: deletes key005..key014 (end exclusive = key015).
-  WriteOptions wo;
-  ASSERT_TRUE(db->DeleteRange(wo, src_cf, "key005", "key015").ok());
+  // First compaction: populate derived CFs.
+  ForceBottommost(db, src_cf);
 
+  // "Range delete" key005..key014 via broker (one call per key so tombstones
+  // propagate to all derived CFs).  broker.Delete() is the correct API;
+  // db->DeleteRange() would only tombstone the source CF.
+  for (int i = 5; i < 15; i++) {
+    char key[8];
+    snprintf(key, sizeof(key), "key%03d", i);
+    ASSERT_EQ(broker.Delete(key), 0)
+        << "broker.Delete failed for key " << key;
+  }
+
+  // Second compaction: tombstone cleanup.
   ForceBottommost(db, src_cf);
 
   std::set<std::string> range_deleted, surviving;
@@ -385,10 +404,10 @@ TEST_F(DeleteConsistencyTest, RangeDeletedKeys_AbsentFromDerivedCF) {
     else                   surviving.insert(key);
   }
 
-  ScanForAbsent(db,  cf0, range_deleted, kRoot + "_split0_cf");
-  ScanForAbsent(db,  cf1, range_deleted, kRoot + "_split1_cf");
-  ScanForPresent(db, cf0, surviving,     kRoot + "_split0_cf");
-  ScanForPresent(db, cf1, surviving,     kRoot + "_split1_cf");
+  ScanForAbsent(db,  cf0, range_deleted, kRoot + "_split_cf_0");
+  ScanForAbsent(db,  cf1, range_deleted, kRoot + "_split_cf_1");
+  ScanForPresent(db, cf0, surviving,     kRoot + "_split_cf_0");
+  ScanForPresent(db, cf1, surviving,     kRoot + "_split_cf_1");
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────

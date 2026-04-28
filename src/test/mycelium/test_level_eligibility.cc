@@ -100,7 +100,8 @@ static void ForceBottommost(ROCKSDB_NAMESPACE::DB* db,
   CompactRangeOptions cro;
   cro.bottommost_level_compaction = BottommostLevelCompaction::kForce;
   cro.change_level = false;
-  ASSERT_TRUE(db->CompactRange(cro, cf, nullptr, nullptr).ok());
+  auto s = db->CompactRange(cro, cf, nullptr, nullptr);
+  ASSERT_TRUE(s.ok()) << "CompactRange failed: " << s.ToString();
 }
 
 // Read the "mycelium.epoch" property from every SST in cf_handle and return
@@ -144,6 +145,7 @@ static ROCKSDB_NAMESPACE::Options Make4ColSplitOptions() {
   opts.error_if_exists          = false;
   opts.disable_auto_compactions = true;
   opts.num_levels               = 4;
+  opts.num_columns              = 4;   // required: seeds col-routing metadata in MymBroker
   opts.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleLevel;
   opts.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
 
@@ -214,8 +216,9 @@ TEST_F(LevelEligibilityTest, OnceFiring_EpochAppliedAfterCompaction) {
   ASSERT_FALSE(epochs.empty())
       << "No SSTs found in source CF after compaction";
 
-  const std::string destCF1 = kRoot + "_split0_cf";
-  const std::string destCF2 = kRoot + "_split1_cf";
+  // MymBroker names DISTRIBUTOR children as <root>_split_cf_<k> (mym_broker.cc:365)
+  const std::string destCF1 = kRoot + "_split_cf_0";
+  const std::string destCF2 = kRoot + "_split_cf_1";
 
   for (const auto& [sst_path, tracker] : epochs) {
     EXPECT_EQ(tracker.GetState(destCF1), TransformState::APPLIED)
@@ -250,8 +253,8 @@ TEST_F(LevelEligibilityTest, NoReFiring_EpochPreventsDoubleApplication) {
 
   auto* db     = broker.GetDB();
   auto* src_cf = broker.GetCFHandle(kRoot);
-  const std::string destCF1 = kRoot + "_split0_cf";
-  const std::string destCF2 = kRoot + "_split1_cf";
+  const std::string destCF1 = kRoot + "_split_cf_0";
+  const std::string destCF2 = kRoot + "_split_cf_1";
   auto* cf1    = broker.GetCFHandle(destCF1);
   auto* cf2    = broker.GetCFHandle(destCF2);
   ASSERT_NE(db,  nullptr);
@@ -308,8 +311,8 @@ TEST_F(LevelEligibilityTest, DataIntegrity_CorrectColumnsInDestCFs) {
 
   auto* db     = broker.GetDB();
   auto* src_cf = broker.GetCFHandle(kRoot);
-  auto* cf1    = broker.GetCFHandle(kRoot + "_split0_cf");
-  auto* cf2    = broker.GetCFHandle(kRoot + "_split1_cf");
+  auto* cf1    = broker.GetCFHandle(kRoot + "_split_cf_0");
+  auto* cf2    = broker.GetCFHandle(kRoot + "_split_cf_1");
   ASSERT_NE(db,     nullptr);
   ASSERT_NE(src_cf, nullptr);
   ASSERT_NE(cf1,    nullptr);
@@ -403,8 +406,8 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 
   auto* db     = broker_l1.GetDB();
   auto* src_cf = broker_l1.GetCFHandle(kRoot);
-  const std::string destCF1_name = kRoot + "_split0_cf";
-  const std::string destCF2_name = kRoot + "_split1_cf";
+  const std::string destCF1_name = kRoot + "_split_cf_0";
+  const std::string destCF2_name = kRoot + "_split_cf_1";
   auto* destCF1 = broker_l1.GetCFHandle(destCF1_name);
   auto* destCF2 = broker_l1.GetCFHandle(destCF2_name);
   ASSERT_NE(db,      nullptr);
@@ -423,10 +426,10 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
       EXPECT_EQ(tracker.GetState(destCF2_name), TransformState::APPLIED)
           << sst_path;
       // destCF21/22/23/24 must NOT appear in source SST's epoch.
-      EXPECT_EQ(tracker.GetState(destCF1_name + "_split0_cf"),
+      EXPECT_EQ(tracker.GetState(destCF1_name + "_split_cf_0"),
                 TransformState::UNKNOWN)
           << "Source SST epoch must not reference grandchild CFs";
-      EXPECT_EQ(tracker.GetState(destCF1_name + "_split1_cf"),
+      EXPECT_EQ(tracker.GetState(destCF1_name + "_split_cf_1"),
                 TransformState::UNKNOWN)
           << "Source SST epoch must not reference grandchild CFs";
     }
@@ -438,6 +441,7 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
   opts_l2a.create_if_missing        = false;  // DB already exists
   opts_l2a.disable_auto_compactions = true;
   opts_l2a.num_levels               = 4;
+  opts_l2a.num_columns              = 2;
   opts_l2a.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleLevel;
   opts_l2a.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
   {
@@ -462,8 +466,8 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 
   auto* db2a    = broker_l2a.GetDB();
   auto* l2a_src = broker_l2a.GetCFHandle(destCF1_name);
-  const std::string destCF21_name = destCF1_name + "_split0_cf";
-  const std::string destCF22_name = destCF1_name + "_split1_cf";
+  const std::string destCF21_name = destCF1_name + "_split_cf_0";
+  const std::string destCF22_name = destCF1_name + "_split_cf_1";
   auto* destCF21 = broker_l2a.GetCFHandle(destCF21_name);
   auto* destCF22 = broker_l2a.GetCFHandle(destCF22_name);
   ASSERT_NE(db2a,     nullptr);
@@ -478,6 +482,7 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
   opts_l2b.create_if_missing        = false;
   opts_l2b.disable_auto_compactions = true;
   opts_l2b.num_levels               = 4;
+  opts_l2b.num_columns              = 2;
   opts_l2b.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleLevel;
   opts_l2b.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
   {
@@ -502,8 +507,8 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 
   auto* db2b    = broker_l2b.GetDB();
   auto* l2b_src = broker_l2b.GetCFHandle(destCF2_name);
-  const std::string destCF23_name = destCF2_name + "_split0_cf";
-  const std::string destCF24_name = destCF2_name + "_split1_cf";
+  const std::string destCF23_name = destCF2_name + "_split_cf_0";
+  const std::string destCF24_name = destCF2_name + "_split_cf_1";
   auto* destCF23 = broker_l2b.GetCFHandle(destCF23_name);
   auto* destCF24 = broker_l2b.GetCFHandle(destCF24_name);
   ASSERT_NE(db2b,     nullptr);

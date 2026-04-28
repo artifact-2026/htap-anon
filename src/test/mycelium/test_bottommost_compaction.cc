@@ -79,7 +79,7 @@ class BottommostCompactionTest : public ::testing::Test {
     opts.num_levels               = 3;
     opts.num_columns              = 1;
     opts.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleLevel;
-    opts.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
+    opts.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::WARN_LEVEL;
 
     opts.transformers.push_back(std::make_shared<mycelium::Mynooper>());
     opts.admission_policy = std::move(policy);
@@ -123,8 +123,8 @@ class BottommostCompactionTest : public ::testing::Test {
     CompactRangeOptions cro;
     cro.bottommost_level_compaction = BottommostLevelCompaction::kForce;
     cro.change_level = false;
-    ASSERT_TRUE(db->CompactRange(cro, src_cf, nullptr, nullptr).ok())
-        << "CompactRange failed";
+    auto s = db->CompactRange(cro, src_cf, nullptr, nullptr);
+    ASSERT_TRUE(s.ok()) << "CompactRange failed: " << s.ToString();
   }
 };
 
