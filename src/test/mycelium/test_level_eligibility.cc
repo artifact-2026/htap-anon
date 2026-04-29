@@ -36,7 +36,6 @@
 #include <memory>
 #include <set>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "rocksdb/db.h"
@@ -58,9 +57,6 @@ using ROCKSDB_NAMESPACE::CompactRangeOptions;
 using ROCKSDB_NAMESPACE::FlushOptions;
 using ROCKSDB_NAMESPACE::MymBroker;
 using ROCKSDB_NAMESPACE::ReadOptions;
-using ROCKSDB_NAMESPACE::TablePropertiesCollection;
-using mycelium::TransformEpochTracker;
-using mycelium::TransformState;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -102,29 +98,6 @@ static void ForceBottommost(ROCKSDB_NAMESPACE::DB* db,
   cro.change_level = false;
   auto s = db->CompactRange(cro, cf, nullptr, nullptr);
   ASSERT_TRUE(s.ok()) << "CompactRange failed: " << s.ToString();
-}
-
-// Read the "mycelium.epoch" property from every SST in cf_handle and return
-// the decoded TransformEpochTracker per SST path.
-static std::unordered_map<std::string, TransformEpochTracker>
-ReadEpochsForCF(ROCKSDB_NAMESPACE::DB* db,
-                ROCKSDB_NAMESPACE::ColumnFamilyHandle* cf_handle) {
-  std::unordered_map<std::string, TransformEpochTracker> result;
-  TablePropertiesCollection props;
-  EXPECT_TRUE(db->GetPropertiesOfAllTables(cf_handle, &props).ok());
-
-  for (const auto& [sst_path, tp] : props) {
-    auto it = tp->user_collected_properties.find(
-        ROCKSDB_NAMESPACE::kEpochPropertyKey);
-    if (it == tp->user_collected_properties.end()) continue;
-
-    TransformEpochTracker tracker;
-    auto s = tracker.DecodeFrom(it->second);
-    EXPECT_TRUE(s.ok()) << "Bad epoch encoding in " << sst_path
-                        << ": " << s.message();
-    result[sst_path] = std::move(tracker);
-  }
-  return result;
 }
 
 // Count all unique keys in cf_handle via a full scan.
@@ -378,6 +351,7 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 
   // ── Level 1: source → destCF1{col0,col1} + destCF2{col2,col3} ────────────
   const std::string kRoot = "myc_split";
+  auto opts_l1 = Make4ColSplitOptions();
   auto broker_l1 = std::make_unique<MymBroker>(kRoot, false, db_path_.c_str(), opts_l1, 2);
 
   const int kN  = 10;
