@@ -126,11 +126,21 @@ MONITOR_PID=""
 sep
 log "Generating resource summary ..."
 
-python3 - "$SYS_CSV" "$SUMMARY_TXT" << 'PYSUMMARY'
-import sys, csv, math
+python3 - "$SYS_CSV" "$SUMMARY_TXT" "$OUTPUT_DIR/benchmark.log" << 'PYSUMMARY'
+import sys, csv, math, re
 
 sys_csv       = sys.argv[1]
 summary_txt   = sys.argv[2]
+bench_log     = sys.argv[3]
+
+xput = "N/A"
+try:
+    with open(bench_log) as f:
+        content = f.read()
+        m = re.search(r"rate=([0-9.]+) splits/s", content)
+        if m: xput = f"{float(m.group(1)):,.0f} splits/s"
+except:
+    pass
 
 rows = []
 try:
@@ -167,6 +177,8 @@ lines = [
     f"CPU IOWait %    : {stats(cpu_iowait)[0]:.2f} ± {stats(cpu_iowait)[1]:.2f}",
     f"Disk Read MB/s  : {stats(rd_mbs)[0]:.2f} ± {stats(rd_mbs)[1]:.2f}",
     f"Disk Write MB/s : {stats(wr_mbs)[0]:.2f} ± {stats(wr_mbs)[1]:.2f}",
+    "------------------------------------",
+    f"Throughput      : {xput}",
 ]
 
 out = "\n".join(lines)
