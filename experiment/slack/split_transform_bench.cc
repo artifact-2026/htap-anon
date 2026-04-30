@@ -351,7 +351,7 @@ int main(int argc, const char** argv) {
     uint32_t x_ways = atoi(argv[5]);
     
     bool is_json = false;
-    if (argc >= 7 && strcmp(argv[6], "json") == 0) {
+    if (argc >= 7 && (strcmp(argv[6], "json") == 0 || strcmp(argv[6], "JSON") == 0)) {
         is_json = true;
     }
 

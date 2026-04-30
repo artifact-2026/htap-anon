@@ -26,6 +26,7 @@ NUM_FIELDS="$3"
 FIELD_LENGTH="$4"
 X_WAYS="$5"
 FORMAT="${6:-csv}"
+FORMAT=$(echo "$FORMAT" | tr '[:upper:]' '[:lower:]')
 
 OUTPUT_DIR="./split_profile_$(date +%Y%m%d_%H%M%S)"
 SYS_CSV="$OUTPUT_DIR/system.csv"
