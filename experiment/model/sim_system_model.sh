@@ -150,6 +150,12 @@ compile_all() {
 # Sets TARGET_IO_WORKERS as a side-effect.
 
 calibrate_io_workers() {
+    if [[ "$TARGET_IO_MB_S" == "0" || "$TARGET_IO_MB_S" == "0.0" ]]; then
+        log "Target I/O is 0 MB/s, skipping calibration."
+        TARGET_IO_WORKERS=0
+        return
+    fi
+
     local calib_secs=15
     local calib_file_mb=512
 
@@ -454,12 +460,17 @@ run_model() {
     log "  iBench_cpu pid=$IBENCH_CPU_PID"
 
     # ── Start iBench_io ──────────────────────────────────────────────────────
-    log "Starting I/O load: ${TARGET_IO_WORKERS} iBench_io worker(s) × ${TOTAL_SECS}s"
-    log "  IO files in: $IO_DIR  (${IO_FILE_MB} MiB per worker)"
-    "$IBENCH_IO_BIN" "$TOTAL_SECS" "$TARGET_IO_WORKERS" 2097152 "$IO_DIR" "$IO_FILE_MB" \
-        > "$OUTPUT_DIR/ibench_io.log" 2>&1 &
-    IBENCH_IO_PID=$!
-    log "  iBench_io  pid=$IBENCH_IO_PID"
+    if [[ "$TARGET_IO_WORKERS" -gt 0 ]]; then
+        log "Starting I/O load: ${TARGET_IO_WORKERS} iBench_io worker(s) × ${TOTAL_SECS}s (Target: ${TARGET_IO_MB_S} MB/s)"
+        log "  IO files in: $IO_DIR  (${IO_FILE_MB} MiB per worker)"
+        "$IBENCH_IO_BIN" "$TOTAL_SECS" "$TARGET_IO_WORKERS" 2097152 "$IO_DIR" "$IO_FILE_MB" --rate "$TARGET_IO_MB_S" \
+            > "$OUTPUT_DIR/ibench_io.log" 2>&1 &
+        IBENCH_IO_PID=$!
+        log "  iBench_io  pid=$IBENCH_IO_PID"
+    else
+        log "Skipping I/O load (TARGET_IO_WORKERS=0)"
+        > "$OUTPUT_DIR/ibench_io.log"
+    fi
 
     # ── Start system monitor ─────────────────────────────────────────────────
     python3 "$MONITOR_SCRIPT" "$sys_csv" "$disk_device" &

@@ -110,6 +110,14 @@ static inline uint64_t getNs(void) {
     return (uint64_t)ts.tv_sec * NS_PER_S + ts.tv_nsec;
 }
 
+static inline void sleepNs(uint64_t ns) {
+    struct timespec ts;
+    ts.tv_sec  = (time_t)(ns / NS_PER_S);
+    ts.tv_nsec = (long)(ns % NS_PER_S);
+    while (nanosleep(&ts, &ts) != 0)
+        ;   /* retry remainder on EINTR */
+}
+
 /* ── Per-thread state ─────────────────────────────────────────────────── */
 
 typedef struct {
@@ -119,6 +127,7 @@ typedef struct {
     int      init_only;     /* read thread: do Phase 1 only, skip timed loop   */
     int      keep_file;     /* do not unlink file after thread exits            */
     uint64_t endNs;
+    uint64_t intervalNs;    /* sleep interval between ops to maintain target rate */
     uint32_t io_size;       /* bytes per op; multiple of 512                   */
     uint64_t file_size;     /* pre-allocated size; multiple of io_size          */
     char     path[1024];
@@ -181,6 +190,7 @@ static void *write_worker(void *arg) {
     }
 
     uint64_t count = 0, bytes = 0, pos = 0;
+    uint64_t nextNs = getNs() + a->intervalNs;
     while (g_keep_running && getNs() < a->endNs) {
         if (pos + a->io_size > a->file_size) {
             if (lseek(fd, 0, SEEK_SET) < 0) {
@@ -202,6 +212,13 @@ static void *write_worker(void *arg) {
             fprintf(stderr, "[write %d] ERROR: fsync: %s\n",
                     a->tid, strerror(errno));
             break;
+        }
+
+        if (a->intervalNs > 0) {
+            uint64_t now = getNs();
+            if (nextNs > now) sleepNs(nextNs - now);
+            now = getNs();
+            nextNs = (nextNs + a->intervalNs > now) ? nextNs + a->intervalNs : now + a->intervalNs;
         }
     }
 
@@ -300,6 +317,7 @@ static void *read_worker(void *arg) {
     unsigned int seed = (unsigned int)a->tid * 2654435761U;
 
     uint64_t count = 0, bytes = 0;
+    uint64_t nextNs = getNs() + a->intervalNs;
     while (g_keep_running && getNs() < a->endNs) {
         uint64_t block = (uint64_t)rand_r(&seed) % n_blocks;
         off_t off = (off_t)(block * (uint64_t)a->io_size);
@@ -311,6 +329,13 @@ static void *read_worker(void *arg) {
             break;
         }
         bytes += (uint64_t)n; count++;
+
+        if (a->intervalNs > 0) {
+            uint64_t now = getNs();
+            if (nextNs > now) sleepNs(nextNs - now);
+            now = getNs();
+            nextNs = (nextNs + a->intervalNs > now) ? nextNs + a->intervalNs : now + a->intervalNs;
+        }
     }
 
     close(fd);
@@ -336,7 +361,7 @@ int main(int argc, const char **argv) {
     if (argc < 2) {
         fprintf(stderr,
             "Usage: ./io <duration_s> [n_workers] [io_size] [dir] [max_mb]"
-            " [--init-only] [--skip-init]\n"
+            " [--init-only] [--skip-init] [--rate <total_mb_s>]\n"
             "\n"
             "  duration_s   run time in seconds (init-only: ignored; runs to completion)\n"
             "  n_workers    competitor units; 1 write + 1 read thread each (default: 1)\n"
@@ -344,7 +369,8 @@ int main(int argc, const char **argv) {
             "  dir          temp file directory; use the RocksDB data disk (default: /tmp)\n"
             "  max_mb       file size per thread in MiB (default: 4096 = 4 GiB)\n"
             "  --init-only  initialise read files only, then exit (two-pass Pass 1)\n"
-            "  --skip-init  skip read-file initialisation (two-pass Pass 2)\n");
+            "  --skip-init  skip read-file initialisation (two-pass Pass 2)\n"
+            "  --rate <X>   throttle total bandwidth to X MB/s (split across workers)\n");
         return 1;
     }
 
@@ -356,9 +382,13 @@ int main(int argc, const char **argv) {
 
     /* Parse optional mode flags (may appear anywhere after positional args). */
     int init_only = 0, skip_init = 0;
+    double target_rate_mbs = 0.0;
     for (int ai = 6; ai < argc; ai++) {
         if (strcmp(argv[ai], "--init-only") == 0) init_only = 1;
         else if (strcmp(argv[ai], "--skip-init") == 0) skip_init = 1;
+        else if (strcmp(argv[ai], "--rate") == 0 && ai + 1 < argc) {
+            target_rate_mbs = atof(argv[++ai]);
+        }
         else {
             fprintf(stderr, "WARNING: unknown flag '%s' ignored\n", argv[ai]);
         }
@@ -397,6 +427,14 @@ int main(int argc, const char **argv) {
     /* In --init-only mode we only launch read threads (they do Phase 1).
      * Write threads are not needed and would just waste time.              */
     uint32_t numThreads = init_only ? n_workers : n_workers * 2;
+    
+    uint64_t intervalNs = 0;
+    if (target_rate_mbs > 0.0) {
+        /* Total rate is split evenly across all threads (read and write). */
+        double rate_per_thread_mbs = target_rate_mbs / (double)numThreads;
+        double ops_per_sec = (rate_per_thread_mbs * 1024.0 * 1024.0) / (double)io_size;
+        intervalNs = (uint64_t)(NS_PER_S / ops_per_sec);
+    }
 
     if (init_only) {
         printf("iBench IO [init-only]: initialising %u read file(s)"
@@ -433,6 +471,7 @@ int main(int argc, const char **argv) {
             args[j].init_only  = 1;
             args[j].keep_file  = 1;  /* persist for Pass 2 */
             args[j].endNs      = endNs;
+            args[j].intervalNs = 0;  /* init phase is never throttled */
             args[j].io_size    = io_size;
             args[j].file_size  = file_size;
             args[j].count      = 0;
@@ -457,6 +496,7 @@ int main(int argc, const char **argv) {
             args[i].init_only  = 0;
             args[i].keep_file  = 0;  /* unlink on exit */
             args[i].endNs      = endNs;
+            args[i].intervalNs = intervalNs;
             args[i].io_size    = io_size;
             args[i].file_size  = file_size;
             args[i].count      = 0;
