@@ -71,9 +71,17 @@
 #include <time.h>
 #include <pthread.h>
 #include <unistd.h>   /* sysconf */
+#include <signal.h>   /* signal handling */
 #ifdef __linux__
 #  include <sched.h>  /* sched_setaffinity, CPU_SET */
 #endif
+
+volatile sig_atomic_t g_keep_running = 1;
+
+static void handle_sig(int sig) {
+    (void)sig;
+    g_keep_running = 0;
+}
 
 #define NS_PER_S   (1000000000L)
 
@@ -195,10 +203,10 @@ static void *worker(void *arg) {
         uint64_t sleep_ns_base = PERIOD_NS - work_ns_base;
         uint64_t carry_ns      = 0;   /* sleep overshoot → extra work next period */
 
-        while (getNs() < a->endNs) {
+        while (g_keep_running && getNs() < a->endNs) {
             /* Work phase: run until work_ns_base + carry_ns elapses */
             uint64_t phase_end = getNs() + work_ns_base + carry_ns;
-            while (getNs() < phase_end && getNs() < a->endNs) {
+            while (g_keep_running && getNs() < phase_end && getNs() < a->endNs) {
                 uint64_t x = state;
                 for (uint32_t r = 0; r < a->rounds; r++) x = mix64(x);
                 state = x;
@@ -219,7 +227,7 @@ static void *worker(void *arg) {
         /* ── Full thread: busy-loop or rate-limited ─────────────────── */
         uint64_t nextNs = getNs() + a->intervalNs;
 
-        while (getNs() < a->endNs) {
+        while (g_keep_running && getNs() < a->endNs) {
             uint64_t x = state;
             for (uint32_t r = 0; r < a->rounds; r++) x = mix64(x);
             state = x;
@@ -246,6 +254,9 @@ static void *worker(void *arg) {
 }
 
 int main(int argc, const char** argv) {
+    signal(SIGINT, handle_sig);
+    signal(SIGTERM, handle_sig);
+
     /* ── Parse arguments ─────────────────────────────────────────────── */
     if (argc < 2) {
         fprintf(stderr,

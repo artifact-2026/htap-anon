@@ -496,7 +496,7 @@ run_model() {
     for pid_var in IBENCH_CPU_PID IBENCH_IO_PID MONITOR_PID; do
         eval "pid=\${${pid_var}:-}"
         if [[ -n "$pid" ]]; then
-            kill "$pid" 2>/dev/null || true
+            kill -INT "$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
             wait "$pid" 2>/dev/null || true
         fi
     done
@@ -515,6 +515,17 @@ run_model() {
     log "  Summary     : $summary_txt"
     log "  Plot        : $plot_png"
     log ""
+    
+    # Extract iBench reported throughput
+    local cpu_xput io_xput
+    cpu_xput=$(grep "iBench CPU: done" "$OUTPUT_DIR/ibench_cpu.log" || echo "No CPU throughput reported")
+    io_xput=$(grep -oP "total: [0-9.]+ MB/s.*" "$OUTPUT_DIR/ibench_io.log" | tail -1 || echo "No IO throughput reported")
+    
+    log "iBench Internal Throughput:"
+    log "  CPU : $cpu_xput"
+    log "  I/O : $io_xput"
+    log ""
+
     log "Interpreting the results:"
     log "  - cpu_busy_pct should match the observed workload CPU utilization"
     log "  - disk_total_mbs should match the observed workload I/O bandwidth"

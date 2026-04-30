@@ -83,6 +83,14 @@
 #include <string.h>
 #include <time.h>
 #include <pthread.h>
+#include <signal.h>
+
+volatile sig_atomic_t g_keep_running = 1;
+
+static void handle_sig(int sig) {
+    (void)sig;
+    g_keep_running = 0;
+}
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -173,7 +181,7 @@ static void *write_worker(void *arg) {
     }
 
     uint64_t count = 0, bytes = 0, pos = 0;
-    while (getNs() < a->endNs) {
+    while (g_keep_running && getNs() < a->endNs) {
         if (pos + a->io_size > a->file_size) {
             if (lseek(fd, 0, SEEK_SET) < 0) {
                 fprintf(stderr, "[write %d] ERROR: lseek: %s\n",
@@ -292,7 +300,7 @@ static void *read_worker(void *arg) {
     unsigned int seed = (unsigned int)a->tid * 2654435761U;
 
     uint64_t count = 0, bytes = 0;
-    while (getNs() < a->endNs) {
+    while (g_keep_running && getNs() < a->endNs) {
         uint64_t block = (uint64_t)rand_r(&seed) % n_blocks;
         off_t off = (off_t)(block * (uint64_t)a->io_size);
         ssize_t n = pread(fd, buf, a->io_size, off);
@@ -322,6 +330,9 @@ static void *worker(void *arg) {
 /* ── Main ─────────────────────────────────────────────────────────────── */
 
 int main(int argc, const char **argv) {
+    signal(SIGINT, handle_sig);
+    signal(SIGTERM, handle_sig);
+
     if (argc < 2) {
         fprintf(stderr,
             "Usage: ./io <duration_s> [n_workers] [io_size] [dir] [max_mb]"
