@@ -14,9 +14,9 @@
 
 set -euo pipefail
 
-if [ "$#" -ne 5 ]; then
-    echo "Usage: $0 <duration_s> <n_workers> <num_fields> <field_length> <x_ways>"
-    echo "Example: $0 10 4 16 128 4"
+if [ "$#" -lt 5 ]; then
+    echo "Usage: $0 <duration_s> <n_workers> <num_fields> <field_length> <x_ways> [csv|json]"
+    echo "Example: $0 10 4 16 128 4 json"
     exit 1
 fi
 
@@ -25,6 +25,7 @@ N_WORKERS="$2"
 NUM_FIELDS="$3"
 FIELD_LENGTH="$4"
 X_WAYS="$5"
+FORMAT="${6:-csv}"
 
 OUTPUT_DIR="./split_profile_$(date +%Y%m%d_%H%M%S)"
 SYS_CSV="$OUTPUT_DIR/system.csv"
@@ -114,8 +115,8 @@ log "Starting system monitor (logging to $SYS_CSV) ..."
 python3 "$MONITOR_SCRIPT" "$SYS_CSV" "$disk_device" &
 MONITOR_PID=$!
 
-log "Running split_transform_bench ..."
-"$BENCH_BIN" "$DURATION_S" "$N_WORKERS" "$NUM_FIELDS" "$FIELD_LENGTH" "$X_WAYS" | tee "$OUTPUT_DIR/benchmark.log"
+log "Running split_transform_bench ($FORMAT format) ..."
+"$BENCH_BIN" "$DURATION_S" "$N_WORKERS" "$NUM_FIELDS" "$FIELD_LENGTH" "$X_WAYS" "$FORMAT" | tee "$OUTPUT_DIR/benchmark.log"
 
 log "Stopping monitor ..."
 kill -TERM "$MONITOR_PID" 2>/dev/null || true
