@@ -95,13 +95,13 @@ static void* worker(void* arg) {
     
     // Start at a staggered offset to prevent all threads reading the exact same cache line
     uint64_t read_offset = (a->tid * (actual_input_size / 8)) % actual_input_size;
+    // Allocate arrays for the two-pass parse-then-split
+    const char** field_ptrs = (const char**)malloc(a->num_fields * sizeof(const char*));
+    uint32_t* field_lengths = (uint32_t*)malloc(a->num_fields * sizeof(uint32_t));
 
     while (get_ns() < a->end_ns) {
         const char* src = shared_input_buffer + read_offset;
-        
-        uint32_t current_way = 0;
-        uint32_t field_idx = 0;
-        
+
         // Ensure we don't overflow the ring buffers
         for (uint32_t x = 0; x < a->x_ways; x++) {
             if (ring_offsets[x] + record_size >= RING_BUFFER_SIZE) {
@@ -109,28 +109,49 @@ static void* worker(void* arg) {
             }
         }
 
-        // Parse one record
+        // 1. Parse one record into fields
+        uint32_t parsed_fields = 0;
         uint32_t src_pos = 0;
-        while (src_pos < record_size) {
-            char c = src[src_pos++];
-            
-            // Write to the current ring buffer
-            char* dest = ring_buffers[current_way] + ring_offsets[current_way];
-            *dest = c;
-            ring_offsets[current_way]++;
+        uint32_t current_field_start = 0;
 
-            if (c == '|' || c == '\n') {
-                field_idx++;
-                if (field_idx >= way_limits[current_way]) {
-                    // We finished the fields for the current way.
-                    // Replace the last delimiter with a newline for the sub-record
-                    *dest = '\n';
-                    current_way++;
-                    if (current_way >= a->x_ways) {
-                        break;
-                    }
-                }
+        while (src_pos < record_size && parsed_fields < a->num_fields) {
+            char c = src[src_pos];
+            if (c == '|' || c == ',' || c == '\n') {
+                field_ptrs[parsed_fields] = src + current_field_start;
+                field_lengths[parsed_fields] = src_pos - current_field_start;
+                parsed_fields++;
+                current_field_start = src_pos + 1;
             }
+            src_pos++;
+        }
+        // Handle last field if it didn't end with a delimiter
+        if (parsed_fields < a->num_fields && current_field_start < record_size) {
+            field_ptrs[parsed_fields] = src + current_field_start;
+            field_lengths[parsed_fields] = record_size - current_field_start;
+            parsed_fields++;
+        }
+
+        // 2. Split the parsed fields into X ways
+        uint32_t field_idx = 0;
+        for (uint32_t x = 0; x < a->x_ways; x++) {
+            uint32_t target_fields = way_limits[x];
+            char* dest = ring_buffers[x] + ring_offsets[x];
+            uint32_t dest_offset = 0;
+
+            while (field_idx < target_fields && field_idx < parsed_fields) {
+                // Copy the field payload
+                memcpy(dest + dest_offset, field_ptrs[field_idx], field_lengths[field_idx]);
+                dest_offset += field_lengths[field_idx];
+
+                // Add delimiter or newline
+                if (field_idx == target_fields - 1 || field_idx == parsed_fields - 1) {
+                    dest[dest_offset++] = '\n';
+                } else {
+                    dest[dest_offset++] = '|';
+                }
+                field_idx++;
+            }
+            ring_offsets[x] += dest_offset;
         }
 
         sink ^= ring_buffers[0][0]; // Anti-elide
@@ -150,6 +171,8 @@ static void* worker(void* arg) {
     }
     free(ring_buffers);
     free(ring_offsets);
+    free(field_ptrs);
+    free(field_lengths);
     free(way_limits);
 
     return NULL;
