@@ -60,14 +60,31 @@ void build_input_buffer(uint32_t num_fields, uint32_t field_length) {
     uint32_t record_size = num_fields * field_length;
     actual_input_size = (INPUT_BUFFER_SIZE / record_size) * record_size;
 
+    srand(42); // Deterministic seed
     for (uint64_t offset = 0; offset < actual_input_size; offset += record_size) {
         char *rec = shared_input_buffer + offset;
+        uint32_t current_rec_pos = 0;
+
         for (uint32_t f = 0; f < num_fields; f++) {
-            char *fp = rec + f * field_length;
-            // Fill field with dummy data
-            memset(fp, 'A' + (f % 26), field_length);
-            // Put delimiter at the end of the field (except last field gets newline)
-            fp[field_length - 1] = (f == num_fields - 1) ? '\n' : '|';
+            uint32_t this_field_len;
+            if (f == num_fields - 1) {
+                this_field_len = record_size - current_rec_pos;
+            } else {
+                int variance = field_length / 2;
+                int random_delta = (rand() % (variance * 2 + 1)) - variance;
+                this_field_len = field_length + random_delta;
+                if (this_field_len < 16) this_field_len = 16;
+                
+                uint32_t remaining_fields = num_fields - 1 - f;
+                uint32_t max_allowed = (record_size - current_rec_pos) - (remaining_fields * 16);
+                if (this_field_len > max_allowed) this_field_len = max_allowed;
+            }
+
+            char *fp = rec + current_rec_pos;
+            memset(fp, 'A' + (f % 26), this_field_len);
+            fp[this_field_len - 1] = (f == num_fields - 1) ? '\n' : '|';
+            
+            current_rec_pos += this_field_len;
         }
     }
 }
@@ -83,10 +100,27 @@ void build_input_buffer_json(uint32_t num_fields, uint32_t field_length) {
     uint32_t record_size = num_fields * field_length;
     actual_input_size = (INPUT_BUFFER_SIZE / record_size) * record_size;
 
+    srand(42);
     for (uint64_t offset = 0; offset < actual_input_size; offset += record_size) {
         char *rec = shared_input_buffer + offset;
+        uint32_t current_rec_pos = 0;
+
         for (uint32_t f = 0; f < num_fields; f++) {
-            char *fp = rec + f * field_length;
+            uint32_t this_field_len;
+            if (f == num_fields - 1) {
+                this_field_len = record_size - current_rec_pos;
+            } else {
+                int variance = field_length / 2;
+                int random_delta = (rand() % (variance * 2 + 1)) - variance;
+                this_field_len = field_length + random_delta;
+                if (this_field_len < 32) this_field_len = 32;
+                
+                uint32_t remaining_fields = num_fields - 1 - f;
+                uint32_t max_allowed = (record_size - current_rec_pos) - (remaining_fields * 32);
+                if (this_field_len > max_allowed) this_field_len = max_allowed;
+            }
+
+            char *fp = rec + current_rec_pos;
             
             char prefix[64];
             if (f == 0) {
@@ -96,7 +130,7 @@ void build_input_buffer_json(uint32_t num_fields, uint32_t field_length) {
             }
             int prefix_len = strlen(prefix);
             
-            int padding = field_length - prefix_len - ((f == num_fields - 1) ? 2 : 2); // 2 for "\", or "\"}\n"
+            int padding = this_field_len - prefix_len - ((f == num_fields - 1) ? 2 : 2);
             if (padding < 1) padding = 1;
 
             memcpy(fp, prefix, prefix_len);
@@ -105,13 +139,15 @@ void build_input_buffer_json(uint32_t num_fields, uint32_t field_length) {
             if (f == num_fields - 1) {
                 fp[prefix_len + padding] = '"';
                 fp[prefix_len + padding + 1] = '}';
-                for(uint32_t i = prefix_len + padding + 2; i < field_length - 1; i++) fp[i] = ' ';
-                fp[field_length - 1] = '\n';
+                for(uint32_t i = prefix_len + padding + 2; i < this_field_len - 1; i++) fp[i] = ' ';
+                fp[this_field_len - 1] = '\n';
             } else {
                 fp[prefix_len + padding] = '"';
                 fp[prefix_len + padding + 1] = ',';
-                for(uint32_t i = prefix_len + padding + 2; i < field_length; i++) fp[i] = ' ';
+                for(uint32_t i = prefix_len + padding + 2; i < this_field_len; i++) fp[i] = ' ';
             }
+            
+            current_rec_pos += this_field_len;
         }
     }
 }
