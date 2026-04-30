@@ -496,7 +496,7 @@ run_model() {
     for pid_var in IBENCH_CPU_PID IBENCH_IO_PID MONITOR_PID; do
         eval "pid=\${${pid_var}:-}"
         if [[ -n "$pid" ]]; then
-            kill -INT "$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+            kill "$pid" 2>/dev/null || true
             wait "$pid" 2>/dev/null || true
         fi
     done
