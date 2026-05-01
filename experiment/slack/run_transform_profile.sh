@@ -1,22 +1,31 @@
 #!/usr/bin/env bash
 # =============================================================================
-# run_split_transform_profile.sh
+# run_transform_profile.sh
 #
-# Runs the out-of-cache split_transform_bench C++ program while capturing 
+# Runs either split_transform_bench or convert_transform_bench while capturing
 # system resource metrics (CPU and Disk I/O) via a background monitor.
 #
 # Usage:
-#   bash run_split_transform_profile.sh <duration_s> <n_workers> <num_fields> <field_length> <x_ways>
+#   bash run_transform_profile.sh <duration_s> <n_workers> <num_fields> \
+#       <field_length> <x_ways_or_mode> [csv|json] [--bench split|convert]
 #
-# Example:
-#   bash experiment/slack/run_split_transform_profile.sh 10 4 16 128 4
+# Benchmark selection (--bench):
+#   split   — split_transform_bench: splits records into X_WAYS partitions.
+#             Extra arg: x_ways (integer), optional format [csv|json].
+#   convert — convert_transform_bench: converts record format in-place.
+#             Extra arg: mode (csv2json|json2csv|coerce), format arg ignored.
+#
+# Examples:
+#   bash experiment/slack/run_transform_profile.sh 10 4 16 128 4 json
+#   bash experiment/slack/run_transform_profile.sh 10 4 16 128 csv2json --bench convert
 # =============================================================================
 
 set -euo pipefail
 
 if [ "$#" -lt 5 ]; then
-    echo "Usage: $0 <duration_s> <n_workers> <num_fields> <field_length> <x_ways> [csv|json]"
-    echo "Example: $0 10 4 16 128 4 json"
+    echo "Usage: $0 <duration_s> <n_workers> <num_fields> <field_length> <x_ways_or_mode> [csv|json] [--bench split|convert]"
+    echo "  --bench split   (default) run split_transform_bench"
+    echo "  --bench convert           run convert_transform_bench"
     exit 1
 fi
 
@@ -24,18 +33,46 @@ DURATION_S="$1"
 N_WORKERS="$2"
 NUM_FIELDS="$3"
 FIELD_LENGTH="$4"
-X_WAYS="$5"
-FORMAT="${6:-csv}"
-FORMAT=$(echo "$FORMAT" | tr '[:upper:]' '[:lower:]')
+X_WAYS_OR_MODE="$5"
 
-OUTPUT_DIR="./split_profile_$(date +%Y%m%d_%H%M%S)"
+# Parse remaining optional args: [format] [--bench split|convert]
+FORMAT="csv"
+BENCH_TYPE="split"
+shift 5
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --bench)
+            shift
+            BENCH_TYPE="${1:-split}"
+            ;;
+        csv|json|CSV|JSON)
+            FORMAT=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+            ;;
+        *)  # positional: treat as format if not already set via --bench
+            FORMAT=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+            ;;
+    esac
+    shift
+done
+BENCH_TYPE=$(echo "$BENCH_TYPE" | tr '[:upper:]' '[:lower:]')
+
+if [ "$BENCH_TYPE" != "split" ] && [ "$BENCH_TYPE" != "convert" ]; then
+    echo "ERROR: --bench must be 'split' or 'convert' (got '$BENCH_TYPE')"
+    exit 1
+fi
+
+OUTPUT_DIR="./transform_profile_$(date +%Y%m%d_%H%M%S)_${BENCH_TYPE}"
 SYS_CSV="$OUTPUT_DIR/system.csv"
 SUMMARY_TXT="$OUTPUT_DIR/summary.txt"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BENCH_SRC="$SCRIPT_DIR/split_transform_bench.cc"
-BENCH_BIN=$(mktemp /tmp/split_bench_XXXXX)
-MONITOR_SCRIPT=$(mktemp /tmp/split_monitor_XXXXX.py)
+if [ "$BENCH_TYPE" = "convert" ]; then
+    BENCH_SRC="$SCRIPT_DIR/convert_transform_bench.cc"
+else
+    BENCH_SRC="$SCRIPT_DIR/split_transform_bench.cc"
+fi
+BENCH_BIN=$(mktemp /tmp/transform_bench_XXXXX)
+MONITOR_SCRIPT=$(mktemp /tmp/transform_monitor_XXXXX.py)
 MONITOR_PID=""
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
@@ -48,7 +85,7 @@ cleanup() {
 trap cleanup EXIT
 
 # ── Compile Benchmark ─────────────────────────────────────────────────────────
-log "Compiling split_transform_bench.cc ..."
+log "Compiling $(basename "$BENCH_SRC") ..."
 g++ -O3 -pthread -o "$BENCH_BIN" "$BENCH_SRC" || { log "Compile failed"; exit 1; }
 
 mkdir -p "$OUTPUT_DIR"
@@ -116,8 +153,18 @@ log "Starting system monitor (logging to $SYS_CSV) ..."
 python3 "$MONITOR_SCRIPT" "$SYS_CSV" "$disk_device" &
 MONITOR_PID=$!
 
-log "Running split_transform_bench ($FORMAT format) ..."
-"$BENCH_BIN" "$DURATION_S" "$N_WORKERS" "$NUM_FIELDS" "$FIELD_LENGTH" "$X_WAYS" "$FORMAT" | tee "$OUTPUT_DIR/benchmark.log"
+if [ "$BENCH_TYPE" = "convert" ]; then
+    # convert_transform_bench: <duration_s> <n_workers> <num_fields> <field_length> <mode>
+    # X_WAYS_OR_MODE holds the conversion mode (csv2json|json2csv|coerce)
+    log "Running convert_transform_bench (mode=$X_WAYS_OR_MODE) ..."
+    "$BENCH_BIN" "$DURATION_S" "$N_WORKERS" "$NUM_FIELDS" "$FIELD_LENGTH" "$X_WAYS_OR_MODE" \
+        | tee "$OUTPUT_DIR/benchmark.log"
+else
+    # split_transform_bench: <duration_s> <n_workers> <num_fields> <field_length> <x_ways> [csv|json]
+    log "Running split_transform_bench ($FORMAT format, x_ways=$X_WAYS_OR_MODE) ..."
+    "$BENCH_BIN" "$DURATION_S" "$N_WORKERS" "$NUM_FIELDS" "$FIELD_LENGTH" "$X_WAYS_OR_MODE" "$FORMAT" \
+        | tee "$OUTPUT_DIR/benchmark.log"
+fi
 
 log "Stopping monitor ..."
 kill -TERM "$MONITOR_PID" 2>/dev/null || true
@@ -128,18 +175,30 @@ MONITOR_PID=""
 sep
 log "Generating resource summary ..."
 
-python3 - "$SYS_CSV" "$SUMMARY_TXT" "$OUTPUT_DIR/benchmark.log" << 'PYSUMMARY'
+BENCH_TYPE_PY="$BENCH_TYPE"
+python3 - "$SYS_CSV" "$SUMMARY_TXT" "$OUTPUT_DIR/benchmark.log" "$BENCH_TYPE_PY" <<'PYSUMMARY'
 import sys, csv, math, re
 
-sys_csv       = sys.argv[1]
-summary_txt   = sys.argv[2]
-bench_log     = sys.argv[3]
+sys_csv     = sys.argv[1]
+summary_txt = sys.argv[2]
+bench_log   = sys.argv[3]
+bench_type  = sys.argv[4] if len(sys.argv) > 4 else "split"
 
-xput = "N/A"
+# Parse throughput from benchmark log — handle both output formats:
+#   split:   rate=NNNN splits/s
+#   convert: rate=NNNN rec/s  input_bw=NNNN MB/s
+xput    = "N/A"
+bw_note = ""
 try:
     with open(bench_log) as f:
         content = f.read()
-        m = re.search(r"rate=([0-9.]+) splits/s", content)
+    if bench_type == "convert":
+        m = re.search(r"rate=([0-9.]+)\s+rec/s", content)
+        if m: xput = f"{float(m.group(1)):,.0f} rec/s"
+        m2 = re.search(r"input_bw=([0-9.]+)\s+MB/s", content)
+        if m2: bw_note = f"{float(m2.group(1)):.1f} MB/s input consumed"
+    else:
+        m = re.search(r"rate=([0-9.]+)\s+splits/s", content)
         if m: xput = f"{float(m.group(1)):,.0f} splits/s"
 except:
     pass
@@ -172,8 +231,11 @@ cpu_iowait = [float(r['cpu_iowait_pct']) for r in rows]
 rd_mbs     = [float(r['disk_read_mbs'])  for r in rows]
 wr_mbs     = [float(r['disk_write_mbs']) for r in rows]
 
+header = "=== Conversion Transformation Profile ===" if bench_type == "convert" \
+         else "=== Split Transformation Profile ==="
+
 lines = [
-    "=== Split Transformation Profile ===",
+    header,
     f"Samples         : {len(rows)}",
     f"CPU Busy %      : {stats(cpu_busy)[0]:.2f} ± {stats(cpu_busy)[1]:.2f}",
     f"CPU IOWait %    : {stats(cpu_iowait)[0]:.2f} ± {stats(cpu_iowait)[1]:.2f}",
@@ -182,6 +244,8 @@ lines = [
     "------------------------------------",
     f"Throughput      : {xput}",
 ]
+if bw_note:
+    lines.append(f"Input Bandwidth : {bw_note}")
 
 out = "\n".join(lines)
 print(out)
