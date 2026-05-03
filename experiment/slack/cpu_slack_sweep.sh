@@ -637,7 +637,7 @@ for rd in run_dirs:
     total_c = (cache_hits + cache_misses) if not (np.isnan(cache_hits) or np.isnan(cache_misses)) else 0
     hit_rate = cache_hits / total_c if total_c > 0 else nan
 
-    def fmt(v): return round(float(v), 2) if not np.isnan(v) else nan
+    def fmt(v): return f"{float(v):.2f}" if not np.isnan(v) else nan
     def ss(k):  return fmt(sys_stats.get(k, nan))
 
     rows.append(dict(

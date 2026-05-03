@@ -463,6 +463,7 @@ output_csv     = sys.argv[2]
 warmup_skip    = int(sys.argv[3])
 workload_label = sys.argv[4]
 runtime_s      = int(sys.argv[5]) if len(sys.argv) > 5 else 600
+io_size        = int(sys.argv[6]) if len(sys.argv) > 6 else 2097152
 
 nan = float('nan')
 
@@ -687,7 +688,7 @@ for rd in run_dirs:
     total_c = (cache_hits + cache_misses) if not (np.isnan(cache_hits) or np.isnan(cache_misses)) else 0
     hit_rate = cache_hits / total_c if total_c > 0 else nan
 
-    def fmt(v): return round(float(v), 2) if not np.isnan(v) else nan
+    def fmt(v): return f"{float(v):.2f}" if not np.isnan(v) else nan
     def ss(k):  return fmt(sys_stats.get(k, nan))
 
     rows.append(dict(
@@ -732,12 +733,12 @@ for rd in run_dirs:
         block_cache_hit_rate  = fmt(hit_rate),
         # iBench_io combined throughput (MB/s = write + read).
         # nan for the workers=0 baseline (no io log exists for that point).
-        io_total_ops_mean     = fmt(io_total_mean),
-        io_total_ops_std      = fmt(io_total_std),
-        io_total_ops_min      = fmt(io_total_min),
-        io_total_ops_max      = fmt(io_total_max),
-        io_write_ops_mean     = fmt(io_write_mean),
-        io_read_ops_mean      = fmt(io_read_mean),
+        io_xput_mean          = fmt(io_total_mean * io_size / (1024 * 1024) if not np.isnan(io_total_mean) else nan),
+        io_xput_std           = fmt(io_total_std * io_size / (1024 * 1024) if not np.isnan(io_total_std) else nan),
+        io_xput_min           = fmt(io_total_min * io_size / (1024 * 1024) if not np.isnan(io_total_min) else nan),
+        io_xput_max           = fmt(io_total_max * io_size / (1024 * 1024) if not np.isnan(io_total_max) else nan),
+        io_write_mbs_mean     = fmt(io_write_mean * io_size / (1024 * 1024) if not np.isnan(io_write_mean) else nan),
+        io_read_mbs_mean      = fmt(io_read_mean * io_size / (1024 * 1024) if not np.isnan(io_read_mean) else nan),
     ))
 
 if not rows:
@@ -749,7 +750,7 @@ df.to_csv(output_csv, index=False)
 print(f'summary.csv written → {output_csv}')
 preview_cols = ['workers',
                 'xput_mean', 'xput_std', 'xput_min', 'xput_max',
-                'io_total_ops_mean', 'io_total_ops_std', 'io_write_ops_mean', 'io_read_ops_mean',
+                'io_xput_mean', 'io_xput_std', 'io_write_mbs_mean', 'io_read_mbs_mean',
                 'cpu_compute_mean', 'cpu_schedule_mean',
                 'disk_read_mb/s', 'disk_write_mb/s', 'r/s', 'w/s',
                 'mem_used_mean', 'block_cache_hit_rate']
@@ -766,7 +767,8 @@ run_summarizer() {
         "$OUTPUT_DIR/summary.csv" \
         "$WARMUP_SKIP_S" \
         "$WORKLOAD_LABEL" \
-        "$RUNTIME_SECS"
+        "$RUNTIME_SECS" \
+        "$IO_SIZE"
     log "  → $OUTPUT_DIR/summary.csv"
 }
 
