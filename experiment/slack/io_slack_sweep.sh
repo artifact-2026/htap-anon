@@ -311,6 +311,8 @@ run_one() {
 
     local sys_csv="$run_dir/system_w${n_workers}.csv"
     local log_file="$run_dir/ycsb_w${n_workers}.log"
+    local io_log="$run_dir/io_w${n_workers}.log"
+    local io_init_log="$run_dir/io_init_w${n_workers}.log"
     local cmp_csv="$run_dir/compaction_metrics.csv"
 
     local spec; spec=$(create_spec "metrics_output=${cmp_csv}")
@@ -365,7 +367,7 @@ run_one() {
             1 "$n_workers" \
             "$IO_SIZE" \
             "$run_dir" "$IO_DATA_SIZE_MB" \
-            --init-only
+            --init-only > "$io_init_log" 2>&1
         log "  Pass 1 complete. Dropping page cache before measurement ..."
         drop_page_cache
 
@@ -377,7 +379,7 @@ run_one() {
             "$RUNTIME_SECS" "$n_workers" \
             "$IO_SIZE" \
             "$run_dir" "$IO_DATA_SIZE_MB" \
-            --skip-init &
+            --skip-init > "$io_log" 2>&1 &
         IO_PIDS=($!)
     fi
 
@@ -393,7 +395,8 @@ run_one() {
     IO_PIDS=()
     stop_monitor
 
-    log "  → log:        $log_file"
+    log "  → ycsb:       $log_file"
+    log "  → io:         $io_log"
     log "  → sys:        $sys_csv"
     log "  → compaction: $cmp_csv"
 }
@@ -488,6 +491,69 @@ def parse_ycsb_log(path):
         print(f'  [warn] {path}: {e}')
     return xput_mean, xput_std, xput_min, xput_max, cache_hits, cache_misses
 
+def parse_io_log(path, warmup_s=0):
+    """Parse io_w<N>.log written by iBench_io and return
+    (total_mean, total_std, total_min, total_max, write_mean, read_mean)
+    all in ops/s (one pwrite or pread syscall = 1 op).
+
+    Primary: per-second lines with warmup_s applied:
+      io_tput_s<N>: W write_ops/s R read_ops/s T total_ops/s
+
+    Fallback: final summary line from iBench_io (no warmup control):
+      io_throughput mean: X stddev: Y min: Z max: W  (total ops/s, ...)
+
+    When n_workers=0 there is no io log; FileNotFoundError is silenced.
+    """
+    nan = float('nan')
+    total_mean = total_std = total_min = total_max = nan
+    write_mean = read_mean = nan
+    try:
+        text = open(path).read()
+        # Primary: per-second samples with warmup_s applied.
+        total_s = []; write_s = []; read_s = []
+        for m in re.finditer(
+                r'io_tput_s(\d+):\s*([\d.]+)\s+write_ops/s\s+([\d.]+)\s+read_ops/s\s+([\d.]+)\s+total_ops/s',
+                text):
+            sec = int(m.group(1))
+            if sec >= warmup_s:
+                write_s.append(float(m.group(2)))
+                read_s.append(float(m.group(3)))
+                total_s.append(float(m.group(4)))
+        if not total_s:
+            # Retry without warmup filter (may be too short a run).
+            for m in re.finditer(
+                    r'io_tput_s(\d+):\s*([\d.]+)\s+write_ops/s\s+([\d.]+)\s+read_ops/s\s+([\d.]+)\s+total_ops/s',
+                    text):
+                write_s.append(float(m.group(2)))
+                read_s.append(float(m.group(3)))
+                total_s.append(float(m.group(4)))
+        if total_s:
+            ta = np.array(total_s)
+            total_mean = float(ta.mean())
+            total_std  = float(ta.std(ddof=1)) if len(ta) > 1 else 0.0
+            total_min  = float(ta.min())
+            total_max  = float(ta.max())
+            write_mean = float(np.mean(write_s))
+            read_mean  = float(np.mean(read_s))
+            return total_mean, total_std, total_min, total_max, write_mean, read_mean
+        # Fallback: binary's own summary line.
+        m = re.search(
+            r'io_throughput mean:\s*([\d.eE+\-]+)\s+stddev:\s*([\d.eE+\-]+)'
+            r'\s+min:\s*([\d.eE+\-]+)\s+max:\s*([\d.eE+\-]+)',
+            text)
+        if m:
+            total_mean = float(m.group(1)); total_std = float(m.group(2))
+            total_min  = float(m.group(3)); total_max = float(m.group(4))
+        mw = re.search(r'io_write_ops mean:\s*([\d.eE+\-]+)', text)
+        mr = re.search(r'io_read_ops mean:\s*([\d.eE+\-]+)',  text)
+        if mw: write_mean = float(mw.group(1))
+        if mr: read_mean  = float(mr.group(1))
+    except FileNotFoundError:
+        pass   # n_workers=0: no io log expected
+    except Exception as e:
+        print(f'  [warn] {path}: {e}')
+    return total_mean, total_std, total_min, total_max, write_mean, read_mean
+
 def parse_system_csv(path, skip_s):
     empty = dict(
         cpu_compute_mean=nan, cpu_compute_std=nan,
@@ -568,8 +634,9 @@ def parse_system_csv(path, skip_s):
 
 def collect_trial(td, w):
     xm, xs, xlo, xhi, ch, cm = parse_ycsb_log(os.path.join(td, f'ycsb_w{w}.log'))
-    ss = parse_system_csv(os.path.join(td, f'system_w{w}.csv'), warmup_skip)
-    return xm, xs, xlo, xhi, ch, cm, ss
+    ss  = parse_system_csv(os.path.join(td, f'system_w{w}.csv'), warmup_skip)
+    io  = parse_io_log(os.path.join(td, f'io_w{w}.log'), warmup_skip)
+    return xm, xs, xlo, xhi, ch, cm, ss, io
 
 run_dirs = sorted(
     glob.glob(os.path.join(sweep_dir, 'run_w*')),
@@ -587,12 +654,16 @@ for rd in run_dirs:
     if trial_dirs:
         trial_xputs = []; trial_xmins = []; trial_xmaxs = []
         trial_sys = {}; trial_ch = []; trial_cm = []
+        trial_io_total = []; trial_io_tmins = []; trial_io_tmaxs = []
+        trial_io_write = []; trial_io_read  = []
         for td in trial_dirs:
-            xm, _xs, xlo, xhi, ch, cm, ss = collect_trial(td, w)
+            xm, _xs, xlo, xhi, ch, cm, ss, io = collect_trial(td, w)
             trial_xputs.append(xm); trial_xmins.append(xlo); trial_xmaxs.append(xhi)
             trial_ch.append(ch); trial_cm.append(cm)
             for k, v in ss.items():
                 trial_sys.setdefault(k, []).append(v)
+            trial_io_total.append(io[0]); trial_io_tmins.append(io[2]); trial_io_tmaxs.append(io[3])
+            trial_io_write.append(io[4]); trial_io_read.append(io[5])
         xput_mean  = float(np.nanmedian(trial_xputs))
         xput_std   = float(np.nanstd(trial_xputs, ddof=1)) if len(trial_xputs) > 1 else nan
         xput_min   = float(np.nanmin(trial_xmins))  if trial_xmins else nan
@@ -600,10 +671,18 @@ for rd in run_dirs:
         cache_hits   = float(np.nanmedian(trial_ch))
         cache_misses = float(np.nanmedian(trial_cm))
         sys_stats  = {k: float(np.nanmedian(vs)) for k, vs in trial_sys.items()}
+        io_total_mean = float(np.nanmedian(trial_io_total))
+        io_total_std  = float(np.nanstd(trial_io_total, ddof=1)) if len(trial_io_total) > 1 else nan
+        io_total_min  = float(np.nanmin(trial_io_tmins))  if trial_io_tmins else nan
+        io_total_max  = float(np.nanmax(trial_io_tmaxs))  if trial_io_tmaxs else nan
+        io_write_mean = float(np.nanmedian(trial_io_write))
+        io_read_mean  = float(np.nanmedian(trial_io_read))
     else:
         xput_mean, xput_std, xput_min, xput_max, cache_hits, cache_misses = \
             parse_ycsb_log(os.path.join(rd, f'ycsb_w{w}.log'))
         sys_stats = parse_system_csv(os.path.join(rd, f'system_w{w}.csv'), warmup_skip)
+        io_total_mean, io_total_std, io_total_min, io_total_max, io_write_mean, io_read_mean = \
+            parse_io_log(os.path.join(rd, f'io_w{w}.log'), warmup_skip)
 
     total_c = (cache_hits + cache_misses) if not (np.isnan(cache_hits) or np.isnan(cache_misses)) else 0
     hit_rate = cache_hits / total_c if total_c > 0 else nan
@@ -651,6 +730,14 @@ for rd in run_dirs:
         block_cache_hits      = cache_hits,
         block_cache_misses    = cache_misses,
         block_cache_hit_rate  = fmt(hit_rate),
+        # iBench_io combined throughput (MB/s = write + read).
+        # nan for the workers=0 baseline (no io log exists for that point).
+        io_total_ops_mean     = fmt(io_total_mean),
+        io_total_ops_std      = fmt(io_total_std),
+        io_total_ops_min      = fmt(io_total_min),
+        io_total_ops_max      = fmt(io_total_max),
+        io_write_ops_mean     = fmt(io_write_mean),
+        io_read_ops_mean      = fmt(io_read_mean),
     ))
 
 if not rows:
@@ -660,9 +747,10 @@ if not rows:
 df = pd.DataFrame(rows).sort_values('workers').reset_index(drop=True)
 df.to_csv(output_csv, index=False)
 print(f'summary.csv written → {output_csv}')
-preview_cols = ['workers', 'xput_mean', 'xput_std', 'xput_min', 'xput_max',
-                'cpu_compute_mean', 'cpu_compute_std',
-                'cpu_schedule_mean', 'cpu_schedule_std',
+preview_cols = ['workers',
+                'xput_mean', 'xput_std', 'xput_min', 'xput_max',
+                'io_total_ops_mean', 'io_total_ops_std', 'io_write_ops_mean', 'io_read_ops_mean',
+                'cpu_compute_mean', 'cpu_schedule_mean',
                 'disk_read_mb/s', 'disk_write_mb/s', 'r/s', 'w/s',
                 'mem_used_mean', 'block_cache_hit_rate']
 print(df[[c for c in preview_cols if c in df.columns]].to_string(index=False))

@@ -77,6 +77,7 @@
 #ifndef _GNU_SOURCE
 #  define _GNU_SOURCE   /* O_DIRECT, posix_fallocate, posix_memalign */
 #endif
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -131,9 +132,126 @@ typedef struct {
     uint32_t io_size;       /* bytes per op; multiple of 512                   */
     uint64_t file_size;     /* pre-allocated size; multiple of io_size          */
     char     path[1024];
-    uint64_t count;         /* ops completed in the timed window                */
-    uint64_t bytes_xfered;  /* bytes transferred in the timed window            */
+    uint64_t count;         /* ops completed in the timed window (written at exit) */
+    /*
+     * ops_xfered: incremented inside every op (one write() or pread() = 1 op)
+     * so the reporter thread can compute ops/s each second.  volatile prevents
+     * the compiler from caching the value in a register between the worker
+     * write and the reporter read.  Minor data races at 1-second granularity
+     * are fine — the reporter only needs an approximate snapshot.
+     */
+    volatile uint64_t ops_xfered;
 } WorkerArgs;
+
+/* ── Reporter thread ─────────────────────────────────────────────────────── */
+
+typedef struct {
+    WorkerArgs  *workers;
+    uint32_t     n_workers;   /* competitor units; write threads = [0,n), read = [n,2n) */
+    uint32_t     io_size;     /* bytes per op — used to report MB/s in final summary    */
+    int          duration_s;
+    volatile int stop;
+    /* Summary stats filled in before the reporter exits (total ops/s) */
+    double       total_mean_ops;
+    double       total_std_ops;
+    double       total_min_ops;
+    double       total_max_ops;
+    double       write_mean_ops;
+    double       read_mean_ops;
+    int          n_samples;
+} ReporterArgs;
+
+static void *reporter_fn(void *arg) {
+    ReporterArgs *r = (ReporterArgs *)arg;
+
+    int     max_samples  = r->duration_s + 4;
+    double *total_samp   = (double *)calloc((size_t)max_samples, sizeof(double));
+    double *write_samp   = (double *)calloc((size_t)max_samples, sizeof(double));
+    double *read_samp    = (double *)calloc((size_t)max_samples, sizeof(double));
+    if (!total_samp || !write_samp || !read_samp) {
+        fprintf(stderr, "[io reporter] out of memory\n");
+        free(total_samp); free(write_samp); free(read_samp);
+        return NULL;
+    }
+
+    uint64_t prev_write = 0, prev_read = 0;
+    int n = 0;
+
+    while (!r->stop) {
+        struct timespec ts = { 1, 0 };
+        while (nanosleep(&ts, &ts) != 0) ;
+        if (r->stop) break;
+
+        /* Lock-free snapshot of per-thread op counters. */
+        uint64_t write_ops = 0, read_ops = 0;
+        for (uint32_t i = 0; i < r->n_workers * 2; i++) {
+            if (r->workers[i].is_writer)
+                write_ops += r->workers[i].ops_xfered;
+            else
+                read_ops  += r->workers[i].ops_xfered;
+        }
+
+        double wops = (double)(write_ops - prev_write);
+        double rops = (double)(read_ops  - prev_read);
+        double tops = wops + rops;
+        prev_write = write_ops;
+        prev_read  = read_ops;
+
+        printf("io_tput_s%d: %.1f write_ops/s %.1f read_ops/s %.1f total_ops/s\n",
+               n, wops, rops, tops);
+        fflush(stdout);
+
+        if (n < max_samples) {
+            total_samp[n] = tops;
+            write_samp[n] = wops;
+            read_samp[n]  = rops;
+        }
+        n++;
+    }
+
+    /* Compute stats over steady-state samples (skip first as warmup). */
+    int start = (n >= 3) ? 1 : 0;
+    int count = n - start;
+    if (count <= 0) {
+        r->total_mean_ops = (n > 0) ? total_samp[0] : 0.0;
+        r->total_std_ops  = 0.0;
+        r->total_min_ops  = r->total_mean_ops;
+        r->total_max_ops  = r->total_mean_ops;
+        r->write_mean_ops = (n > 0) ? write_samp[0] : 0.0;
+        r->read_mean_ops  = (n > 0) ? read_samp[0]  : 0.0;
+        r->n_samples = n;
+        free(total_samp); free(write_samp); free(read_samp);
+        return NULL;
+    }
+
+    double tsum = 0.0, tmn = 1e18, tmx = 0.0;
+    double wsum = 0.0, rsum = 0.0;
+    for (int i = start; i < n; i++) {
+        tsum += total_samp[i];
+        wsum += write_samp[i];
+        rsum += read_samp[i];
+        if (total_samp[i] < tmn) tmn = total_samp[i];
+        if (total_samp[i] > tmx) tmx = total_samp[i];
+    }
+    double tmean = tsum / (double)count;
+    double sq = 0.0;
+    for (int i = start; i < n; i++) {
+        double d = total_samp[i] - tmean;
+        sq += d * d;
+    }
+    double tstd = (count > 1) ? sqrt(sq / (double)(count - 1)) : 0.0;
+
+    r->total_mean_ops = tmean;
+    r->total_std_ops  = tstd;
+    r->total_min_ops  = tmn;
+    r->total_max_ops  = tmx;
+    r->write_mean_ops = wsum / (double)count;
+    r->read_mean_ops  = rsum / (double)count;
+    r->n_samples = n;
+
+    free(total_samp); free(write_samp); free(read_samp);
+    return NULL;
+}
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
 
@@ -208,6 +326,7 @@ static void *write_worker(void *arg) {
             break;
         }
         pos += (uint64_t)n; bytes += (uint64_t)n; count++;
+        a->ops_xfered = count;   /* reporter reads this lock-free each second */
         if (!use_direct && fsync(fd) != 0) {
             fprintf(stderr, "[write %d] ERROR: fsync: %s\n",
                     a->tid, strerror(errno));
@@ -225,7 +344,7 @@ static void *write_worker(void *arg) {
     close(fd);
     if (!a->keep_file) unlink(a->path);
     free(buf);
-    a->count = count; a->bytes_xfered = bytes;
+    a->count = count;
     return NULL;
 }
 
@@ -278,7 +397,7 @@ static void *read_worker(void *arg) {
         if (a->init_only) {
             /* Two-pass mode Pass 1: file is initialised and kept on disk.
              * Do not proceed to the read loop.                             */
-            a->count = 0; a->bytes_xfered = 0;
+            a->count = 0; a->ops_xfered = 0;
             return NULL;
         }
     }
@@ -329,6 +448,7 @@ static void *read_worker(void *arg) {
             break;
         }
         bytes += (uint64_t)n; count++;
+        a->ops_xfered = count;   /* reporter reads this lock-free each second */
 
         if (a->intervalNs > 0) {
             uint64_t now = getNs();
@@ -341,7 +461,7 @@ static void *read_worker(void *arg) {
     close(fd);
     if (!a->keep_file) unlink(a->path);
     free(buf);
-    a->count = count; a->bytes_xfered = bytes;
+    a->count = count;
     return NULL;
 }
 
@@ -475,7 +595,7 @@ int main(int argc, const char **argv) {
             args[j].io_size    = io_size;
             args[j].file_size  = file_size;
             args[j].count      = 0;
-            args[j].bytes_xfered = 0;
+            args[j].ops_xfered = 0;
             snprintf(args[j].path, sizeof(args[j].path),
                      "%s/iBench_io_r_%u.tmp", data_dir, j);
 
@@ -500,7 +620,7 @@ int main(int argc, const char **argv) {
             args[i].io_size    = io_size;
             args[i].file_size  = file_size;
             args[i].count      = 0;
-            args[i].bytes_xfered = 0;
+            args[i].ops_xfered = 0;
 
             if (two_pass) {
                 snprintf(args[i].path, sizeof(args[i].path),
@@ -519,37 +639,88 @@ int main(int argc, const char **argv) {
         }
     }
 
-    for (uint32_t i = 0; i < numThreads; i++)
-        pthread_join(threads[i], NULL);
+    /* ── Reporter thread (timed runs only) ─────────────────────────────── */
+    /*
+     * In --init-only mode there is no timed measurement window so we skip
+     * the reporter entirely.  In normal and --skip-init mode the reporter
+     * wakes every second, snapshots ops_xfered across all worker threads,
+     * and prints the per-second write/read/total ops/s.
+     */
+    ReporterArgs reporter_args;
+    memset(&reporter_args, 0, sizeof(reporter_args));
+    pthread_t reporter_tid;
+    int reporter_launched = 0;
 
-    /* ── Aggregate and report ────────────────────────────────────────── */
-    uint64_t write_ops = 0, write_bytes = 0;
-    uint64_t read_ops  = 0, read_bytes  = 0;
-    for (uint32_t i = 0; i < numThreads; i++) {
-        if (args[i].is_writer) {
-            write_ops   += args[i].count;
-            write_bytes += args[i].bytes_xfered;
+    if (!init_only) {
+        reporter_args.workers    = args;
+        reporter_args.n_workers  = n_workers;
+        reporter_args.io_size    = io_size;
+        reporter_args.duration_s = durationSec;
+        reporter_args.stop       = 0;
+        if (pthread_create(&reporter_tid, NULL, reporter_fn, &reporter_args) != 0) {
+            fprintf(stderr, "WARNING: could not create reporter thread — "
+                    "per-second IO stats will not be printed\n");
         } else {
-            read_ops    += args[i].count;
-            read_bytes  += args[i].bytes_xfered;
+            reporter_launched = 1;
         }
     }
 
-    double dur      = durationSec > 0 ? (double)durationSec : 1.0;
-    double write_mb = (double)write_bytes / (1024.0 * 1024.0);
-    double read_mb  = (double)read_bytes  / (1024.0 * 1024.0);
+    for (uint32_t i = 0; i < numThreads; i++)
+        pthread_join(threads[i], NULL);
+
+    if (reporter_launched) {
+        reporter_args.stop = 1;
+        pthread_join(reporter_tid, NULL);
+    }
+
+    /* ── Aggregate final totals ──────────────────────────────────────── */
+    uint64_t total_write_ops = 0, total_read_ops = 0;
+    for (uint32_t i = 0; i < numThreads; i++) {
+        if (args[i].is_writer)
+            total_write_ops += args[i].count;
+        else
+            total_read_ops  += args[i].count;
+    }
+
+    double dur       = durationSec > 0 ? (double)durationSec : 1.0;
+    /* Derive MB/s from op counts for the human-readable summary. */
+    double write_mb  = (double)total_write_ops * (double)io_size / (1024.0 * 1024.0);
+    double read_mb   = (double)total_read_ops  * (double)io_size / (1024.0 * 1024.0);
 
     if (init_only) {
         printf("iBench IO [init-only]: done — %u file(s) written to %s\n",
                n_workers, data_dir);
     } else {
         printf("iBench IO: done\n");
-        printf("  write: ops=%lu, %.1f MB, %.1f MB/s\n",
-               (unsigned long)write_ops, write_mb, write_mb / dur);
-        printf("  read:  ops=%lu, %.1f MB, %.1f MB/s\n",
-               (unsigned long)read_ops,  read_mb,  read_mb  / dur);
-        printf("  total: %.1f MB/s  (write %.1f + read %.1f)\n",
-               (write_mb + read_mb) / dur, write_mb / dur, read_mb / dur);
+        printf("  write: ops=%lu (%.1f ops/s), %.1f MB/s\n",
+               (unsigned long)total_write_ops,
+               (double)total_write_ops / dur, write_mb / dur);
+        printf("  read:  ops=%lu (%.1f ops/s), %.1f MB/s\n",
+               (unsigned long)total_read_ops,
+               (double)total_read_ops / dur,  read_mb  / dur);
+        printf("  total: %.1f ops/s  (write %.1f + read %.1f)\n",
+               (double)(total_write_ops + total_read_ops) / dur,
+               (double)total_write_ops / dur, (double)total_read_ops / dur);
+
+        if (reporter_launched) {
+            /*
+             * Parseable summary lines for io_slack_sweep.sh summariser.
+             * The Python summariser re-derives stats from per-second samples
+             * with warmup_skip applied; these lines are a cross-check.
+             */
+            printf("io_throughput mean: %.2f stddev: %.2f min: %.2f max: %.2f"
+                   "  (total ops/s, %d 1-s samples)\n",
+                   reporter_args.total_mean_ops,
+                   reporter_args.total_std_ops,
+                   reporter_args.total_min_ops,
+                   reporter_args.total_max_ops,
+                   reporter_args.n_samples);
+            printf("io_write_ops mean: %.2f stddev: n/a\n",
+                   reporter_args.write_mean_ops);
+            printf("io_read_ops mean: %.2f stddev: n/a\n",
+                   reporter_args.read_mean_ops);
+            fflush(stdout);
+        }
     }
 
     free(args);
