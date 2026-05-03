@@ -27,15 +27,15 @@
  * Each competitor unit spawns one write thread and one read thread:
  *
  *   Write thread — sequential O_DIRECT writes advancing through a large
- *                  pre-allocated file, wrapping at EOF.  2 MiB block size
- *                  matches RocksDB compaction's SST write granularity, so
- *                  writes land in the same I/O scheduler batch as compaction
- *                  and directly compete for write bandwidth.
+ *                  pre-allocated file, wrapping at EOF.  Default 4 KiB block
+ *                  size matches RocksDB's default SST block read size, so
+ *                  writes stress the same I/O queue depth as compaction and
+ *                  compete for write IOPS with YCSB.
  *
  *   Read thread  — O_DIRECT reads with RANDOM offsets into a large
  *                  pre-initialised file.  Random access mirrors YCSB's cache-
  *                  missing point-lookup pattern, defeating the SSD's sequential
- *                  read-ahead cache.  Each 2 MiB block read is a genuine NAND
+ *                  read-ahead cache.  Each 4 KiB block read is a genuine NAND
  *                  access that competes directly with YCSB's disk reads.
  *
  * File sizes are large (default 4 GiB per thread) to overflow the SSD's
@@ -66,7 +66,7 @@
  *   duration_s  run time in seconds (ignored for --init-only; init runs to completion)
  *   n_workers   competitor units; spawns n_workers write + n_workers read threads
  *               (--init-only only launches read threads)
- *   io_size     bytes per read or write op; multiple of 512 for O_DIRECT (default: 2 MiB)
+ *   io_size     bytes per read or write op; multiple of 512 for O_DIRECT (default: 4 KiB)
  *   dir         directory for temp files — MUST be on the same physical disk as RocksDB
  *   max_mb      file size per thread in MiB (default: 4096 = 4 GiB)
  *
@@ -99,7 +99,7 @@ static void handle_sig(int sig) {
 #include <errno.h>
 
 #define NS_PER_S        (1000000000L)
-#define DEFAULT_IO_SIZE (2 * 1024 * 1024)   /* 2 MiB — matches compaction SST write size */
+#define DEFAULT_IO_SIZE (4 * 1024)           /* 4 KiB — matches RocksDB's default SST block read size */
 #define DEFAULT_MAX_MB  (4096)               /* 4 GiB — overflows typical SSD SLC cache    */
 #define DEFAULT_DIR     "/tmp"
 
@@ -485,7 +485,7 @@ int main(int argc, const char **argv) {
             "\n"
             "  duration_s   run time in seconds (init-only: ignored; runs to completion)\n"
             "  n_workers    competitor units; 1 write + 1 read thread each (default: 1)\n"
-            "  io_size      bytes per op, multiple of 512 (default: 2097152 = 2 MiB)\n"
+            "  io_size      bytes per op, multiple of 512 (default: 4096 = 4 KiB)\n"
             "  dir          temp file directory; use the RocksDB data disk (default: /tmp)\n"
             "  max_mb       file size per thread in MiB (default: 4096 = 4 GiB)\n"
             "  --init-only  initialise read files only, then exit (two-pass Pass 1)\n"
