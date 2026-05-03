@@ -75,10 +75,9 @@ DROP_CACHES="${DROP_CACHES:-true}"
 # ── iBench_cpu worker knobs ───────────────────────────────────────────────────
 
 # Per-worker transform rate (0 = busy-loop / saturate one core).
+# One transform = JSON parse + strtod (8 fields) + snprintf (8 fields)
+# + memcpy (8 fields) + CSV column split.
 TRANSFORMS_PER_WORKER="${TRANSFORMS_PER_WORKER:-0}"
-
-# Arithmetic rounds per transform.
-WORKER_ROUNDS_MULTIPLIER="${WORKER_ROUNDS_MULTIPLIER:-8}"
 
 # Optional CPU affinity base for iBench_cpu workers.
 # When set, worker i is pinned to CPU (CPU_AFFINITY_BASE + i).
@@ -231,8 +230,8 @@ compile_transform_binary() {
     [[ -f "$src_cc" ]] || die "iBench_cpu.cc not found at '$src_cc'"
     TRANSFORM_BINARY=$(mktemp "${SAT_TMPDIR}/slack2_cpu_XXXXX")
     log "Compiling iBench_cpu.cc → $TRANSFORM_BINARY"
-    g++ -O2 -o "$TRANSFORM_BINARY" "$src_cc" -lpthread \
-        || die "Failed to compile iBench_cpu.cc. Need g++ (no special flags required)."
+    g++ -O2 -o "$TRANSFORM_BINARY" "$src_cc" -lpthread -lm -lrt \
+        || die "Failed to compile iBench_cpu.cc. Need g++ with -lm -lrt."
     chmod +x "$TRANSFORM_BINARY"
 }
 
@@ -296,6 +295,7 @@ run_one() {
 
     local sys_csv="$run_dir/system_w${n_workers}.csv"
     local log_file="$run_dir/ycsb_w${n_workers}.log"
+    local cpu_log="$run_dir/cpu_w${n_workers}.log"
     local cmp_csv="$run_dir/compaction_metrics.csv"
 
     local spec; spec=$(create_spec "metrics_output=${cmp_csv}")
@@ -322,7 +322,6 @@ run_one() {
     # bash (( )) only handles integers, so use awk for the float-safe guard.
     TRANSFORM_PIDS=()
     if awk "BEGIN { exit (${n_workers} > 0 ? 0 : 1) }"; then
-        local rounds_per_xfm=$(( 1024 * WORKER_ROUNDS_MULTIPLIER ))
         # CPU affinity: pass the per-process base CPU ID when CPU_AFFINITY_BASE
         # is set; pass -1 otherwise (no pinning).
         local cpu_arg=-1
@@ -330,12 +329,12 @@ run_one() {
             cpu_arg="${CPU_AFFINITY_BASE}"
         fi
         log "  Starting ${n_workers} iBench_cpu worker(s)" \
-            "(rounds=${rounds_per_xfm}, rate=${TRANSFORMS_PER_WORKER}/s," \
+            "(rate=${TRANSFORMS_PER_WORKER}/s," \
             "cpu_base=${cpu_arg}, duration=${RUNTIME_SECS}s)"
         "$TRANSFORM_BINARY" \
             "$RUNTIME_SECS" "$n_workers" \
-            "$TRANSFORMS_PER_WORKER" "$rounds_per_xfm" \
-            "$cpu_arg" &
+            "$TRANSFORMS_PER_WORKER" \
+            "$cpu_arg" > "$cpu_log" 2>&1 &
         TRANSFORM_PIDS=($!)
     fi
 
@@ -351,7 +350,8 @@ run_one() {
     TRANSFORM_PIDS=()
     stop_monitor
 
-    log "  → log:        $log_file"
+    log "  → ycsb:       $log_file"
+    log "  → cpu:        $cpu_log"
     log "  → sys:        $sys_csv"
     log "  → compaction: $cmp_csv"
 }
@@ -454,6 +454,52 @@ def parse_ycsb_log(path):
         print(f'  [warn] {path}: {e}')
     return xput_mean, xput_std, xput_min, xput_max, cache_hits, cache_misses
 
+def parse_cpu_log(path, warmup_s=0):
+    """Parse cpu_w<N>.log written by iBench_cpu and return (mean, std, min, max).
+
+    Primary: reconstruct from per-second sample lines with warmup_s applied,
+    matching the treatment of the system CSV.  Per-second lines look like:
+      cpu_tput_s0: 123456 ops/s   (s<N> is the 0-based second index)
+
+    Fallback: use the final summary line if no per-second samples are found
+    (e.g. the process was killed before printing any samples).
+      cpu_throughput mean: X stddev: Y min: Z max: W
+
+    When n_workers=0 there is no cpu log — the FileNotFoundError is silenced
+    and (nan, nan, nan, nan) is returned cleanly.
+    """
+    cpu_mean = cpu_std = cpu_min = cpu_max = nan
+    try:
+        text = open(path).read()
+        # Primary: per-second samples with warmup_s applied.
+        samples = [(int(m.group(1)), float(m.group(2)))
+                   for m in re.finditer(r'cpu_tput_s(\d+):\s*([\d.]+)', text)]
+        if samples:
+            steady = [r for (s, r) in samples if s >= warmup_s]
+            if not steady:
+                steady = [r for (_, r) in samples]   # no warmup skip possible
+            arr = np.array(steady)
+            cpu_mean = float(arr.mean())
+            cpu_std  = float(arr.std(ddof=1)) if len(arr) > 1 else 0.0
+            cpu_min  = float(arr.min())
+            cpu_max  = float(arr.max())
+            return cpu_mean, cpu_std, cpu_min, cpu_max
+        # Fallback: binary's own summary line (warmup not controlled from here).
+        m = re.search(
+            r'cpu_throughput mean:\s*([\d.eE+\-]+)\s+stddev:\s*([\d.eE+\-]+)'
+            r'\s+min:\s*([\d.eE+\-]+)\s+max:\s*([\d.eE+\-]+)',
+            text)
+        if m:
+            cpu_mean = float(m.group(1))
+            cpu_std  = float(m.group(2))
+            cpu_min  = float(m.group(3))
+            cpu_max  = float(m.group(4))
+    except FileNotFoundError:
+        pass   # n_workers=0: no cpu log is expected
+    except Exception as e:
+        print(f'  [warn] {path}: {e}')
+    return cpu_mean, cpu_std, cpu_min, cpu_max
+
 def parse_system_csv(path, skip_s):
     empty = dict(
         cpu_compute_mean=nan, cpu_compute_std=nan,
@@ -537,10 +583,11 @@ def parse_system_csv(path, skip_s):
         return empty
 
 def collect_trial(td, w):
-    wl = fmt_w(w)   # e.g. 6.4 → "6.4",  8.0 → "8"
+    wl = fmt_w(w)   # e.g. 6.4 -> "6.4",  8.0 -> "8"
     xm, xs, xlo, xhi, ch, cm = parse_ycsb_log(os.path.join(td, f'ycsb_w{wl}.log'))
-    ss = parse_system_csv(os.path.join(td, f'system_w{wl}.csv'), warmup_skip)
-    return xm, xs, xlo, xhi, ch, cm, ss
+    ss  = parse_system_csv(os.path.join(td, f'system_w{wl}.csv'), warmup_skip)
+    cpu = parse_cpu_log(os.path.join(td, f'cpu_w{wl}.log'), warmup_skip)
+    return xm, xs, xlo, xhi, ch, cm, ss, cpu
 
 run_dirs = sorted(
     glob.glob(os.path.join(sweep_dir, 'run_w*')),
@@ -558,12 +605,16 @@ for rd in run_dirs:
     if trial_dirs:
         trial_xputs = []; trial_xmins = []; trial_xmaxs = []
         trial_sys = {}; trial_ch = []; trial_cm = []
+        trial_cpu_means = []; trial_cpu_mins = []; trial_cpu_maxs = []
         for td in trial_dirs:
-            xm, _xs, xlo, xhi, ch, cm, ss = collect_trial(td, w)
+            xm, _xs, xlo, xhi, ch, cm, ss, cpu_stats = collect_trial(td, w)
             trial_xputs.append(xm); trial_xmins.append(xlo); trial_xmaxs.append(xhi)
             trial_ch.append(ch); trial_cm.append(cm)
             for k, v in ss.items():
                 trial_sys.setdefault(k, []).append(v)
+            trial_cpu_means.append(cpu_stats[0])
+            trial_cpu_mins.append(cpu_stats[2])
+            trial_cpu_maxs.append(cpu_stats[3])
         xput_mean  = float(np.nanmedian(trial_xputs))
         xput_std   = float(np.nanstd(trial_xputs, ddof=1)) if len(trial_xputs) > 1 else nan
         xput_min   = float(np.nanmin(trial_xmins))  if trial_xmins else nan
@@ -571,11 +622,17 @@ for rd in run_dirs:
         cache_hits   = float(np.nanmedian(trial_ch))
         cache_misses = float(np.nanmedian(trial_cm))
         sys_stats  = {k: float(np.nanmedian(vs)) for k, vs in trial_sys.items()}
+        cpu_xput_mean = float(np.nanmedian(trial_cpu_means))
+        cpu_xput_std  = float(np.nanstd(trial_cpu_means, ddof=1)) if len(trial_cpu_means) > 1 else nan
+        cpu_xput_min  = float(np.nanmin(trial_cpu_mins))  if trial_cpu_mins else nan
+        cpu_xput_max  = float(np.nanmax(trial_cpu_maxs))  if trial_cpu_maxs else nan
     else:
         wl = fmt_w(w)
         xput_mean, xput_std, xput_min, xput_max, cache_hits, cache_misses = \
             parse_ycsb_log(os.path.join(rd, f'ycsb_w{wl}.log'))
         sys_stats = parse_system_csv(os.path.join(rd, f'system_w{wl}.csv'), warmup_skip)
+        cpu_xput_mean, cpu_xput_std, cpu_xput_min, cpu_xput_max = \
+            parse_cpu_log(os.path.join(rd, f'cpu_w{wl}.log'), warmup_skip)
 
     total_c = (cache_hits + cache_misses) if not (np.isnan(cache_hits) or np.isnan(cache_misses)) else 0
     hit_rate = cache_hits / total_c if total_c > 0 else nan
@@ -623,6 +680,13 @@ for rd in run_dirs:
         block_cache_hits      = cache_hits,
         block_cache_misses    = cache_misses,
         block_cache_hit_rate  = fmt(hit_rate),
+        # iBench_cpu combined throughput across all workers (ops/s).
+        # One op = JSON parse + strtod × 8 + snprintf × 8 + memcpy × 8 + CSV split.
+        # nan for the workers=0 baseline (no cpu log exists for that point).
+        cpu_xput_mean         = fmt(cpu_xput_mean),
+        cpu_xput_std          = fmt(cpu_xput_std),
+        cpu_xput_min          = fmt(cpu_xput_min),
+        cpu_xput_max          = fmt(cpu_xput_max),
     ))
 
 if not rows:
@@ -632,7 +696,9 @@ if not rows:
 df = pd.DataFrame(rows).sort_values('workers').reset_index(drop=True)
 df.to_csv(output_csv, index=False)
 print(f'summary.csv written → {output_csv}')
-preview_cols = ['workers', 'xput_mean', 'xput_std', 'xput_min', 'xput_max',
+preview_cols = ['workers',
+                'xput_mean', 'xput_std', 'xput_min', 'xput_max',
+                'cpu_xput_mean', 'cpu_xput_std', 'cpu_xput_min', 'cpu_xput_max',
                 'cpu_compute_mean', 'cpu_compute_std',
                 'cpu_schedule_mean', 'cpu_schedule_std',
                 'disk_read_mb/s', 'disk_write_mb/s', 'r/s', 'w/s',
