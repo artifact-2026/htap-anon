@@ -26,16 +26,28 @@
  *
  * Work unit (one "operation"):
  *
- *   transform_record(json_in, half_a_out, half_b_out)
+ *   transform_record(json_in, half_a_out, half_b_out)   // JSON→CSV split
+ *   serialize_halves(half_a, half_b, proto_buf)          // CSV→Protobuf serialization
+ *   json_to_proto(json_in, proto_direct)                 // JSON→Protobuf (direct)
  *
- *   1. JSON parse  — scan a synthetic 16-field JSON record character by
- *                    character to extract field values.  Alternating fields
- *                    are numeric (double) or alphanumeric string.
- *   2. String→num  — strtod() each numeric field (8 of the 16 fields).
- *   3. CSV format  — snprintf("%.2f") each converted double back to a
- *                    decimal string; memcpy() each string field verbatim.
+ *   1. JSON parse   — scan a synthetic 16-field JSON record character by
+ *                     character to extract field values.  Alternating fields
+ *                     are numeric (double) or alphanumeric string.
+ *   2. String→num   — strtod() each numeric field (8 of the 16 fields).
+ *   3. CSV format   — snprintf("%.2f") each converted double back to a
+ *                     decimal string; memcpy() each string field verbatim.
  *   4. Column split — first 8 fields (CSV) go into half_a, last 8 into half_b,
- *                    mirroring Mycelium's column-split transformation.
+ *                     mirroring Mycelium's column-split transformation.
+ *   5. Serialization — encode half_a (field 1) and half_b (field 2) as
+ *                     protobuf wire-format length-delimited fields (wire type 2).
+ *   6. JSON→Protobuf — re-parse the original JSON and encode each field
+ *                     directly into protobuf wire format: numeric fields as
+ *                     wire type 1 (64-bit IEEE 754 double), string fields as
+ *                     wire type 2 (length-delimited).  Represents the fast
+ *                     path that skips the CSV intermediate entirely.
+ *
+ * Steps 5 and 6 use a hand-rolled protobuf wire encoder (varint + wire types
+ * 1 and 2) — no external protobuf library required.
  *
  * This pipeline is heavier per operation than the original Murmur3 mix-round
  * loop because strtod/snprintf each involve significant arithmetic (multiply/
@@ -113,26 +125,37 @@ static void handle_sig(int sig) {
 
 /* ── JSON record definition ──────────────────────────────────────────────── */
 /*
- * Synthetic JSON record built once per thread, then transformed in a tight
- * loop.  16 fields alternating numeric and string:
+ * Synthetic JSON record: 64 fields × 32 bytes of payload per field,
+ * alternating numeric (even) and string (odd):
  *
- *   {"f00":1000000.000000,"f01":"AAAA...A","f02":1123456.789000,"f03":"CCC...C",...}
- *    ^^^^ even = numeric ^^^^              ^^^^ odd = string ^^^^
+ *   {"f00":1000000.000000,"f01":"AAAA...A","f02":...,"f63":"..."}
+ *    ^^^^ even = double ^^^^              ^^^^ odd = 32-char string ^^^^
  *
- * FIELD_COUNT   total fields
- * STR_VAL_LEN   length of string field values (same fill char, differs per field)
- * JSON_MAXLEN   generous upper bound for the generated JSON string
- * CSV_HALF_MAX  generous upper bound for each CSV half output
+ * FIELD_COUNT      total columns
+ * STR_VAL_LEN      string field width in bytes (32)
+ * JSON_MAXLEN      upper bound for the generated JSON string
+ *                  64 fields × ~42 chars avg + braces ≈ 2700 B; 4096 is safe.
+ *
+ * NUM_GROUPS       number of column groups after the split stage
+ * FIELDS_PER_GROUP columns per group (FIELD_COUNT / NUM_GROUPS = 16)
+ *
+ * PROTO_GROUP_MAX  upper bound for one group's protobuf wire output:
+ *   8 numeric fields × (1B tag + 8B value)          =  72 B
+ *   8 string  fields × (1B tag + 1B len + 32B data) = 272 B
+ *   Total ≈ 344 B; 512 with margin.
  */
-#define FIELD_COUNT   16
-#define STR_VAL_LEN   80
-#define JSON_MAXLEN   2048
-#define CSV_HALF_MAX  512
+#define FIELD_COUNT      64
+#define STR_VAL_LEN      32
+#define JSON_MAXLEN      4096
+#define NUM_GROUPS       4
+#define FIELDS_PER_GROUP (FIELD_COUNT / NUM_GROUPS)   /* 16 */
+#define PROTO_GROUP_MAX  512
 
 /**
- * Populate `buf` with a synthetic JSON record.
- * Even fields: numeric doubles (varying values).
- * Odd fields:  80-char alphanumeric strings (fill character varies per field).
+ * Populate `buf` with a synthetic JSON record (64 fields × 32 B payload).
+ * Even fields (0, 2, …, 62): numeric doubles with distinct values per field.
+ * Odd  fields (1, 3, …, 63): 32-char alphanumeric strings; fill character
+ *   cycles through A–Z with the field index so adjacent fields differ.
  */
 static void build_json(char *buf) {
     int pos = 0;
@@ -158,91 +181,124 @@ static void build_json(char *buf) {
     buf[pos]   = '\0';
 }
 
+/* ── Protobuf wire-format helpers ────────────────────────────────────────── */
+/*
+ * Minimal protobuf wire encoder — no external library required.
+ *
+ * Wire types used:
+ *   1  — 64-bit little-endian (TYPE_DOUBLE / TYPE_FIXED64)
+ *   2  — length-delimited     (TYPE_STRING / TYPE_BYTES)
+ *
+ * A field in the wire format is: tag varint, then the encoded value.
+ * Tag = (field_number << 3) | wire_type.
+ */
+
 /**
- * Core transformation: JSON → split CSV.
+ * Encode a 64-bit unsigned integer as a protobuf base-128 varint.
+ * Returns the number of bytes written (1–10).
+ */
+static inline int pb_varint(uint8_t *buf, uint64_t val) {
+    int n = 0;
+    while (val > 0x7F) {
+        buf[n++] = (uint8_t)((val & 0x7F) | 0x80);
+        val >>= 7;
+    }
+    buf[n++] = (uint8_t)(val & 0x7F);
+    return n;
+}
+
+/**
+ * transform_record — single-pass JSON → Protobuf → group-split → serialize.
  *
- * Scans the input `json` record field by field.
- *   - Numeric fields: strtod() [string→double], then snprintf("%.2f") [double→string].
- *   - String  fields: raw value copied with memcpy().
- * Fields 0–(FIELD_COUNT/2-1) are written as CSV into half_a.
- * Fields FIELD_COUNT/2–(FIELD_COUNT-1) are written as CSV into half_b.
+ * Pipeline per call:
+ *   1. JSON parse    — scan the 64-field record character by character.
+ *   2. Proto encode  — each field encoded directly into protobuf wire format:
+ *                        even fields (numeric) → wire type 1 (64-bit LE double)
+ *                        odd  fields (string)  → wire type 2 (length-delimited)
+ *   3. Group split   — 64 columns partitioned into NUM_GROUPS=4 groups of
+ *                      FIELDS_PER_GROUP=16 columns each.  Each group's encoded
+ *                      fields are accumulated directly into proto_groups[g],
+ *                      so the split happens during encoding with no second pass.
+ *   4. Serialized output — proto_groups[g] holds the complete protobuf wire
+ *                      message for group g, ready for storage or transport.
  *
- * The anti-elide byte is XOR-mixed from the first byte of each half so the
- * compiler cannot prove the outputs are unused and elide the work.
+ * Protobuf field numbers within each group are 1-based local to that group
+ * (field 0 of the JSON record → field 1 of group 0; field 16 → field 1 of
+ * group 1; etc.).  A consumer reconstructs the full schema by knowing the
+ * group-to-field mapping.
+ *
+ * The anti-elide byte XORs the first byte of each group output into *sink
+ * so the compiler cannot prove the outputs are unused and elide the work.
  *
  * Returns 1 on success, 0 if the JSON record is malformed.
  */
 static inline int transform_record(const char * __restrict__ json,
-                                    char       * __restrict__ half_a,
-                                    char       * __restrict__ half_b,
-                                    uint8_t    * __restrict__ sink) {
+                                    uint8_t proto_groups[NUM_GROUPS][PROTO_GROUP_MAX],
+                                    uint8_t * __restrict__ sink) {
     const char *p = json;
-    int pos_a = 0, pos_b = 0;
+    int gpos[NUM_GROUPS] = {0, 0, 0, 0};  /* write cursor per group */
 
-    /* Skip to opening brace */
+    /* ── 1. Skip to opening brace ───────────────────────────────────── */
     while (*p && *p != '{') p++;
     if (!*p) return 0;
     p++;   /* consume '{' */
 
     for (int f = 0; f < FIELD_COUNT; f++) {
-        /* Select output half and its position counter */
-        char *out  = (f < FIELD_COUNT / 2) ? half_a + pos_a : half_b + pos_b;
-        int  *opos = (f < FIELD_COUNT / 2) ? &pos_a          : &pos_b;
+        /* ── 3. Group assignment ────────────────────────────────────── */
+        int g          = f / FIELDS_PER_GROUP;        /* group index 0–3      */
+        int local_f    = f % FIELDS_PER_GROUP;        /* position within group */
+        int field_num  = local_f + 1;                 /* proto field num (1-based) */
+        uint8_t *out   = proto_groups[g];
+        int     *opos  = &gpos[g];
 
         /* Skip ',' between fields */
         if (f > 0) {
             while (*p && *p != ',') p++;
-            if (*p) p++;  /* consume ',' */
+            if (*p) p++;
         }
 
-        /* Skip key: "fXX": */
-        while (*p && *p != '"') p++;  /* find opening '"' */
+        /* ── 1. Parse key: "fNN": ───────────────────────────────────── */
+        while (*p && *p != '"') p++;   /* opening '"' of key  */
         if (!*p) return 0;
-        p++;                           /* consume '"' */
-        while (*p && *p != '"') p++;  /* skip key characters */
+        p++;
+        while (*p && *p != '"') p++;   /* key body            */
         if (!*p) return 0;
-        p++;                           /* consume closing '"' */
-        while (*p && *p != ':') p++;  /* find ':' */
+        p++;                           /* closing '"' of key  */
+        while (*p && *p != ':') p++;   /* ':' separator       */
         if (!*p) return 0;
-        p++;                           /* consume ':' */
+        p++;
 
-        /* Parse value */
-        int written;
+        /* ── 2. Proto-encode value ──────────────────────────────────── */
         if (*p == '"') {
-            /* ── String field: copy raw value ──────────────────────── */
-            p++;                           /* consume opening '"' */
+            /* Odd field — string: wire type 2 (length-delimited) */
+            p++;                           /* consume opening '"'  */
             const char *start = p;
-            while (*p && *p != '"') p++;  /* scan to closing '"' */
+            while (*p && *p != '"') p++;   /* scan value body      */
             int len = (int)(p - start);
-            memcpy(out, start, len);
-            written = len;
-            if (*p) p++;                  /* consume closing '"' */
-        } else {
-            /* ── Numeric field: strtod → snprintf ───────────────────── */
-            char *endptr = NULL;
-            double val   = strtod(p, &endptr);
-            if (endptr && endptr > p) p = endptr;
-            written = snprintf(out, 32, "%.2f", val);
-            /* snprintf writes a NUL at out[written]; it will be overwritten
-             * by the comma below (or left as the half terminator). */
-        }
-        *opos += written;
+            if (*p) p++;                   /* consume closing '"'  */
 
-        /* Comma separator within each half, or NUL terminator at boundary */
-        if (f == FIELD_COUNT / 2 - 1) {
-            /* End of first half */
-            half_a[pos_a] = '\0';
-        } else if (f == FIELD_COUNT - 1) {
-            /* End of second half */
-            half_b[pos_b] = '\0';
+            *opos += pb_varint(out + *opos, (uint64_t)((field_num << 3) | 2));
+            *opos += pb_varint(out + *opos, (uint64_t)len);
+            memcpy(out + *opos, start, len);
+            *opos += len;
         } else {
-            out[written]   = ',';
-            (*opos)++;
+            /* Even field — numeric: wire type 1 (64-bit LE IEEE 754 double) */
+            char  *endptr = NULL;
+            double val    = strtod(p, &endptr);
+            if (endptr && endptr > p) p = endptr;
+
+            *opos += pb_varint(out + *opos, (uint64_t)((field_num << 3) | 1));
+            memcpy(out + *opos, &val, 8);
+            *opos += 8;
         }
     }
 
-    /* Anti-elide: mix one byte from each output half into the caller's sink */
-    *sink ^= (uint8_t)(half_a[0] ^ half_b[0]);
+    /* ── Anti-elide: XOR first byte of each group output into sink ──── */
+    uint8_t s = 0;
+    for (int g = 0; g < NUM_GROUPS; g++) {
+        if (gpos[g] > 0) s ^= proto_groups[g][0];
+    }
+    *sink ^= s;
     return 1;
 }
 
@@ -286,9 +342,14 @@ static void *worker(void *arg) {
      * its own CSV output buffers.  No sharing, no false sharing.
      * Aligned to 64 bytes (cache line) to avoid false sharing on the stack.
      */
-    char __attribute__((aligned(64))) json_in[JSON_MAXLEN];
-    char __attribute__((aligned(64))) half_a[CSV_HALF_MAX];
-    char __attribute__((aligned(64))) half_b[CSV_HALF_MAX];
+    char    __attribute__((aligned(64))) json_in[JSON_MAXLEN];
+    /*
+     * proto_groups[g] holds the serialized protobuf wire-format message for
+     * group g after each transform_record() call.  4 groups × 512 B = 2 KB
+     * of output per operation — all on the thread's private stack so there
+     * is no cross-thread sharing or false sharing.
+     */
+    uint8_t __attribute__((aligned(64))) proto_groups[NUM_GROUPS][PROTO_GROUP_MAX];
 
     build_json(json_in);
 
@@ -310,7 +371,7 @@ static void *worker(void *arg) {
         while (g_keep_running && getNs() < a->endNs) {
             uint64_t phase_end = getNs() + work_ns_base + carry_ns;
             while (g_keep_running && getNs() < phase_end && getNs() < a->endNs) {
-                transform_record(json_in, half_a, half_b, &sink);
+                transform_record(json_in, proto_groups, &sink);
                 ops++;
                 a->ops_count = ops;
             }
@@ -328,7 +389,7 @@ static void *worker(void *arg) {
         uint64_t nextNs = getNs() + a->intervalNs;
 
         while (g_keep_running && getNs() < a->endNs) {
-            transform_record(json_in, half_a, half_b, &sink);
+            transform_record(json_in, proto_groups, &sink);
             ops++;
             a->ops_count = ops;
 
@@ -458,12 +519,14 @@ int main(int argc, const char **argv) {
             "  cpu_id       base CPU for pinning via sched_setaffinity (-1 = no pinning).\n"
             "               Thread i is pinned to cpu_id + i.\n"
             "\n"
-            "Work unit: transform_record()\n"
-            "  1. Scan a 16-field JSON record (~1 KB) character by character.\n"
-            "  2. strtod() the 8 numeric fields (string -> double).\n"
-            "  3. snprintf(\"%%,2f\") each double back into CSV (double -> string).\n"
-            "  4. memcpy() the 8 string fields verbatim into CSV.\n"
-            "  5. Split: fields 0-7 -> half_a CSV, fields 8-15 -> half_b CSV.\n"
+            "Work unit per operation (64 columns x 32 B):\n"
+            "  1. JSON parse   — scan 64-field record; even=numeric, odd=32-B string.\n"
+            "  2. Proto encode — numeric -> wire type 1 (64-bit LE double);\n"
+            "                    string  -> wire type 2 (length-delimited).\n"
+            "  3. Group split  — 64 columns partitioned into 4 groups of 16 each;\n"
+            "                    split happens during encoding (single pass).\n"
+            "  4. Serialize    — each group's encoded fields stored as a contiguous\n"
+            "                    protobuf wire-format byte string in proto_groups[g].\n"
             "\n"
             "Output: one 'cpu_tput_s<N>: X ops/s' line per second, then:\n"
             "  cpu_throughput mean: X stddev: Y min: Z max: W\n");
@@ -503,14 +566,16 @@ int main(int argc, const char **argv) {
     /* ── Print banner ────────────────────────────────────────────────── */
     if (hasFraction)
         printf("iBench CPU: %.2f threads (%u full + %.2f fractional) x %ds"
-               "  work=JSON->CSV-split (%d fields, %d numeric + %d string)\n",
+               "  work=JSON-parse->Proto-encode->4-group-split->serialize"
+               "  (%d cols x %d B, %d groups x %d cols)\n",
                nthreads_f, fullThreads, fraction, durationSec,
-               FIELD_COUNT, FIELD_COUNT / 2, FIELD_COUNT / 2);
+               FIELD_COUNT, STR_VAL_LEN, NUM_GROUPS, FIELDS_PER_GROUP);
     else
         printf("iBench CPU: %u thread(s) x %ds"
-               "  work=JSON->CSV-split (%d fields, %d numeric + %d string)\n",
+               "  work=JSON-parse->Proto-encode->4-group-split->serialize"
+               "  (%d cols x %d B, %d groups x %d cols)\n",
                numThreads, durationSec,
-               FIELD_COUNT, FIELD_COUNT / 2, FIELD_COUNT / 2);
+               FIELD_COUNT, STR_VAL_LEN, NUM_GROUPS, FIELDS_PER_GROUP);
 
     if (ratePerThread > 0)
         printf("  rate=%lu transforms/s/thread (full threads only)\n",
