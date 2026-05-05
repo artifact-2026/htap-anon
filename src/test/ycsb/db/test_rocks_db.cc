@@ -187,7 +187,9 @@ namespace ycsbc {
         // write-thread yielding.  The explicit max_background_jobs line is
         // intentionally omitted — IncreaseParallelism is the single source of
         // truth for thread counts.
-        options_.IncreaseParallelism(32);
+        // Set via workload spec: rocksdb_parallelism=<n>  (default: 32)
+        int parallelism = utils::StrToInt(props.GetProperty("rocksdb_parallelism", "32"));
+        options_.IncreaseParallelism(parallelism);
 
         // Allow up to 8 parallel sub-compactions per compaction job.
         // With 32 background threads and a fast NVMe, this keeps each L0→L1

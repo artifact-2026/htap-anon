@@ -43,7 +43,9 @@ namespace ycsbc {
         //options_.level0_file_num_compaction_trigger = 4;   // default; compaction at 4×64MB=256MB L0
         //options_.level0_slowdown_writes_trigger = 20;      // default; throttle at 20×64MB=1.28GB L0
         //options_.level0_stop_writes_trigger = 36;          // default; hard stop at 36×64MB=2.3GB L0
-        //options_.IncreaseParallelism(24);
+        // Set via workload spec: rocksdb_parallelism=<n>  (default: 32)
+        int parallelism = utils::StrToInt(props.GetProperty("rocksdb_parallelism", "32"));
+        options_.IncreaseParallelism(parallelism);
         options_.use_direct_reads = true;
         options_.use_direct_io_for_flush_and_compaction = true;
         //options_.max_bytes_for_level_base = 256 * 1024 * 1024;  // default; = trigger × write_buffer_size

@@ -91,6 +91,11 @@ DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
 # Set to 0 to report total mean throughput over the entire RUNTIME_SECS window.
 WARMUP_SKIP_S="${WARMUP_SKIP_S:-120}"
 
+# Number of RocksDB background compaction/flush threads.
+# Passed into the workload spec as rocksdb_parallelism=<n>.
+# Set to match the number of logical cores on the test machine (lscpu / nproc).
+ROCKSDB_PARALLELISM="${ROCKSDB_PARALLELISM:-32}"
+
 # Number of independent trials to run for each thread count.
 # When > 1, each trial's output goes into run_t<N>/trial_<k>/ and the
 # summariser reports the median across trials.  Taking the median of 3 runs
@@ -288,7 +293,7 @@ load_db() {
     # Defaults to OUTPUT_DIR/load.log for callers that do not need per-run logs.
     local logfile="${2:-$OUTPUT_DIR/load.log}"
     log "Loading ${RECORD_COUNT} records into $dbpath (~$(( RECORD_COUNT * 2064 / 1024 / 1024 / 1024 )) GiB) ..."
-    local spec; spec=$(create_spec)
+    local spec; spec=$(create_spec "rocksdb_parallelism=${ROCKSDB_PARALLELISM}")
     "$BINARY" \
         -db baseline -dbpath "$dbpath" -P "$spec" \
         -bootstrap true -threads 8 \
@@ -309,7 +314,7 @@ run_one() {
     local log_file="$run_dir/ycsb_t${threads}.log"
     local cmp_csv="$run_dir/compaction_metrics.csv"
 
-    local spec; spec=$(create_spec "metrics_output=${cmp_csv}")
+    local spec; spec=$(create_spec "metrics_output=${cmp_csv}" "rocksdb_parallelism=${ROCKSDB_PARALLELISM}")
 
     log "  Running $threads thread(s) for ${RUNTIME_SECS}s" \
         "(skip first ${WARMUP_SKIP_S}s, measure [${WARMUP_SKIP_S}, ${RUNTIME_SECS}]s) ..."
@@ -729,7 +734,9 @@ main() {
     # Accepted forms: --flag=VALUE  or  --flag VALUE
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            *) die "Unknown argument: $1.  Use env vars or --disk-read-max-bandwidth, --disk-write-max-bandwidth, --iops-read-max, --iops-write-max" ;;
+            --rocksdb-parallelism=*) ROCKSDB_PARALLELISM="${1#*=}" ;;
+            --rocksdb-parallelism)   ROCKSDB_PARALLELISM="$2"; shift ;;
+            *) die "Unknown argument: $1.  Use env vars or --rocksdb-parallelism, --disk-read-max-bandwidth, --disk-write-max-bandwidth, --iops-read-max, --iops-write-max" ;;
         esac
         shift
     done
@@ -745,6 +752,7 @@ main() {
     log "  Threads:             $THREAD_COUNTS"
     log "  Runtime/pt:          ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
     log "  Trials/thread:       ${TRIALS_PER_THREAD}  (summary uses median across trials)"
+    log "  RocksDB parallelism: ${ROCKSDB_PARALLELISM}  (IncreaseParallelism)"
     echo ""
 
     python3 -c "import pandas, numpy" 2>/dev/null || {

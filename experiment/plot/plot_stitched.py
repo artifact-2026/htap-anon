@@ -10,7 +10,7 @@ COLUMNS are:
            QPS full sweep (all thread counts) [from --sat]
 
   Col 1 — Slack phase: I/O bandwidth:
-           QPS (sat pre-knee faded + slack) + Disk util. (%) [from --sat + --io]
+           QPS (sat pre-knee + slack) + IO Throughput (MB/s) [from --sat + --io]
 
   Col 2 — Slack phase: CPU:
            QPS (sat pre-knee faded + slack) + CPU compute (%) [from --sat + --slack]
@@ -45,12 +45,12 @@ saturation summary.csv : threads, xput_mean, xput_std, [xput_min, xput_max],
                          disk_bw_avg (fraction 0-1), disk_bw_stddev
 
 io summary.csv         : workers, xput_mean, xput_std, [xput_min, xput_max],
-                         disk_bw_avg (fraction 0-1), disk_bw_stddev (fraction 0-1),
-                         (other columns ignored)
+                         io_xput_mean (MB/s), io_xput_std (MB/s),
+                         (other columns ignored; io_xput_mean is NaN for workers==0)
 
 slack summary.csv      : workers, xput_mean, xput_std, [xput_min, xput_max],
-                         cpu_compute_mean/std/min/max,
-                         cpu_schedule_mean/std/min/max
+                         cpu_xput_mean (ops/s), cpu_xput_std (ops/s),
+                         (cpu_xput_mean is NaN for workers==0)
 """
 
 import argparse
@@ -264,6 +264,21 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
 
     sat_knee_row = sat.iloc[knee_idx]
 
+    # ── Hybrid x-axis for cols 1 & 2 ─────────────────────────────────────────
+    # Pre-knee:  log₂(thread count)  — equal spacing for doublings
+    # Post-knee: linear 1, 2, 3, … units right of the knee
+    sat_threads_list = sat['threads'].tolist()
+    knee_x_h    = np.log2(float(sat_threads_list[knee_idx]))
+    pre_xs_h    = [np.log2(float(t)) for t in sat_threads_list[:pre_end]]
+
+    io_workers_list    = io_df_sweep['workers'].tolist()
+    io_xs_h            = [knee_x_h + j for j in range(1, len(io_workers_list) + 1)]
+    io_xs_aug_h        = [knee_x_h] + io_xs_h
+
+    slack_workers_list = slack_df_sweep['workers'].tolist()
+    slack_xs_h         = [knee_x_h + j for j in range(1, len(slack_workers_list) + 1)]
+    slack_xs_aug_h     = [knee_x_h] + slack_xs_h
+
     # ── helpers ───────────────────────────────────────────────────────────────
     def _seg(df, name, slc=None):
         v = _col(df, name).values.astype(float)
@@ -326,36 +341,33 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     # ═══════════════════════════════════════════════════════════════════════════
     # COLUMN 1: SLACK PHASE — I/O bandwidth
     #   Left axis:  QPS (sat pre-knee + io slack, same C_QPS gray)
-    #   Right axis: Disk BW % (navy)
+    #   Right axis: IO Throughput MB/s (navy) — starts at 0 (baseline), sweeps post-knee
     # ═══════════════════════════════════════════════════════════════════════════
     ax  = ax_io
     ax_r = ax_io_r
 
-    # ── normalization offsets for col 1 slack phase ──────────────────────────
-    # Shift each slack metric so its w0 baseline aligns with the sat knee value,
+    # ── normalization offset for col 1 QPS (left axis only) ─────────────────
+    # Shift slack QPS so its w0 baseline aligns with the sat knee value,
     # making the two phases visually continuous. std is a spread — not shifted.
     _w0_qps_io  = float(_aug_io('xput_mean')[0])
-    _w0_disk_io = float(_aug_io('disk_bw_avg')[0])
     _sk_qps     = float(_seg(sat, 'xput_mean')[knee_idx])
-    _sk_disk    = float(_seg(sat, 'disk_bw_avg')[knee_idx])
-    qps_off_io  = (_sk_qps  - _w0_qps_io)         if (np.isfinite(_sk_qps)  and np.isfinite(_w0_qps_io))  else 0.0
-    disk_off    = (_sk_disk - _w0_disk_io) * 100.0 if (np.isfinite(_sk_disk) and np.isfinite(_w0_disk_io)) else 0.0
+    qps_off_io  = (_sk_qps  - _w0_qps_io) if (np.isfinite(_sk_qps) and np.isfinite(_w0_qps_io)) else 0.0
 
-    # Pre-knee QPS from the saturation CSV (same color, connects at knee_idx).
-    _phase(ax, pre_xs,
+    # Pre-knee QPS from the saturation CSV (log₂-spaced x positions).
+    _phase(ax, pre_xs_h,
            _seg(sat, 'xput_mean', slice(0, pre_end)),
            _seg0(sat, 'xput_std',  slice(0, pre_end)),
            C_QPS, fmt='D-', lw=lw, ms=ms)
 
     # Connector: line-only bridge from last sat point to first slack point.
-    if len(io_xs_aug) > 1:
-        ax.plot([pre_xs[-1], io_xs_aug[1]],
+    if len(io_xs_aug_h) > 1:
+        ax.plot([pre_xs_h[-1], io_xs_aug_h[1]],
                 [_seg(sat, 'xput_mean')[knee_idx],
                  _aug_io('xput_mean')[1] + qps_off_io],
                 '-', color=C_QPS, lw=lw, zorder=2)
 
     # Post-knee QPS (normalized): add offset to mean/min/max, leave std alone.
-    _phase(ax, io_xs_aug[1:],
+    _phase(ax, io_xs_aug_h[1:],
            _aug_io('xput_mean')[1:] + qps_off_io,
            _aug_io('xput_std', zero=True)[1:],
            C_QPS, fmt='D-', lw=lw, ms=ms,
@@ -366,74 +378,72 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt_kps))
     ax.set_ylabel('QPS', fontsize=fsz, color='black', labelpad=4)
 
-    # Right axis: Disk BW % — sat pre-knee from sat CSV, then normalized slack.
-    _phase(ax_r, pre_xs,
-           _pct(_seg(sat, 'disk_bw_avg',    slice(0, pre_end))),
-           _pct(_seg0(sat, 'disk_bw_stddev', slice(0, pre_end))),
-           C_DISK, fmt='x-', lw=lw, ms=ms)
-    if len(io_xs_aug) > 1:
-        ax_r.plot([pre_xs[-1], io_xs_aug[1]],
-                  [_pct(_seg(sat, 'disk_bw_avg'))[knee_idx],
-                   _pct(_aug_io('disk_bw_avg'))[1] + disk_off],
+    # Right axis: IO Throughput (MB/s) — baseline is 0 left of knee (no competitors);
+    # connector from (knee_x_h, 0) to first sweep point; sweep post-knee.
+    if len(io_xs_aug_h) > 1:
+        first_io_val = float(_aug_io('io_xput_mean')[1])
+        if not np.isfinite(first_io_val):
+            first_io_val = 0.0
+        ax_r.plot([knee_x_h, io_xs_aug_h[1]], [0.0, first_io_val],
                   '-', color=C_DISK, lw=lw, zorder=2)
-    _phase(ax_r, io_xs_aug[1:],
-           _pct(_aug_io('disk_bw_avg'))[1:]          + disk_off,
-           _pct(_aug_io('disk_bw_stddev', zero=True))[1:],
+    _phase(ax_r, io_xs_aug_h[1:],
+           _aug_io('io_xput_mean')[1:],
+           _aug_io('io_xput_std', zero=True)[1:],
            C_DISK, fmt='x-', lw=lw, ms=ms)
 
-    ax_r.set_ylim(0, 110)
-    ax_r.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.4)
-    ax_r.set_ylabel('Disk BW %', fontsize=fsz, color=C_DISK, labelpad=4)
+    ax_r.set_ylim(bottom=0)
+    ax_r.set_ylabel('IO Throughput (MB/s)', fontsize=fsz, color=C_DISK, labelpad=4)
     ax_r.tick_params(axis='y', colors=C_DISK, labelsize=fsz - 1)
     ax_r.spines['right'].set_color(C_DISK)
 
-    # X-axis ticks: full range (pre-knee T labels + post-knee W labels).
+    # X-axis ticks: log₂ pre-knee labels + linear post-knee labels.
+    # Worker count 2 gets a tick mark but no label.
+    _xlim_io = (pre_xs_h[0] - 0.3, (io_xs_h[-1] if io_xs_h else knee_x_h) + 0.3)
     if show_xticks:
-        sat_threads = sat['threads'].tolist()
-        io_labels = {i: f'{sat_threads[i]}Y' for i in range(pre_end)}
-        for j, w in enumerate(io_df_sweep['workers'].tolist()):
-            io_labels[io_xs_aug[j + 1]] = f'+{int(w)}S'
-        io_tick_xs = sorted(io_labels.keys())
-        _set_xticks(ax, io_tick_xs, [io_labels[x] for x in io_tick_xs])
+        io_hlabels = {}
+        for i, t in enumerate(sat_threads_list[:pre_end]):
+            io_hlabels[pre_xs_h[i]] = f'{t}Y'
+        for j, w in enumerate(io_workers_list):
+            io_hlabels[io_xs_h[j]] = '' if w == 2 else f'+{int(w)}S'
+        io_tick_xs_h = sorted(io_hlabels.keys())
+        ax.set_xticks(io_tick_xs_h)
+        ax.set_xticklabels([io_hlabels[x] for x in io_tick_xs_h], rotation=45, ha='right')
+        ax.set_xlim(*_xlim_io)
     else:
-        combined_io_xs = list(range(pre_end)) + list(io_xs_aug[1:])
-        ax.set_xticks(combined_io_xs)
-        ax.set_xlim(0 - 0.7, (io_xs_aug[-1] if io_xs_aug else knee_idx) + 0.7)
+        ax.set_xticks(pre_xs_h + io_xs_h)
+        ax.set_xlim(*_xlim_io)
         ax.tick_params(axis='x', labelbottom=False)
 
-    _divider_hashed(ax, knee_idx)
+    _divider_hashed(ax, knee_x_h)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # COLUMN 2: SLACK PHASE — CPU
     #   Left axis:  QPS (sat pre-knee + cpu slack, same C_QPS gray)
-    #   Right axis: CPU compute % (green)
+    #   Right axis: CPU Throughput ops/s (green) — starts at 0 (baseline), sweeps post-knee
     # ═══════════════════════════════════════════════════════════════════════════
     ax  = ax_cpu
     ax_r = ax_cpu_r
 
-    # ── normalization offsets for col 2 slack phase ──────────────────────────
+    # ── normalization offset for col 2 QPS (left axis only) ─────────────────
     _w0_qps_slk = float(_aug_slack('xput_mean')[0])
-    _w0_cpu_slk = float(_aug_slack('cpu_compute_mean')[0])
     _sk_qps2    = float(_seg(sat, 'xput_mean')[knee_idx])
-    _sk_cpu     = float(_seg(sat, 'cpu_compute_mean')[knee_idx])
     qps_off_slk = (_sk_qps2 - _w0_qps_slk) if (np.isfinite(_sk_qps2) and np.isfinite(_w0_qps_slk)) else 0.0
-    cpu_off     = (_sk_cpu  - _w0_cpu_slk)  if (np.isfinite(_sk_cpu)  and np.isfinite(_w0_cpu_slk))  else 0.0
 
-    # Pre-knee QPS from the saturation CSV.
-    _phase(ax, pre_xs,
+    # Pre-knee QPS from the saturation CSV (log₂-spaced x positions).
+    _phase(ax, pre_xs_h,
            _seg(sat, 'xput_mean', slice(0, pre_end)),
            _seg0(sat, 'xput_std',  slice(0, pre_end)),
            C_QPS, fmt='D-', lw=lw, ms=ms)
 
     # Connector: line-only bridge from last sat point to first slack point.
-    if len(slack_xs_aug) > 1:
-        ax.plot([pre_xs[-1], slack_xs_aug[1]],
+    if len(slack_xs_aug_h) > 1:
+        ax.plot([pre_xs_h[-1], slack_xs_aug_h[1]],
                 [_seg(sat, 'xput_mean')[knee_idx],
                  _aug_slack('xput_mean')[1] + qps_off_slk],
                 '-', color=C_QPS, lw=lw, zorder=2)
 
     # Post-knee QPS (normalized).
-    _phase(ax, slack_xs_aug[1:],
+    _phase(ax, slack_xs_aug_h[1:],
            _aug_slack('xput_mean')[1:] + qps_off_slk,
            _aug_slack('xput_std', zero=True)[1:],
            C_QPS, fmt='D-', lw=lw, ms=ms,
@@ -444,42 +454,43 @@ def _draw_row(ax_sat, ax_sat_r, ax_io, ax_io_r, ax_cpu, ax_cpu_r,
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(_fmt_kps))
     ax.set_ylabel('QPS', fontsize=fsz, color='black', labelpad=4)
 
-    # Right axis: CPU compute % — sat pre-knee from sat CSV, then normalized slack.
-    _phase(ax_r, pre_xs,
-           _seg(sat, 'cpu_compute_mean',    slice(0, pre_end)),
-           _seg0(sat, 'cpu_compute_std',     slice(0, pre_end)),
-           C_CPU, fmt='^-', lw=lw, ms=ms)
-    if len(slack_xs_aug) > 1:
-        ax_r.plot([pre_xs[-1], slack_xs_aug[1]],
-                  [_seg(sat, 'cpu_compute_mean')[knee_idx],
-                   _aug_slack('cpu_compute_mean')[1] + cpu_off],
+    # Right axis: CPU Throughput (ops/s) — baseline is 0 left of knee (no competitors);
+    # connector from (knee_x_h, 0) to first sweep point; sweep post-knee.
+    if len(slack_xs_aug_h) > 1:
+        first_cpu_val = float(_aug_slack('cpu_xput_mean')[1])
+        if not np.isfinite(first_cpu_val):
+            first_cpu_val = 0.0
+        ax_r.plot([knee_x_h, slack_xs_aug_h[1]], [0.0, first_cpu_val],
                   '-', color=C_CPU, lw=lw, zorder=2)
-    _phase(ax_r, slack_xs_aug[1:],
-           _aug_slack('cpu_compute_mean')[1:] + cpu_off,
-           _aug_slack('cpu_compute_std', zero=True)[1:],
+    _phase(ax_r, slack_xs_aug_h[1:],
+           _aug_slack('cpu_xput_mean')[1:],
+           _aug_slack('cpu_xput_std', zero=True)[1:],
            C_CPU, fmt='^-', lw=lw, ms=ms)
 
-    ax_r.set_ylim(0, 110)   # match col 1 so the 100 % axhline sits at the same height
-    ax_r.axhline(100, color='black', linestyle=':', linewidth=0.8, alpha=0.4)
-    ax_r.set_ylabel('Resource Utilization %', fontsize=fsz+2, color=C_CPU, labelpad=5)
+    ax_r.set_ylim(bottom=0)
+    ax_r.set_ylabel('CPU Throughput (ops/s)', fontsize=fsz+2, color=C_CPU, labelpad=5)
     ax_r.tick_params(axis='y', colors=C_CPU, labelsize=fsz - 1)
     ax_r.spines['right'].set_color(C_CPU)
 
-    # X-axis ticks: full range (pre-knee T labels + post-knee W labels).
+    # X-axis ticks: log₂ pre-knee labels + linear post-knee labels.
+    # Worker count 2 gets a tick mark but no label.
+    _xlim_cpu = (pre_xs_h[0] - 0.3, (slack_xs_h[-1] if slack_xs_h else knee_x_h) + 0.3)
     if show_xticks:
-        sat_threads = sat['threads'].tolist()
-        cpu_labels = {i: f'{sat_threads[i]}Y' for i in range(pre_end)}
-        for j, w in enumerate(slack_df_sweep['workers'].tolist()):
-            cpu_labels[slack_xs_aug[j + 1]] = f'+{int(w)}S'
-        cpu_tick_xs = sorted(cpu_labels.keys())
-        _set_xticks(ax, cpu_tick_xs, [cpu_labels[x] for x in cpu_tick_xs])
+        cpu_hlabels = {}
+        for i, t in enumerate(sat_threads_list[:pre_end]):
+            cpu_hlabels[pre_xs_h[i]] = f'{t}Y'
+        for j, w in enumerate(slack_workers_list):
+            cpu_hlabels[slack_xs_h[j]] = '' if w == 2 else f'+{int(w)}S'
+        cpu_tick_xs_h = sorted(cpu_hlabels.keys())
+        ax.set_xticks(cpu_tick_xs_h)
+        ax.set_xticklabels([cpu_hlabels[x] for x in cpu_tick_xs_h], rotation=45, ha='right')
+        ax.set_xlim(*_xlim_cpu)
     else:
-        combined_cpu_xs = list(range(pre_end)) + list(slack_xs_aug[1:])
-        ax.set_xticks(combined_cpu_xs)
-        ax.set_xlim(0 - 0.7, (slack_xs_aug[-1] if slack_xs_aug else knee_idx) + 0.7)
+        ax.set_xticks(pre_xs_h + slack_xs_h)
+        ax.set_xlim(*_xlim_cpu)
         ax.tick_params(axis='x', labelbottom=False)
 
-    _divider_hashed(ax, knee_idx)
+    _divider_hashed(ax, knee_x_h)
 
     # ── Row label on the left column ──────────────────────────────────────────
     ax_sat.set_ylabel(row_label, fontsize=fsz + 1, fontweight='bold', labelpad=6)
@@ -495,7 +506,7 @@ def parse_args():
     p.add_argument('--sat',   action='append', required=True, metavar='PATH',
                    help='Saturation CSV.  Repeat once per machine.')
     p.add_argument('--io',    action='append', required=True, metavar='PATH',
-                   help='IO-slack CSV (disk_bw_avg, disk_bw_stddev as fractions 0-1, xput_mean, …).  '
+                   help='IO-slack CSV (io_xput_mean, io_xput_std in MB/s, xput_mean, …).  '
                         'Repeat once per machine.')
     p.add_argument('--slack', action='append', required=True, metavar='PATH',
                    help='CPU-slack CSV.  Repeat once per machine.')
@@ -670,9 +681,9 @@ def main():
         Line2D([0],[0], color=C_QPS,  lw=2, marker='D', ms=5, ls='-',
                label='Throughput (QPS)'),
         Line2D([0],[0], color=C_DISK, lw=2, marker='x', ms=5, ls='-',
-               label='Disk BW %'),
+               label='IO Throughput (MB/s)'),
         Line2D([0],[0], color=C_CPU,  lw=2, marker='^', ms=5, ls='-',
-               label='CPU compute %'),
+               label='CPU Throughput (ops/s)'),
         knee_handle,
     ]
     fig.legend(
