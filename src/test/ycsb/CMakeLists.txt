@@ -29,3 +29,26 @@ target_link_libraries(
     flatbuffers_generated
     ${FLATBUFFERS_LIBRARY}
 )
+
+# split_job: standalone two-phase resource-usage experiment for the
+# "split rows into column groups" transformation (jobs/split.cpp). It
+# generates synthetic rows the same way the YCSB DB backends do, spills them
+# to flat data files, then reads them back and runs them through the real
+# Mycelium Distributor transform -- all without touching RocksDB, so an
+# external resource monitor (see the slack-meter project) can attribute
+# CPU / I/O / RAM cost to the transform step in isolation.
+set(split_job_srcs
+    jobs/split.cpp
+    core/core_workload.cc)
+add_executable(split_job ${split_job_srcs})
+target_include_directories(split_job PUBLIC ${CMAKE_SOURCE_DIR}/src/test/ycsb)
+target_include_directories(split_job PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(split_job PUBLIC ${CMAKE_SOURCE_DIR} "${PROTO_GEN_DIR}")
+target_include_directories(split_job PUBLIC ${CMAKE_SOURCE_DIR}/src/mycelium/include)
+target_include_directories(split_job PUBLIC ${CMAKE_SOURCE_DIR}/src/mycelium)
+target_link_libraries(
+    split_job
+    mycelium::mycelium
+    ${Protobuf_LIBRARIES}
+    proto_generated
+)

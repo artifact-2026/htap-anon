@@ -34,7 +34,7 @@ add_dependencies(proto_generated generate_proto_files)
 target_include_directories(proto_generated PUBLIC "${PROTO_GEN_DIR}")
 
 find_program(FLATC_EXECUTABLE flatc REQUIRED)
-find_package(Flatbuffers REQUIRED)
+find_package(FlatBuffers REQUIRED)
 
 set(FLATBUFFERS_SCHEMA ${CMAKE_SOURCE_DIR}/ddl/flat/row.fbs)
 set(FLATBUFFERS_GEN_DIR ${CMAKE_BINARY_DIR}/flatbuffers_gen)
