@@ -146,13 +146,63 @@ Result<ParsedRow> ProtobufParser::Parse(const ByteBuffer& data) const {
 
   for (int i = 0; i < desc->field_count(); ++i) {
     const FD* f = desc->field(i);
-    ParsedField pf;
-    pf.name         = f->name();
-    pf.field_number = f->number();
-    pf.value        = f->is_repeated()
-                          ? ProtoRepeatedToFieldValue(*msg, f)
-                          : ProtoScalarToFieldValue(*msg, f);
-    row.fields.push_back(std::move(pf));
+    if (f->is_repeated()) {
+      // Expand each element of a repeated field into its own ParsedField so
+      // that the Distributor can split on individual elements (e.g. the YCSB
+      // ByteRow.values repeated field where each element is one column).
+      const auto* refl = msg->GetReflection();
+      const int n = refl->FieldSize(*msg, f);
+      for (int j = 0; j < n; ++j) {
+        ParsedField pf;
+        pf.name         = f->name() + "_" + std::to_string(j);
+        pf.field_number = f->number();
+        // Re-use the scalar helper by temporarily extracting the sub-message
+        // or primitive via the repeated accessor.
+        switch (f->cpp_type()) {
+          case FD::CPPTYPE_BOOL:
+            pf.value = FieldValue::MakeBool(refl->GetRepeatedBool(*msg, f, j)); break;
+          case FD::CPPTYPE_INT32:
+            pf.value = FieldValue::MakeInt32(refl->GetRepeatedInt32(*msg, f, j)); break;
+          case FD::CPPTYPE_INT64:
+            pf.value = FieldValue::MakeInt64(refl->GetRepeatedInt64(*msg, f, j)); break;
+          case FD::CPPTYPE_UINT32:
+            pf.value = FieldValue::MakeUint32(refl->GetRepeatedUInt32(*msg, f, j)); break;
+          case FD::CPPTYPE_UINT64:
+            pf.value = FieldValue::MakeUint64(refl->GetRepeatedUInt64(*msg, f, j)); break;
+          case FD::CPPTYPE_FLOAT:
+            pf.value = FieldValue::MakeFloat(refl->GetRepeatedFloat(*msg, f, j)); break;
+          case FD::CPPTYPE_DOUBLE:
+            pf.value = FieldValue::MakeDouble(refl->GetRepeatedDouble(*msg, f, j)); break;
+          case FD::CPPTYPE_STRING: {
+            const std::string& s = refl->GetRepeatedStringReference(*msg, f, j, nullptr);
+            pf.value = FieldValue::MakeBytes(s);
+            break;
+          }
+          case FD::CPPTYPE_ENUM: {
+            const auto* ev = refl->GetRepeatedEnum(*msg, f, j);
+            pf.value = FieldValue::MakeBytes(ev ? ev->name() : "");
+            break;
+          }
+          case FD::CPPTYPE_MESSAGE: {
+            const auto& sub = refl->GetRepeatedMessage(*msg, f, j);
+            std::string json;
+            auto st = google::protobuf::util::MessageToJsonString(sub, &json);
+            pf.value = st.ok() ? FieldValue::MakeBytes(std::move(json))
+                                : FieldValue::MakeNull();
+            break;
+          }
+          default:
+            pf.value = FieldValue::MakeNull(); break;
+        }
+        row.fields.push_back(std::move(pf));
+      }
+    } else {
+      ParsedField pf;
+      pf.name         = f->name();
+      pf.field_number = f->number();
+      pf.value        = ProtoScalarToFieldValue(*msg, f);
+      row.fields.push_back(std::move(pf));
+    }
   }
 
   return Result<ParsedRow>::Ok(std::move(row));
