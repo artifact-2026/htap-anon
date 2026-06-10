@@ -69,64 +69,6 @@ static FieldValue ProtoScalarToFieldValue(const google::protobuf::Message& msg,
   }
 }
 
-// Convert a repeated proto field to a FieldValue::List.
-static FieldValue ProtoRepeatedToFieldValue(const google::protobuf::Message& msg,
-                                             const FD* f) {
-  const auto* refl = msg.GetReflection();
-  const int n = refl->FieldSize(msg, f);
-
-  std::vector<FieldValue> elems;
-  elems.reserve(static_cast<size_t>(n));
-
-  for (int i = 0; i < n; ++i) {
-    switch (f->cpp_type()) {
-      case FD::CPPTYPE_BOOL:
-        elems.push_back(FieldValue::MakeBool(refl->GetRepeatedBool(msg, f, i)));
-        break;
-      case FD::CPPTYPE_INT32:
-        elems.push_back(FieldValue::MakeInt32(refl->GetRepeatedInt32(msg, f, i)));
-        break;
-      case FD::CPPTYPE_INT64:
-        elems.push_back(FieldValue::MakeInt64(refl->GetRepeatedInt64(msg, f, i)));
-        break;
-      case FD::CPPTYPE_UINT32:
-        elems.push_back(FieldValue::MakeUint32(refl->GetRepeatedUInt32(msg, f, i)));
-        break;
-      case FD::CPPTYPE_UINT64:
-        elems.push_back(FieldValue::MakeUint64(refl->GetRepeatedUInt64(msg, f, i)));
-        break;
-      case FD::CPPTYPE_FLOAT:
-        elems.push_back(FieldValue::MakeFloat(refl->GetRepeatedFloat(msg, f, i)));
-        break;
-      case FD::CPPTYPE_DOUBLE:
-        elems.push_back(FieldValue::MakeDouble(refl->GetRepeatedDouble(msg, f, i)));
-        break;
-      case FD::CPPTYPE_STRING: {
-        const std::string& s = refl->GetRepeatedStringReference(msg, f, i, nullptr);
-        elems.push_back(FieldValue::MakeBytes(s));
-        break;
-      }
-      case FD::CPPTYPE_ENUM: {
-        const auto* ev = refl->GetRepeatedEnum(msg, f, i);
-        elems.push_back(FieldValue::MakeBytes(ev ? ev->name() : ""));
-        break;
-      }
-      case FD::CPPTYPE_MESSAGE: {
-        const auto& sub = refl->GetRepeatedMessage(msg, f, i);
-        std::string json;
-        auto st = google::protobuf::util::MessageToJsonString(sub, &json);
-        elems.push_back(st.ok() ? FieldValue::MakeBytes(std::move(json))
-                                 : FieldValue::MakeNull());
-        break;
-      }
-      default:
-        elems.push_back(FieldValue::MakeNull());
-        break;
-    }
-  }
-  return FieldValue::MakeList(std::move(elems));
-}
-
 }  // namespace
 
 Result<ParsedRow> ProtobufParser::Parse(const ByteBuffer& data) const {
