@@ -17,17 +17,18 @@
 //     file once the current one reaches --file_size bytes.
 //
 //   Phase 2 ("split")
-//     Reads --batch data files at a time, parses each row, splits its
-//     columns into --groups column groups using the real Mycelium
-//     Distributor transform (the same mycelium::Distributor /
+//     Reads all data files in --data_dir in --batch-file increments, parses
+//     each row, splits its columns into --groups column groups using the real
+//     Mycelium Distributor transform (the same mycelium::Distributor /
 //     mycelium::ProtobufParser / mycelium::ProtobufBytesRowEncoder machinery
 //     that TestSplitting wires into RocksDB via SchemaDescriptor -- see
-//     db/test_splitting.cc), and writes the resulting per-group rows back
-//     out, one output stream per column group.
+//     db/test_splitting.cc), and writes the resulting per-group rows to
+//     output files. Prints "throughput mean: X  stddev: 0" on completion so
+//     probe_split.py can parse it with the same regex as probe_rocksdb.py.
 //
-// Run `--phase generate`, `--phase split`, or `--phase both` (default) to
-// run one or both phases independently -- e.g. generate the corpus once,
-// then run the split phase repeatedly under the resource monitor.
+// Run `--phase generate`, `--phase split`, or `--phase both` (default).
+// Typical workflow: generate data once, then run split repeatedly under the
+// resource monitor (probe_split.py in the slack-meter project).
 //
 // On-disk record framing (read by phase 2, written by both phases):
 //
@@ -36,10 +37,7 @@
 // repeated until EOF. `value` is a serialized data::ByteRow in the phase-1
 // (input) files, and a serialized data::BytesRow-shaped buffer (one stream
 // per column group, produced by mycelium::ProtobufBytesRowEncoder) in the
-// phase-2 (output) files. This is a deliberately simple, dependency-free
-// framing -- it carries the row's key alongside its bytes so the split phase
-// can preserve key->row association across the transformation, without
-// depending on any particular protobuf message shape for the envelope.
+// phase-2 (output) files.
 
 #include <algorithm>
 #include <chrono>
@@ -74,17 +72,18 @@ struct Options {
   std::string phase = "both";  // "generate" | "split" | "both"
 
   // Phase 1 ("generate") options.
-  std::string spec_file;                          // -P <workload spec>
-  uint64_t    file_size = 64ull * 1024 * 1024;     // bytes per data file before rollover
+  std::string spec_file;                        // -P <workload spec>
+  uint64_t    file_size = 64ull * 1024 * 1024;  // bytes per data file before rollover
 
   // Phase 2 ("split") options.
-  int batch  = 4;  // number of input data files processed together per round
-  int groups = 2;  // number of column groups to split each row into
+  int batch    = 4;    // kept for CLI compatibility; not used in duration-loop mode
+  int groups   = 2;    // number of column groups to split each row into
+  int duration = 600;  // seconds to run the split loop (0 = single pass)
 
   // Shared options.
-  std::string data_dir    = "./split_job_data";  // phase 1 writes here / phase 2 reads from here
-  std::string out_dir     = "./split_job_out";   // phase 2 writes split output here
-  std::string file_prefix = "rows";              // base name for data files
+  std::string data_dir    = "./split_job_data";
+  std::string out_dir     = "./split_job_out";
+  std::string file_prefix = "rows";
 };
 
 void Usage(const char *prog) {
@@ -94,28 +93,26 @@ void Usage(const char *prog) {
       << "  --phase <generate|split|both>   Which phase(s) to run (default: both)\n"
       << "\n"
       << "  Phase 1 (\"generate\") options:\n"
-      << "    -P <spec>                     Workload spec file, same format/semantics\n"
-      << "                                  as ycsb_test's -P (provides recordcount,\n"
+      << "    -P <spec>                     Workload spec file (provides recordcount,\n"
       << "                                  fieldcount, fieldlength, keylength, ...).\n"
       << "                                  Required when running phase \"generate\".\n"
-      << "    --file_size <bytes>           Target size of each generated data file\n"
-      << "                                  before rolling over to the next one.\n"
+      << "    --file_size <bytes>           Target size per data file before rollover.\n"
       << "                                  (default: 67108864 = 64 MiB)\n"
       << "\n"
       << "  Phase 2 (\"split\") options:\n"
-      << "    --batch <N>                   Number of input data files read and\n"
-      << "                                  processed together per round. (default: 4)\n"
-      << "    --groups <N>                  Number of column groups each row is split\n"
-      << "                                  into. (default: 2)\n"
+      << "    --batch <N>                   (legacy, unused in duration mode) (default: 4)\n"
+      << "    --groups <N>                  Number of column groups to split into.\n"
+      << "                                  (default: 2)\n"
+      << "    --duration <secs>             How long to run the split loop. Files are\n"
+      << "                                  cycled repeatedly until the deadline. 0 = single\n"
+      << "                                  pass. (default: 600)\n"
       << "\n"
       << "  Shared options:\n"
-      << "    --data_dir <dir>              Directory phase 1 writes data files to,\n"
-      << "                                  and phase 2 reads them from.\n"
+      << "    --data_dir <dir>              Phase 1 writes here; phase 2 reads from here.\n"
       << "                                  (default: ./split_job_data)\n"
-      << "    --out_dir <dir>               Directory phase 2 writes split output\n"
-      << "                                  files to. (default: ./split_job_out)\n"
-      << "    --prefix <name>               Base name for generated/consumed data\n"
-      << "                                  files. (default: \"rows\")\n";
+      << "    --out_dir <dir>               Phase 2 writes split output here.\n"
+      << "                                  (default: ./split_job_out)\n"
+      << "    --prefix <name>               Base name for data files. (default: \"rows\")\n";
 }
 
 bool ParseArgs(int argc, char **argv, Options &o) {
@@ -149,6 +146,10 @@ bool ParseArgs(int argc, char **argv, Options &o) {
       std::string v;
       if (!next(i, &v)) return false;
       o.groups = std::atoi(v.c_str());
+    } else if (a == "--duration") {
+      std::string v;
+      if (!next(i, &v)) return false;
+      o.duration = std::atoi(v.c_str());
     } else if (a == "-h" || a == "--help") {
       return false;
     } else {
@@ -186,8 +187,6 @@ bool ParseArgs(int argc, char **argv, Options &o) {
 //   [u32 LE key_len][key bytes][u32 LE value_len][value bytes]
 // ---------------------------------------------------------------------------
 
-// Appends one record to `out`. Returns the number of bytes written, which
-// callers use to track when a file has crossed its target size.
 uint64_t WriteRecord(std::ofstream &out, const std::string &key, const std::string &value) {
   const uint32_t klen = static_cast<uint32_t>(key.size());
   const uint32_t vlen = static_cast<uint32_t>(value.size());
@@ -198,8 +197,6 @@ uint64_t WriteRecord(std::ofstream &out, const std::string &key, const std::stri
   return sizeof(klen) + key.size() + sizeof(vlen) + value.size();
 }
 
-// Reads one record from `in`. Returns false at a clean EOF (no more records)
-// or on any I/O error partway through a record.
 bool ReadRecord(std::ifstream &in, std::string &key, std::string &value) {
   uint32_t klen = 0;
   if (!in.read(reinterpret_cast<char *>(&klen), sizeof(klen))) return false;
@@ -218,12 +215,6 @@ bool ReadRecord(std::ifstream &in, std::string &key, std::string &value) {
 
 // ---------------------------------------------------------------------------
 // Phase 1: generate
-//
-// Produces rows the same way the YCSB DB backends do: load a workload spec
-// into a CoreWorkload, then call NextSequenceKey() / BuildProtoRecord() in a
-// loop -- mirroring Client::DoInsert()'s "protobuf" path -- and spill the
-// resulting (key, serialized data::ByteRow) pairs to flat data files, each
-// capped at --file_size bytes.
 // ---------------------------------------------------------------------------
 int RunGeneratePhase(const Options &opt) {
   utils::Properties props;
@@ -241,10 +232,6 @@ int RunGeneratePhase(const Options &opt) {
     }
   }
 
-  // This job always writes data::ByteRow protobuf records to flat files
-  // (regardless of what the spec says) so phase 2 has one well-defined wire
-  // format to parse. fieldcount / fieldlength / recordcount / keylength etc.
-  // still come from the spec, exactly as they would for ycsb_test.
   props.SetProperty("inputdataformat", "protobuf");
   // CoreWorkload::Init calls stoi() on these with no default -- supply
   // fallbacks so specs that omit totalrecordcount (e.g. test_basic.spec)
@@ -270,7 +257,7 @@ int RunGeneratePhase(const Options &opt) {
   int file_index = 0;
   uint64_t bytes_in_file = 0;
   uint64_t files_written = 0;
-  uint64_t rows_written = 0;
+  uint64_t rows_written  = 0;
 
   std::ofstream out;
   auto open_next_file = [&]() -> bool {
@@ -294,7 +281,6 @@ int RunGeneratePhase(const Options &opt) {
 
   for (uint64_t i = 0; i < record_count; ++i) {
     const std::string key = wl.NextSequenceKey();
-
     data::ByteRow row;
     wl.BuildProtoRecord(row);
     std::string serialized;
@@ -309,97 +295,92 @@ int RunGeneratePhase(const Options &opt) {
   }
   out.close();
 
-  const auto t1 = std::chrono::steady_clock::now();
-  const double secs = std::chrono::duration<double>(t1 - t0).count();
+  const auto t1   = std::chrono::steady_clock::now();
+  const double sec = std::chrono::duration<double>(t1 - t0).count();
   std::cout << "[generate] done: " << rows_written << " row(s) across " << files_written
-            << " file(s) in " << opt.data_dir << " (" << secs << "s, "
-            << (secs > 0 ? static_cast<double>(rows_written) / secs : 0.0) << " rows/s)\n";
+            << " file(s) in " << opt.data_dir << " (" << sec << "s, "
+            << (sec > 0 ? static_cast<double>(rows_written) / sec : 0.0) << " rows/s)\n";
   return 0;
 }
 
 // ---------------------------------------------------------------------------
 // Phase 2: split
-//
-// Reads --batch data files at a time, parses each row as a data::ByteRow,
-// splits its columns into --groups column groups via the real Mycelium
-// Distributor transform, and serializes + writes each group's row to its own
-// output file. Column groups are computed once, the first time a row is
-// seen, by round-robin assignment of column indices -- the same interleaved
-// pattern db/test_splitting.cc uses when wiring a Distributor into RocksDB.
 // ---------------------------------------------------------------------------
 
-// Partitions column indices [0, field_count) into `num_groups` round-robin
-// groups, e.g. field_count=5, num_groups=2 -> {{0,2,4}, {1,3}}. Caps
-// num_groups at field_count (a group cannot be empty -- mycelium::Distributor
-// rejects empty split groups).
+// Partitions [0, field_count) into num_groups round-robin groups.
+// e.g. field_count=5, num_groups=2 -> {{0,2,4},{1,3}}.
 std::vector<std::vector<int>> ComputeColumnGroups(int field_count, int num_groups) {
   std::vector<std::vector<int>> groups;
   if (field_count <= 0) return groups;
-
   num_groups = std::min(num_groups, field_count);
   groups.resize(static_cast<size_t>(num_groups));
-  for (int col = 0; col < field_count; ++col) {
+  for (int col = 0; col < field_count; ++col)
     groups[static_cast<size_t>(col % num_groups)].push_back(col);
-  }
   return groups;
 }
 
 int RunSplitPhase(const Options &opt) {
-  // Discover the data files written by phase 1 (or a prior "generate" run).
+  // Discover input data files.
   std::vector<fs::path> input_files;
   std::error_code ec;
   for (const auto &entry : fs::directory_iterator(opt.data_dir, ec)) {
     if (!entry.is_regular_file()) continue;
     const std::string name = entry.path().filename().string();
-    if (entry.path().extension() == ".dat" && name.rfind(opt.file_prefix + ".", 0) == 0) {
+    if (entry.path().extension() == ".dat" && name.rfind(opt.file_prefix + ".", 0) == 0)
       input_files.push_back(entry.path());
-    }
   }
   if (ec) {
     std::cerr << "[split] cannot read data dir " << opt.data_dir << ": " << ec.message() << "\n";
     return 1;
   }
   if (input_files.empty()) {
-    std::cerr << "[split] no \"" << opt.file_prefix << ".*.dat\" files found in " << opt.data_dir
-              << " -- run phase \"generate\" first\n";
+    std::cerr << "[split] no \"" << opt.file_prefix << ".*.dat\" files found in "
+              << opt.data_dir << " -- run phase \"generate\" first\n";
     return 1;
   }
   std::sort(input_files.begin(), input_files.end());
 
+  // Clear the output directory before each run so stale files from a previous
+  // probe don't accumulate. Only removes files matching <prefix>.group*.dat so
+  // other content in the directory (if any) is left untouched.
+  if (fs::exists(opt.out_dir)) {
+    for (const auto &entry : fs::directory_iterator(opt.out_dir, ec)) {
+      if (!entry.is_regular_file()) continue;
+      const std::string name = entry.path().filename().string();
+      if (entry.path().extension() == ".dat" && name.rfind(opt.file_prefix + ".group", 0) == 0) {
+        fs::remove(entry.path(), ec);
+        if (ec)
+          std::cerr << "[split] warning: could not remove " << entry.path()
+                    << ": " << ec.message() << "\n";
+      }
+    }
+  }
   fs::create_directories(opt.out_dir, ec);
   if (ec) {
     std::cerr << "[split] cannot create out dir " << opt.out_dir << ": " << ec.message() << "\n";
     return 1;
   }
 
-  // Parses the data::ByteRow wire format written by phase 1 into the
-  // engine-agnostic ParsedRow representation that mycelium transformers
-  // operate on.
   mycelium::ProtobufParser parser(std::make_unique<data::ByteRow>());
 
-  // The Distributor, per-group encoders, column-group layout, and output
-  // streams are all built lazily from the first successfully-parsed row,
-  // since that's when we first learn how many columns each row carries.
-  // (Rows generated by phase 1 all share the same field count.)
+  // Distributor/encoders/outputs are initialized lazily from the first row.
   std::shared_ptr<mycelium::Distributor> distributor;
   std::vector<std::unique_ptr<mycelium::ProtobufBytesRowEncoder>> encoders;
-  std::vector<std::vector<int>> column_groups;
   std::vector<std::ofstream> group_out;
 
-  auto setup_for_row = [&](const mycelium::ParsedRow &row) -> bool {
-    column_groups = ComputeColumnGroups(static_cast<int>(row.size()), opt.groups);
+  auto init_transform = [&](const mycelium::ParsedRow &row) -> bool {
+    auto column_groups = ComputeColumnGroups(static_cast<int>(row.size()), opt.groups);
     if (column_groups.empty()) {
-      std::cerr << "[split] cannot split a " << row.size() << "-column row into " << opt.groups
-                << " group(s)\n";
+      std::cerr << "[split] cannot split a " << row.size() << "-column row into "
+                << opt.groups << " group(s)\n";
       return false;
     }
     distributor = std::make_shared<mycelium::Distributor>(column_groups);
-
     encoders.reserve(column_groups.size());
     group_out.resize(column_groups.size());
     for (size_t g = 0; g < column_groups.size(); ++g) {
-      encoders.push_back(std::make_unique<mycelium::ProtobufBytesRowEncoder>(column_groups[g].size()));
-
+      encoders.push_back(
+          std::make_unique<mycelium::ProtobufBytesRowEncoder>(column_groups[g].size()));
       const std::string path =
           opt.out_dir + "/" + opt.file_prefix + ".group" + std::to_string(g) + ".dat";
       group_out[g].open(path, std::ios::binary | std::ios::trunc);
@@ -410,27 +391,35 @@ int RunSplitPhase(const Options &opt) {
       std::cout << "[split] group " << g << " (" << column_groups[g].size()
                 << " column(s)) -> " << path << "\n";
     }
-
     std::cout << "[split] " << row.size() << "-column rows -> " << column_groups.size()
               << " group(s)\n";
     return true;
   };
 
   uint64_t rows_processed = 0;
-  uint64_t rows_failed = 0;
-  uint64_t batch_index = 0;
+  uint64_t rows_failed    = 0;
+  uint64_t passes         = 0;
 
-  const auto t0 = std::chrono::steady_clock::now();
+  const auto t0       = std::chrono::steady_clock::now();
+  const bool timed    = (opt.duration > 0);
+  const auto deadline = t0 + std::chrono::seconds(opt.duration);
 
-  for (size_t start = 0; start < input_files.size(); start += static_cast<size_t>(opt.batch)) {
-    const size_t end = std::min(start + static_cast<size_t>(opt.batch), input_files.size());
-    std::cout << "[split] batch " << batch_index++ << ": files " << (start + 1) << "-" << end
-              << " of " << input_files.size() << "\n";
+  // Loop over the input files repeatedly until the deadline (or once if
+  // duration == 0).
+  while (true) {
+    ++passes;
+    bool hit_deadline = false;
 
-    for (size_t fi = start; fi < end; ++fi) {
-      std::ifstream in(input_files[fi], std::ios::binary);
+    for (const auto &fpath : input_files) {
+      // Check deadline between files.
+      if (timed && std::chrono::steady_clock::now() >= deadline) {
+        hit_deadline = true;
+        break;
+      }
+
+      std::ifstream in(fpath, std::ios::binary);
       if (!in) {
-        std::cerr << "[split] cannot open " << input_files[fi] << "\n";
+        std::cerr << "[split] cannot open " << fpath << "\n";
         continue;
       }
 
@@ -438,13 +427,10 @@ int RunSplitPhase(const Options &opt) {
       while (ReadRecord(in, key, value)) {
         const mycelium::ByteBuffer buf(value.begin(), value.end());
         mycelium::Result<mycelium::ParsedRow> parsed = parser.Parse(buf);
-        if (!parsed.ok()) {
-          ++rows_failed;
-          continue;
-        }
+        if (!parsed.ok()) { ++rows_failed; continue; }
         const mycelium::ParsedRow &row = *parsed;
 
-        if (!distributor && !setup_for_row(row)) return 1;
+        if (!distributor && !init_transform(row)) return 1;
 
         const std::vector<mycelium::ParsedRow> outputs = distributor->Transform(key, row);
         for (size_t g = 0; g < outputs.size() && g < group_out.size(); ++g) {
@@ -456,16 +442,26 @@ int RunSplitPhase(const Options &opt) {
         ++rows_processed;
       }
     }
+
+    // Stop after one pass if not in timed mode, or if the deadline was hit.
+    if (!timed || hit_deadline) break;
   }
 
   for (auto &s : group_out) s.close();
 
-  const auto t1 = std::chrono::steady_clock::now();
-  const double secs = std::chrono::duration<double>(t1 - t0).count();
+  const auto t1    = std::chrono::steady_clock::now();
+  const double sec = std::chrono::duration<double>(t1 - t0).count();
+  const double rows_per_sec = sec > 0.0 ? static_cast<double>(rows_processed) / sec : 0.0;
+
+  // Emit ycsb_test-compatible line so probe_split.py can parse it with the
+  // same regex as probe_rocksdb.py.
+  std::cout << "throughput mean: " << rows_per_sec << "  stddev: 0\n";
+
+  std::cout << "[split] elapsed: " << sec << "s\n";
   std::cout << "[split] done: " << rows_processed << " row(s) split, " << rows_failed
-            << " failed to parse, across " << input_files.size() << " input file(s) in "
-            << opt.out_dir << " (" << secs << "s, "
-            << (secs > 0 ? static_cast<double>(rows_processed) / secs : 0.0) << " rows/s)\n";
+            << " failed to parse, " << passes << " pass(es) over " << input_files.size()
+            << " input file(s) in " << opt.out_dir << " (" << sec << "s, "
+            << rows_per_sec << " rows/s)\n";
 
   return (rows_processed == 0 && rows_failed > 0) ? 1 : 0;
 }
