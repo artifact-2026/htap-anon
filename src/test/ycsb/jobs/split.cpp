@@ -50,6 +50,10 @@
 #include <string>
 #include <vector>
 
+#include <fcntl.h>
+#include <unistd.h>
+#include <cstring>
+
 #include "data.pb.h"
 
 #include "core/core_workload.h"
@@ -79,6 +83,8 @@ struct Options {
   int batch    = 4;    // kept for CLI compatibility; not used in duration-loop mode
   int groups   = 2;    // number of column groups to split each row into
   int duration = 600;  // seconds to run the split loop (0 = single pass)
+  bool sync_output   = false;  // open output files with O_DSYNC (force per-write disk flush)
+  bool direct_reads  = false;  // open source files with O_DIRECT (bypass page cache on reads)
 
   // Shared options.
   std::string data_dir    = "./split_job_data";
@@ -112,7 +118,15 @@ void Usage(const char *prog) {
       << "                                  (default: ./split_job_data)\n"
       << "    --out_dir <dir>               Phase 2 writes split output here.\n"
       << "                                  (default: ./split_job_out)\n"
-      << "    --prefix <name>               Base name for data files. (default: \"rows\")\n";
+      << "    --prefix <name>               Base name for data files. (default: \"rows\")\n"
+      << "    --sync-output                 Open output files with O_DSYNC so every write\n"
+      << "                                  blocks until data reaches the storage device.\n"
+      << "                                  Use this to make split IO visible to the slack\n"
+      << "                                  experiment (otherwise writes are OS-buffered).\n"
+      << "    --direct-reads                Open source files with O_DIRECT so reads bypass\n"
+      << "                                  the OS page cache entirely. Essential when RAM\n"
+      << "                                  exceeds the source file pool size (files would\n"
+      << "                                  otherwise be served from cache after one pass).\n";
 }
 
 bool ParseArgs(int argc, char **argv, Options &o) {
@@ -150,6 +164,10 @@ bool ParseArgs(int argc, char **argv, Options &o) {
       std::string v;
       if (!next(i, &v)) return false;
       o.duration = std::atoi(v.c_str());
+    } else if (a == "--sync-output") {
+      o.sync_output = true;
+    } else if (a == "--direct-reads") {
+      o.direct_reads = true;
     } else if (a == "-h" || a == "--help") {
       return false;
     } else {
@@ -195,6 +213,98 @@ uint64_t WriteRecord(std::ofstream &out, const std::string &key, const std::stri
   out.write(reinterpret_cast<const char *>(&vlen), sizeof(vlen));
   out.write(value.data(), static_cast<std::streamsize>(value.size()));
   return sizeof(klen) + key.size() + sizeof(vlen) + value.size();
+}
+
+// Variant used when --sync-output is set: writes directly via fd (no userspace
+// buffering) so O_DSYNC takes effect on every write() call.
+uint64_t WriteRecordFd(int fd, const std::string &key, const std::string &value) {
+  const uint32_t klen = static_cast<uint32_t>(key.size());
+  const uint32_t vlen = static_cast<uint32_t>(value.size());
+  ::write(fd, &klen, sizeof(klen));
+  ::write(fd, key.data(), key.size());
+  ::write(fd, &vlen, sizeof(vlen));
+  ::write(fd, value.data(), value.size());
+  return sizeof(klen) + key.size() + sizeof(vlen) + value.size();
+}
+
+// ---------------------------------------------------------------------------
+// DirectReader: O_DIRECT source-file reader.
+//
+// O_DIRECT bypasses the OS page cache so reads always come from the storage
+// device regardless of how much RAM the machine has.  The kernel requires:
+//   - fd offset aligned to logical block size  (guaranteed: we read in whole
+//     kBufSize chunks, which is a power-of-two multiple of 4 KiB)
+//   - buffer address aligned to kAlign         (guaranteed: posix_memalign)
+//   - request length a multiple of kAlign      (guaranteed: kBufSize)
+//
+// The last read of a file may return fewer than kBufSize bytes (kernel
+// truncates at EOF); we record exactly how many bytes came back and stop
+// consuming the buffer at that boundary.
+// ---------------------------------------------------------------------------
+struct DirectReader {
+  static constexpr size_t kAlign   = 4096;
+  static constexpr size_t kBufSize = 1024 * 1024;  // 1 MiB
+
+  int    fd_      = -1;
+  char  *buf_     = nullptr;
+  size_t buf_end_ = 0;   // valid bytes in buf_
+  size_t buf_pos_ = 0;   // next byte to consume
+  bool   eof_     = false;
+
+  bool Open(const std::string &path) {
+#ifdef O_DIRECT
+    fd_ = ::open(path.c_str(), O_RDONLY | O_DIRECT);
+#else
+    fd_ = ::open(path.c_str(), O_RDONLY);
+#endif
+    if (fd_ < 0) return false;
+    if (::posix_memalign(reinterpret_cast<void **>(&buf_), kAlign, kBufSize) != 0) {
+      ::close(fd_); fd_ = -1; return false;
+    }
+    buf_end_ = buf_pos_ = 0;
+    eof_ = false;
+    return true;
+  }
+
+  void Close() {
+    if (fd_ >= 0) { ::close(fd_); fd_ = -1; }
+    if (buf_)    { free(buf_); buf_ = nullptr; }
+    buf_end_ = buf_pos_ = 0;
+    eof_ = false;
+  }
+
+  ~DirectReader() { Close(); }
+
+  // Read exactly n bytes into dst; returns false if EOF/error before n bytes.
+  bool Read(char *dst, size_t n) {
+    size_t done = 0;
+    while (done < n) {
+      if (buf_pos_ >= buf_end_) {
+        if (eof_) return false;
+        ssize_t got = ::read(fd_, buf_, kBufSize);
+        if (got <= 0) { eof_ = true; return false; }
+        buf_end_ = static_cast<size_t>(got);
+        buf_pos_ = 0;
+      }
+      size_t take = std::min(buf_end_ - buf_pos_, n - done);
+      std::memcpy(dst + done, buf_ + buf_pos_, take);
+      buf_pos_ += take;
+      done     += take;
+    }
+    return true;
+  }
+};
+
+bool ReadRecordDirect(DirectReader &r, std::string &key, std::string &value) {
+  uint32_t klen = 0;
+  if (!r.Read(reinterpret_cast<char *>(&klen), sizeof(klen))) return false;
+  key.resize(klen);
+  if (klen > 0 && !r.Read(&key[0], klen)) return false;
+  uint32_t vlen = 0;
+  if (!r.Read(reinterpret_cast<char *>(&vlen), sizeof(vlen))) return false;
+  value.resize(vlen);
+  if (vlen > 0 && !r.Read(&value[0], vlen)) return false;
+  return true;
 }
 
 bool ReadRecord(std::ifstream &in, std::string &key, std::string &value) {
@@ -366,7 +476,10 @@ int RunSplitPhase(const Options &opt) {
   // Distributor/encoders/outputs are initialized lazily from the first row.
   std::shared_ptr<mycelium::Distributor> distributor;
   std::vector<std::unique_ptr<mycelium::ProtobufBytesRowEncoder>> encoders;
+  // Buffered outputs (default path).
   std::vector<std::ofstream> group_out;
+  // Sync outputs: raw fds opened with O_DSYNC (used when opt.sync_output).
+  std::vector<int> group_fds;
 
   auto init_transform = [&](const mycelium::ParsedRow &row) -> bool {
     auto column_groups = ComputeColumnGroups(static_cast<int>(row.size()), opt.groups);
@@ -377,19 +490,33 @@ int RunSplitPhase(const Options &opt) {
     }
     distributor = std::make_shared<mycelium::Distributor>(column_groups);
     encoders.reserve(column_groups.size());
-    group_out.resize(column_groups.size());
+    if (opt.sync_output) {
+      group_fds.resize(column_groups.size(), -1);
+    } else {
+      group_out.resize(column_groups.size());
+    }
     for (size_t g = 0; g < column_groups.size(); ++g) {
       encoders.push_back(
           std::make_unique<mycelium::ProtobufBytesRowEncoder>(column_groups[g].size()));
       const std::string path =
           opt.out_dir + "/" + opt.file_prefix + ".group" + std::to_string(g) + ".dat";
-      group_out[g].open(path, std::ios::binary | std::ios::trunc);
-      if (!group_out[g]) {
-        std::cerr << "[split] cannot open output file: " << path << "\n";
-        return false;
+      if (opt.sync_output) {
+        int flags = O_WRONLY | O_CREAT | O_TRUNC | O_DSYNC;
+        group_fds[g] = ::open(path.c_str(), flags, 0644);
+        if (group_fds[g] < 0) {
+          std::cerr << "[split] cannot open output file (O_DSYNC): " << path << "\n";
+          return false;
+        }
+      } else {
+        group_out[g].open(path, std::ios::binary | std::ios::trunc);
+        if (!group_out[g]) {
+          std::cerr << "[split] cannot open output file: " << path << "\n";
+          return false;
+        }
       }
       std::cout << "[split] group " << g << " (" << column_groups[g].size()
-                << " column(s)) -> " << path << "\n";
+                << " column(s)) -> " << path
+                << (opt.sync_output ? " [O_DSYNC]" : "") << "\n";
     }
     std::cout << "[split] " << row.size() << "-column rows -> " << column_groups.size()
               << " group(s)\n";
@@ -410,6 +537,30 @@ int RunSplitPhase(const Options &opt) {
     ++passes;
     bool hit_deadline = false;
 
+    // process_record: shared logic for both buffered and direct-IO paths.
+    auto process_record = [&](const std::string &key, const std::string &value) -> bool {
+      const mycelium::ByteBuffer buf(value.begin(), value.end());
+      mycelium::Result<mycelium::ParsedRow> parsed = parser.Parse(buf);
+      if (!parsed.ok()) { ++rows_failed; return true; }
+      const mycelium::ParsedRow &row = *parsed;
+
+      if (!distributor && !init_transform(row)) return false;  // fatal
+
+      const std::vector<mycelium::ParsedRow> outputs = distributor->Transform(key, row);
+      const size_t n_groups = opt.sync_output ? group_fds.size() : group_out.size();
+      for (size_t g = 0; g < outputs.size() && g < n_groups; ++g) {
+        for (const mycelium::ByteBuffer &enc : encoders[g]->Serialize(outputs[g])) {
+          const std::string out_value(enc.begin(), enc.end());
+          if (opt.sync_output)
+            WriteRecordFd(group_fds[g], key, out_value);
+          else
+            WriteRecord(group_out[g], key, out_value);
+        }
+      }
+      ++rows_processed;
+      return true;
+    };
+
     for (const auto &fpath : input_files) {
       // Check deadline between files.
       if (timed && std::chrono::steady_clock::now() >= deadline) {
@@ -417,29 +568,23 @@ int RunSplitPhase(const Options &opt) {
         break;
       }
 
-      std::ifstream in(fpath, std::ios::binary);
-      if (!in) {
-        std::cerr << "[split] cannot open " << fpath << "\n";
-        continue;
-      }
-
       std::string key, value;
-      while (ReadRecord(in, key, value)) {
-        const mycelium::ByteBuffer buf(value.begin(), value.end());
-        mycelium::Result<mycelium::ParsedRow> parsed = parser.Parse(buf);
-        if (!parsed.ok()) { ++rows_failed; continue; }
-        const mycelium::ParsedRow &row = *parsed;
-
-        if (!distributor && !init_transform(row)) return 1;
-
-        const std::vector<mycelium::ParsedRow> outputs = distributor->Transform(key, row);
-        for (size_t g = 0; g < outputs.size() && g < group_out.size(); ++g) {
-          for (const mycelium::ByteBuffer &enc : encoders[g]->Serialize(outputs[g])) {
-            const std::string out_value(enc.begin(), enc.end());
-            WriteRecord(group_out[g], key, out_value);
-          }
+      if (opt.direct_reads) {
+        DirectReader dr;
+        if (!dr.Open(fpath.string())) {
+          std::cerr << "[split] cannot open (O_DIRECT) " << fpath << "\n";
+          continue;
         }
-        ++rows_processed;
+        while (ReadRecordDirect(dr, key, value))
+          if (!process_record(key, value)) return 1;
+      } else {
+        std::ifstream in(fpath, std::ios::binary);
+        if (!in) {
+          std::cerr << "[split] cannot open " << fpath << "\n";
+          continue;
+        }
+        while (ReadRecord(in, key, value))
+          if (!process_record(key, value)) return 1;
       }
     }
 
@@ -448,6 +593,7 @@ int RunSplitPhase(const Options &opt) {
   }
 
   for (auto &s : group_out) s.close();
+  for (int fd : group_fds) if (fd >= 0) ::close(fd);
 
   const auto t1    = std::chrono::steady_clock::now();
   const double sec = std::chrono::duration<double>(t1 - t0).count();
