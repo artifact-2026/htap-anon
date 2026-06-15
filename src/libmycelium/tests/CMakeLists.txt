@@ -31,8 +31,4 @@ macro(mycelium_test name)
 endmacro()
 
 # ── Test targets ─────────────────────────────────────────────────────────────
-mycelium_test(test_ewma_admission_policy)
-mycelium_test(test_transform_scheduler)
-mycelium_test(test_compaction_slack_estimator)
 mycelium_test(test_transform_epoch_tracker)
-mycelium_test(test_scheduler_scenarios)   # Track B #6: synthetic scenario tests

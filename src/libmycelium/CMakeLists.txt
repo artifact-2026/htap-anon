@@ -30,9 +30,7 @@ option(MYCELIUM_WITH_JSON        "Enable JSON parser/encoder (jsoncpp)" OFF)
 # ── P2: promoted from INTERFACE to STATIC ────────────────────────────────────
 set(MYCELIUM_SOURCES
   # Core portable layer
-  src/compaction_slack_estimator.cc
   src/transform_epoch_tracker.cc
-  src/transform_scheduler.cc
 
   # Transformer implementations
   src/transformer/transformer_factory.cc

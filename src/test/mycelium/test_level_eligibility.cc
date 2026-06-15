@@ -38,14 +38,13 @@
 #include <string>
 #include <vector>
 
-#include "rocksdb/db.h"
-#include "rocksdb/mym_broker.h"
-#include "rocksdb/options.h"
-#include "mycelium/admission_policy.h"
 #include "mycelium/distributor.h"
 #include "mycelium/json_encoder.h"
 #include "mycelium/json_parser.h"
 #include "mycelium/transform_epoch_tracker.h"
+#include "rocksdb/db.h"
+#include "rocksdb/mym_broker.h"
+#include "rocksdb/options.h"
 
 // The SST property key written by EpochIntTblPropCollector.
 #include "db/mycelium_adapter/epoch_table_properties_collector.h"
@@ -60,21 +59,28 @@ using ROCKSDB_NAMESPACE::ReadOptions;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-static std::string TmpDir(const std::string& suffix) {
+static std::string TmpDir(const std::string &suffix) {
   return "/tmp/mycelium_e16_" + suffix;
 }
 
-// Build a 4-column JSON value: {"col0":"v0","col1":"v1","col2":"v2","col3":"v3"}
+// Build a 4-column JSON value:
+// {"col0":"v0","col1":"v1","col2":"v2","col3":"v3"}
 static std::string Make4ColValue(int i) {
-  return "{\"col0\":\"v" + std::to_string(i) + "_0\","
-         "\"col1\":\"v" + std::to_string(i) + "_1\","
-         "\"col2\":\"v" + std::to_string(i) + "_2\","
-         "\"col3\":\"v" + std::to_string(i) + "_3\"}";
+  return "{\"col0\":\"v" + std::to_string(i) +
+         "_0\","
+         "\"col1\":\"v" +
+         std::to_string(i) +
+         "_1\","
+         "\"col2\":\"v" +
+         std::to_string(i) +
+         "_2\","
+         "\"col3\":\"v" +
+         std::to_string(i) + "_3\"}";
 }
 
 // Write n records into the broker and return the key list.
-static std::vector<std::string> WriteN(MymBroker& broker, int n,
-                                       const std::string& prefix = "key") {
+static std::vector<std::string> WriteN(MymBroker &broker, int n,
+                                       const std::string &prefix = "key") {
   std::vector<std::string> keys;
   keys.reserve(static_cast<size_t>(n));
   for (int i = 0; i < n; i++) {
@@ -87,8 +93,8 @@ static std::vector<std::string> WriteN(MymBroker& broker, int n,
 }
 
 // Force a full bottommost compaction on cf.
-static void ForceBottommost(ROCKSDB_NAMESPACE::DB* db,
-                             ROCKSDB_NAMESPACE::ColumnFamilyHandle* cf) {
+static void ForceBottommost(ROCKSDB_NAMESPACE::DB *db,
+                            ROCKSDB_NAMESPACE::ColumnFamilyHandle *cf) {
   FlushOptions fo;
   fo.wait = true;
   ASSERT_TRUE(db->Flush(fo, cf).ok());
@@ -101,35 +107,36 @@ static void ForceBottommost(ROCKSDB_NAMESPACE::DB* db,
 }
 
 // Count all unique keys in cf_handle via a full scan.
-static int CountKeysInCF(ROCKSDB_NAMESPACE::DB* db,
-                          ROCKSDB_NAMESPACE::ColumnFamilyHandle* cf_handle) {
-  auto* it = db->NewIterator(ReadOptions(), cf_handle);
+static int CountKeysInCF(ROCKSDB_NAMESPACE::DB *db,
+                         ROCKSDB_NAMESPACE::ColumnFamilyHandle *cf_handle) {
+  auto *it = db->NewIterator(ReadOptions(), cf_handle);
   int count = 0;
-  for (it->SeekToFirst(); it->Valid(); it->Next()) count++;
+  for (it->SeekToFirst(); it->Valid(); it->Next())
+    count++;
   EXPECT_TRUE(it->status().ok());
   delete it;
   return count;
 }
 
-// ── Build a 4-column SPLIT broker: source → destCF1{col0,col1} + destCF2{col2,col3}
+// ── Build a 4-column SPLIT broker: source → destCF1{col0,col1} +
+// destCF2{col2,col3}
 static ROCKSDB_NAMESPACE::Options Make4ColSplitOptions() {
   ROCKSDB_NAMESPACE::Options opts;
-  opts.create_if_missing        = true;
-  opts.error_if_exists          = false;
+  opts.create_if_missing = true;
+  opts.error_if_exists = false;
   opts.disable_auto_compactions = true;
-  opts.num_levels               = 4;
-  opts.num_columns              = 4;   // required: seeds col-routing metadata in MymBroker
+  opts.num_levels = 4;
+  opts.num_columns = 4; // required: seeds col-routing metadata in MymBroker
   opts.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleLevel;
-  opts.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
+  opts.info_log_level = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
 
   // SPLIT: col0+col1 → destCF1, col2+col3 → destCF2
   mycelium::SplitByPositions splits = {{0, 1}, {2, 3}};
-  opts.transformers.push_back(
-      std::make_shared<mycelium::Distributor>(splits));
+  opts.transformers.push_back(std::make_shared<mycelium::Distributor>(splits));
 
   const int kCols = 4;
   auto parser = std::make_shared<mycelium::JsonColsParser>(kCols, 0);
-  auto enc    = std::make_shared<mycelium::JsonEncoder>();
+  auto enc = std::make_shared<mycelium::JsonEncoder>();
   mycelium::Codec in_codec{parser, nullptr};
   mycelium::Codec out_codec{nullptr, enc};
 
@@ -139,9 +146,9 @@ static ROCKSDB_NAMESPACE::Options Make4ColSplitOptions() {
 
   // out_schemas: two groups
   std::vector<mycelium::FieldSchema> out1 = {{"col0", "string", 0},
-                                              {"col1", "string", 1}};
+                                             {"col1", "string", 1}};
   std::vector<mycelium::FieldSchema> out2 = {{"col2", "string", 2},
-                                              {"col3", "string", 3}};
+                                             {"col3", "string", 3}};
   opts.schemaDescriptors.push_back(std::make_shared<mycelium::SchemaDescriptor>(
       in_codec, out_codec, in_schema,
       std::vector<std::vector<mycelium::FieldSchema>>{out1, out2}));
@@ -152,9 +159,10 @@ static ROCKSDB_NAMESPACE::Options Make4ColSplitOptions() {
 // ── Test fixture ─────────────────────────────────────────────────────────────
 
 class LevelEligibilityTest : public ::testing::Test {
- protected:
+protected:
   void TearDown() override {
-    if (!db_path_.empty()) std::filesystem::remove_all(db_path_);
+    if (!db_path_.empty())
+      std::filesystem::remove_all(db_path_);
   }
   std::string db_path_;
 };
@@ -177,9 +185,9 @@ TEST_F(LevelEligibilityTest, OnceFiring_EpochAppliedAfterCompaction) {
 
   WriteN(broker, /*n=*/20);
 
-  auto* db      = broker.GetDB();
-  auto* src_cf  = broker.GetCFHandle(kRoot);
-  ASSERT_NE(db,     nullptr);
+  auto *db = broker.GetDB();
+  auto *src_cf = broker.GetCFHandle(kRoot);
+  ASSERT_NE(db, nullptr);
   ASSERT_NE(src_cf, nullptr);
 
   ForceBottommost(db, src_cf);
@@ -209,13 +217,13 @@ TEST_F(LevelEligibilityTest, NoReFiring_EpochPreventsDoubleApplication) {
   const int kN = 20;
   WriteN(broker, kN);
 
-  auto* db     = broker.GetDB();
-  auto* src_cf = broker.GetCFHandle(kRoot);
+  auto *db = broker.GetDB();
+  auto *src_cf = broker.GetCFHandle(kRoot);
   const std::string destCF1 = kRoot + "_split_cf_0";
   const std::string destCF2 = kRoot + "_split_cf_1";
-  auto* cf1    = broker.GetCFHandle(destCF1);
-  auto* cf2    = broker.GetCFHandle(destCF2);
-  ASSERT_NE(db,  nullptr);
+  auto *cf1 = broker.GetCFHandle(destCF1);
+  auto *cf2 = broker.GetCFHandle(destCF2);
+  ASSERT_NE(db, nullptr);
   ASSERT_NE(src_cf, nullptr);
   ASSERT_NE(cf1, nullptr);
   ASSERT_NE(cf2, nullptr);
@@ -237,7 +245,6 @@ TEST_F(LevelEligibilityTest, NoReFiring_EpochPreventsDoubleApplication) {
       << "destCF1 count must not change after second compaction (no re-fire)";
   EXPECT_EQ(after_second_cf2, kN)
       << "destCF2 count must not change after second compaction (no re-fire)";
-
 }
 
 // ============================================================================
@@ -259,20 +266,20 @@ TEST_F(LevelEligibilityTest, DataIntegrity_CorrectColumnsInDestCFs) {
   const int kN = 10;
   auto keys = WriteN(broker, kN);
 
-  auto* db     = broker.GetDB();
-  auto* src_cf = broker.GetCFHandle(kRoot);
-  auto* cf1    = broker.GetCFHandle(kRoot + "_split_cf_0");
-  auto* cf2    = broker.GetCFHandle(kRoot + "_split_cf_1");
-  ASSERT_NE(db,     nullptr);
+  auto *db = broker.GetDB();
+  auto *src_cf = broker.GetCFHandle(kRoot);
+  auto *cf1 = broker.GetCFHandle(kRoot + "_split_cf_0");
+  auto *cf2 = broker.GetCFHandle(kRoot + "_split_cf_1");
+  ASSERT_NE(db, nullptr);
   ASSERT_NE(src_cf, nullptr);
-  ASSERT_NE(cf1,    nullptr);
-  ASSERT_NE(cf2,    nullptr);
+  ASSERT_NE(cf1, nullptr);
+  ASSERT_NE(cf2, nullptr);
 
   ForceBottommost(db, src_cf);
 
   // Every written key must be present in both dest CFs exactly once.
   std::set<std::string> seen_cf1, seen_cf2;
-  auto* it1 = db->NewIterator(ReadOptions(), cf1);
+  auto *it1 = db->NewIterator(ReadOptions(), cf1);
   for (it1->SeekToFirst(); it1->Valid(); it1->Next()) {
     const std::string k = it1->key().ToString();
     EXPECT_TRUE(seen_cf1.insert(k).second)
@@ -291,7 +298,7 @@ TEST_F(LevelEligibilityTest, DataIntegrity_CorrectColumnsInDestCFs) {
   EXPECT_TRUE(it1->status().ok());
   delete it1;
 
-  auto* it2 = db->NewIterator(ReadOptions(), cf2);
+  auto *it2 = db->NewIterator(ReadOptions(), cf2);
   for (it2->SeekToFirst(); it2->Valid(); it2->Next()) {
     const std::string k = it2->key().ToString();
     EXPECT_TRUE(seen_cf2.insert(k).second)
@@ -314,9 +321,9 @@ TEST_F(LevelEligibilityTest, DataIntegrity_CorrectColumnsInDestCFs) {
       << "destCF1 key count mismatch";
   EXPECT_EQ(static_cast<int>(seen_cf2.size()), kN)
       << "destCF2 key count mismatch";
-  for (const auto& k : keys) {
-    EXPECT_TRUE(seen_cf1.count(k))  << "Key '" << k << "' missing from destCF1";
-    EXPECT_TRUE(seen_cf2.count(k))  << "Key '" << k << "' missing from destCF2";
+  for (const auto &k : keys) {
+    EXPECT_TRUE(seen_cf1.count(k)) << "Key '" << k << "' missing from destCF1";
+    EXPECT_TRUE(seen_cf2.count(k)) << "Key '" << k << "' missing from destCF2";
   }
 
   // Verify source CF is empty
@@ -352,19 +359,20 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
   // ── Level 1: source → destCF1{col0,col1} + destCF2{col2,col3} ────────────
   const std::string kRoot = "myc_split";
   auto opts_l1 = Make4ColSplitOptions();
-  auto broker_l1 = std::make_unique<MymBroker>(kRoot, false, db_path_.c_str(), opts_l1, 2);
+  auto broker_l1 =
+      std::make_unique<MymBroker>(kRoot, false, db_path_.c_str(), opts_l1, 2);
 
-  const int kN  = 10;
+  const int kN = 10;
   auto keys = WriteN(*broker_l1, kN);
 
-  auto* db     = broker_l1->GetDB();
-  auto* src_cf = broker_l1->GetCFHandle(kRoot);
+  auto *db = broker_l1->GetDB();
+  auto *src_cf = broker_l1->GetCFHandle(kRoot);
   const std::string destCF1_name = kRoot + "_split_cf_0";
   const std::string destCF2_name = kRoot + "_split_cf_1";
-  auto* destCF1 = broker_l1->GetCFHandle(destCF1_name);
-  auto* destCF2 = broker_l1->GetCFHandle(destCF2_name);
-  ASSERT_NE(db,      nullptr);
-  ASSERT_NE(src_cf,  nullptr);
+  auto *destCF1 = broker_l1->GetCFHandle(destCF1_name);
+  auto *destCF2 = broker_l1->GetCFHandle(destCF2_name);
+  ASSERT_NE(db, nullptr);
+  ASSERT_NE(src_cf, nullptr);
   ASSERT_NE(destCF1, nullptr);
   ASSERT_NE(destCF2, nullptr);
 
@@ -376,24 +384,24 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
   // ── Level 2a: destCF1{col0,col1} → destCF21{col0} + destCF22{col1} ───────
   // Configure a 2-column SPLIT rooted at destCF1.
   ROCKSDB_NAMESPACE::Options opts_l2a;
-  opts_l2a.create_if_missing        = false;  // DB already exists
+  opts_l2a.create_if_missing = false; // DB already exists
   opts_l2a.disable_auto_compactions = true;
-  opts_l2a.num_levels               = 4;
-  opts_l2a.num_columns              = 2;
+  opts_l2a.num_levels = 4;
+  opts_l2a.num_columns = 2;
   opts_l2a.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleLevel;
-  opts_l2a.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
+  opts_l2a.info_log_level = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
   {
     mycelium::SplitByPositions splits2 = {{0}, {1}};
     opts_l2a.transformers.push_back(
         std::make_shared<mycelium::Distributor>(splits2));
     auto parser2 = std::make_shared<mycelium::JsonColsParser>(2, 0);
-    auto enc2    = std::make_shared<mycelium::JsonEncoder>();
+    auto enc2 = std::make_shared<mycelium::JsonEncoder>();
     mycelium::Codec in2{parser2, nullptr};
     mycelium::Codec out2{nullptr, enc2};
     std::vector<mycelium::FieldSchema> in_s2 = {{"col0", "string", 0},
-                                                 {"col1", "string", 1}};
-    std::vector<mycelium::FieldSchema> o21   = {{"col0", "string", 0}};
-    std::vector<mycelium::FieldSchema> o22   = {{"col1", "string", 1}};
+                                                {"col1", "string", 1}};
+    std::vector<mycelium::FieldSchema> o21 = {{"col0", "string", 0}};
+    std::vector<mycelium::FieldSchema> o22 = {{"col1", "string", 1}};
     opts_l2a.schemaDescriptors.push_back(
         std::make_shared<mycelium::SchemaDescriptor>(
             in2, out2, in_s2,
@@ -402,17 +410,17 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
   // Drop broker_l1 to release DB lock
   broker_l1.reset();
 
-  auto broker_l2a = std::make_unique<MymBroker>(destCF1_name, /*cf_created=*/true,
-                                                db_path_.c_str(), opts_l2a, 2);
+  auto broker_l2a = std::make_unique<MymBroker>(
+      destCF1_name, /*cf_created=*/true, db_path_.c_str(), opts_l2a, 2);
 
-  auto* db2a    = broker_l2a->GetDB();
-  auto* l2a_src = broker_l2a->GetCFHandle(destCF1_name);
+  auto *db2a = broker_l2a->GetDB();
+  auto *l2a_src = broker_l2a->GetCFHandle(destCF1_name);
   const std::string destCF21_name = destCF1_name + "_split_cf_0";
   const std::string destCF22_name = destCF1_name + "_split_cf_1";
-  auto* destCF21 = broker_l2a->GetCFHandle(destCF21_name);
-  auto* destCF22 = broker_l2a->GetCFHandle(destCF22_name);
-  ASSERT_NE(db2a,     nullptr);
-  ASSERT_NE(l2a_src,  nullptr);
+  auto *destCF21 = broker_l2a->GetCFHandle(destCF21_name);
+  auto *destCF22 = broker_l2a->GetCFHandle(destCF22_name);
+  ASSERT_NE(db2a, nullptr);
+  ASSERT_NE(l2a_src, nullptr);
   ASSERT_NE(destCF21, nullptr);
   ASSERT_NE(destCF22, nullptr);
 
@@ -420,15 +428,16 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 
   // Verify Level 2a leaves
   {
-    std::vector<std::pair<ROCKSDB_NAMESPACE::ColumnFamilyHandle*, std::string>> leaves2a = {
-        {destCF21, "col0"},
-        {destCF22, "col1"},
-    };
-    for (const auto& leaf : leaves2a) {
+    std::vector<std::pair<ROCKSDB_NAMESPACE::ColumnFamilyHandle *, std::string>>
+        leaves2a = {
+            {destCF21, "col0"},
+            {destCF22, "col1"},
+        };
+    for (const auto &leaf : leaves2a) {
       std::set<std::string> seen;
-      auto* it = db2a->NewIterator(ReadOptions(), leaf.first);
+      auto *it = db2a->NewIterator(ReadOptions(), leaf.first);
       for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        const std::string k   = it->key().ToString();
+        const std::string k = it->key().ToString();
         const std::string val = it->value().ToString();
         EXPECT_TRUE(seen.insert(k).second);
         EXPECT_NE(val.find(leaf.second), std::string::npos);
@@ -444,40 +453,40 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 
   // ── Level 2b: destCF2{col2,col3} → destCF23{col2} + destCF24{col3} ───────
   ROCKSDB_NAMESPACE::Options opts_l2b;
-  opts_l2b.create_if_missing        = false;
+  opts_l2b.create_if_missing = false;
   opts_l2b.disable_auto_compactions = true;
-  opts_l2b.num_levels               = 4;
-  opts_l2b.num_columns              = 2;
+  opts_l2b.num_levels = 4;
+  opts_l2b.num_columns = 2;
   opts_l2b.compaction_style = ROCKSDB_NAMESPACE::kCompactionStyleLevel;
-  opts_l2b.info_log_level   = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
+  opts_l2b.info_log_level = ROCKSDB_NAMESPACE::InfoLogLevel::FATAL_LEVEL;
   {
     mycelium::SplitByPositions splits3 = {{0}, {1}};
     opts_l2b.transformers.push_back(
         std::make_shared<mycelium::Distributor>(splits3));
     auto parser3 = std::make_shared<mycelium::JsonColsParser>(2, 0);
-    auto enc3    = std::make_shared<mycelium::JsonEncoder>();
+    auto enc3 = std::make_shared<mycelium::JsonEncoder>();
     mycelium::Codec in3{parser3, nullptr};
     mycelium::Codec out3{nullptr, enc3};
     std::vector<mycelium::FieldSchema> in_s3 = {{"col2", "string", 0},
-                                                 {"col3", "string", 1}};
-    std::vector<mycelium::FieldSchema> o23   = {{"col2", "string", 0}};
-    std::vector<mycelium::FieldSchema> o24   = {{"col3", "string", 1}};
+                                                {"col3", "string", 1}};
+    std::vector<mycelium::FieldSchema> o23 = {{"col2", "string", 0}};
+    std::vector<mycelium::FieldSchema> o24 = {{"col3", "string", 1}};
     opts_l2b.schemaDescriptors.push_back(
         std::make_shared<mycelium::SchemaDescriptor>(
             in3, out3, in_s3,
             std::vector<std::vector<mycelium::FieldSchema>>{o23, o24}));
   }
-  auto broker_l2b = std::make_unique<MymBroker>(destCF2_name, /*cf_created=*/true,
-                                                db_path_.c_str(), opts_l2b, 2);
+  auto broker_l2b = std::make_unique<MymBroker>(
+      destCF2_name, /*cf_created=*/true, db_path_.c_str(), opts_l2b, 2);
 
-  auto* db2b    = broker_l2b->GetDB();
-  auto* l2b_src = broker_l2b->GetCFHandle(destCF2_name);
+  auto *db2b = broker_l2b->GetDB();
+  auto *l2b_src = broker_l2b->GetCFHandle(destCF2_name);
   const std::string destCF23_name = destCF2_name + "_split_cf_0";
   const std::string destCF24_name = destCF2_name + "_split_cf_1";
-  auto* destCF23 = broker_l2b->GetCFHandle(destCF23_name);
-  auto* destCF24 = broker_l2b->GetCFHandle(destCF24_name);
-  ASSERT_NE(db2b,     nullptr);
-  ASSERT_NE(l2b_src,  nullptr);
+  auto *destCF23 = broker_l2b->GetCFHandle(destCF23_name);
+  auto *destCF24 = broker_l2b->GetCFHandle(destCF24_name);
+  ASSERT_NE(db2b, nullptr);
+  ASSERT_NE(l2b_src, nullptr);
   ASSERT_NE(destCF23, nullptr);
   ASSERT_NE(destCF24, nullptr);
 
@@ -485,15 +494,16 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 
   // Verify Level 2b leaves
   {
-    std::vector<std::pair<ROCKSDB_NAMESPACE::ColumnFamilyHandle*, std::string>> leaves2b = {
-        {destCF23, "col2"},
-        {destCF24, "col3"},
-    };
-    for (const auto& leaf : leaves2b) {
+    std::vector<std::pair<ROCKSDB_NAMESPACE::ColumnFamilyHandle *, std::string>>
+        leaves2b = {
+            {destCF23, "col2"},
+            {destCF24, "col3"},
+        };
+    for (const auto &leaf : leaves2b) {
       std::set<std::string> seen;
-      auto* it = db2b->NewIterator(ReadOptions(), leaf.first);
+      auto *it = db2b->NewIterator(ReadOptions(), leaf.first);
       for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        const std::string k   = it->key().ToString();
+        const std::string k = it->key().ToString();
         const std::string val = it->value().ToString();
         EXPECT_TRUE(seen.insert(k).second);
         EXPECT_NE(val.find(leaf.second), std::string::npos);
@@ -508,7 +518,7 @@ TEST_F(LevelEligibilityTest, RecursiveSplit_TwoLevelDataIntegrity) {
 }
 
 // ── main ─────────────────────────────────────────────────────────────────────
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

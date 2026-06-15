@@ -9,7 +9,6 @@
 // Interface summary:
 //   CompactionWriter  — emit transformed KV pairs into destination trees
 //   GroveManager      — propagate deletes / tombstones across the grove
-//   DeferCallback     — reschedule transforms deferred by the admission layer
 //   EpochStore        — persist per-SST transform epoch metadata
 //
 // All methods return mycelium::Status so the portable core never touches
@@ -79,30 +78,6 @@ class GroveManager {
   virtual std::vector<std::string> DerivedCFNames() const = 0;
 };
 
-// ── DeferCallback ─────────────────────────────────────────────────────────────
-//
-// Invoked when the admission / scheduling layer decides to defer one or more
-// transforms to a future compaction.
-//
-// The RocksDB adapter calls SchedulePendingCompaction() on the affected CFs
-// (requires DBImpl* access, which is why this is behind an interface).
-//
-class DeferCallback {
- public:
-  virtual ~DeferCallback() = default;
-
-  // Schedule a follow-up compaction for the given set of column family names.
-  // [file_numbers] is a hint — the set of SST file numbers whose transforms
-  // were deferred; the engine may use this to narrow the compaction range.
-  virtual Status ScheduleDeferred(
-      const std::vector<std::string>& cf_names,
-      const std::vector<uint64_t>&    file_numbers) = 0;
-
-  // No-op default implementation so adapters can opt out during bring-up.
-  // Override this in production adapters.
-  static DeferCallback* Noop();
-};
-
 // ── EpochStore ────────────────────────────────────────────────────────────────
 //
 // Persists and retrieves TransformEpochTracker state for each SST file.
@@ -151,18 +126,5 @@ class NullGroveManager final : public GroveManager {
   Status PropagateDelete(std::string_view) override { return Status::OK(); }
   std::vector<std::string> DerivedCFNames() const override { return {}; }
 };
-
-class NullDeferCallback final : public DeferCallback {
- public:
-  Status ScheduleDeferred(const std::vector<std::string>&,
-                          const std::vector<uint64_t>&) override {
-    return Status::OK();
-  }
-};
-
-inline DeferCallback* DeferCallback::Noop() {
-  static NullDeferCallback instance;
-  return &instance;
-}
 
 }  // namespace mycelium
