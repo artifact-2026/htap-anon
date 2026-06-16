@@ -80,6 +80,10 @@ namespace ycsbc {
     int TestSplitting::Read(const std::string &table, const std::string &key, const std::set<int> *fields,
                       const std::string &req_dist, bool index_access, std::string &result)
     {
+        if (!mymBroker_) {
+            std::cerr << "FATAL: TestSplitting mymBroker_ is null in Read!" << std::endl;
+            exit(1);
+        }
         return mymBroker_->Read(key, fields, result);
     }
 
@@ -88,11 +92,19 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
+        if (!mymBroker_) {
+            std::cerr << "FATAL: TestSplitting mymBroker_ is null in Scan!" << std::endl;
+            exit(1);
+        }
         return mymBroker_->Scan(begin_key, 100, fields, result);
     }
 
     int TestSplitting::Insert(const std::string &table, const std::string &key, std::string &values)
     {
+        if (!mymBroker_) {
+            std::cerr << "FATAL: TestSplitting mymBroker_ is null in Insert!" << std::endl;
+            exit(1);
+        }
         return mymBroker_->Insert(key, values);
     }
 
@@ -103,6 +115,10 @@ namespace ycsbc {
 
     int TestSplitting::Delete(const std::string &table, const std::string &key)
     {
+        if (!mymBroker_) {
+            std::cerr << "FATAL: TestSplitting mymBroker_ is null in Delete!" << std::endl;
+            exit(1);
+        }
         return mymBroker_->Delete(key);
     }
 }
