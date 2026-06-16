@@ -73,8 +73,8 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKLOAD=$SCRIPT_DIR/workloads/test_workloada.spec
 YCSB=$BUILD_DIR/ycsb_test
 
-BASELINE_DB="/tmp/bench-baseline"
-SPLITTING_DB="/tmp/bench-splitting"
+BASELINE_DB="/holly/results/bench-baseline"
+SPLITTING_DB="/holly/results/bench-splitting"
 
 # -------------------------------------------------
 # CSV file paths (named per user request)
@@ -173,11 +173,11 @@ case "$TRANSFORM" in
     ;;
   converting)
     # Assuming a separate DB directory for converting – adjust as needed
-    DB_PATH="/tmp/bench-converting"
+    DB_PATH="/holly/results/bench-converting"
     CSV_PATH="${CONVERT_CSV}"
     ;;
   indexing)
-    DB_PATH="/tmp/bench-indexing"
+    DB_PATH="/holly/results/bench-indexing"
     CSV_PATH="${INDEX_CSV}"
     ;;
   *)

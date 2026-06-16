@@ -13,6 +13,7 @@
 #include "core_workload.h"
 #include "utils.h"
 #include "data.pb.h"
+#include "timer.h"
 
 using namespace std;
 
