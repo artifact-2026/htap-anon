@@ -49,6 +49,7 @@ void runXput(utils::Properties &props, int num_threads, ycsbc::DB *db, int run_t
 
 struct run_result DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
     bool is_loading) {
+  std::cerr << "[Debug] DelegateClient started with db=" << db << " wl=" << wl << " num_ops=" << num_ops << std::endl;
   ycsbc::Client client(*db, *wl);
   struct run_result rr(0, 0, num_ops);
   int next_report_ = 0;
@@ -162,6 +163,7 @@ int main( const int argc, const char *argv[]) {
   int sum = 0;
 
   // init workload
+  std::cerr << "[Debug] Starting workload initialization..." << std::endl;
   const int total_recs = std::stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
   const int base = total_recs / num_threads;
   const int rem  = total_recs % num_threads;
@@ -176,9 +178,11 @@ int main( const int argc, const char *argv[]) {
     p_t.SetProperty("totalrecordcount", std::to_string(total_recs));
 
     auto wl = std::make_unique<ycsbc::CoreWorkload>();
+    std::cerr << "[Debug] Initializing workload thread " << t << "..." << std::endl;
     wl->Init(p_t);
     wls[t] = std::move(wl);
   }
+  std::cerr << "[Debug] Workload initialization finished." << std::endl;
 
   if( load ) {
     runLoad(props, num_threads, db, print_stats, wls);
@@ -375,15 +379,18 @@ int main( const int argc, const char *argv[]) {
 }
 
 void runLoad(utils::Properties &props, int num_threads, ycsbc::DB *db, bool print_stats, std::vector<std::unique_ptr<ycsbc::CoreWorkload>>& wls) {
+  std::cerr << "[Debug] Entering runLoad..." << std::endl;
   int total_rds = stoi(props[ycsbc::CoreWorkload::RECORD_COUNT_PROPERTY]);
   vector<future<struct run_result>> actual_ops;
   uint64_t load_start = get_now_micros();
   for (int i = 0; i < num_threads; ++i) {
+    std::cerr << "[Debug] Starting thread " << i << " with db=" << db << " wl=" << wls[i].get() << std::endl;
     actual_ops.emplace_back(std::async(std::launch::async,
       [&, i, total_rds] {                    // <-- capture wls by reference (&), not by value
         return DelegateClient(db, wls[i].get(), total_rds/num_threads, /*is_loading=*/true);
       }));
   }
+  std::cerr << "[Debug] All threads started. Waiting for completion..." << std::endl;
   assert((int)actual_ops.size() == num_threads);
 
   int sum = 0;

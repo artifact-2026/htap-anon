@@ -42,6 +42,10 @@ namespace ycsbc {
             }
 
             s = rocksdb_->CreateColumnFamilies(column_family_descriptors, &cfhandles_);
+            if (!s.ok()) {
+                std::cerr<<"Can't create column families for rocksdb: "<<s.ToString()<<std::endl;
+                exit(0);
+            }
         } else {
             column_family_descriptors.push_back(rocksdb::ColumnFamilyDescriptor(
                     rocksdb::kDefaultColumnFamilyName, rocksdb::ColumnFamilyOptions(options_)));
@@ -70,6 +74,11 @@ namespace ycsbc {
     int TestRocksDB::Read(const std::string &table, const std::string &key, const std::set<int> *fields,
                       const std::string &req_dist, bool index_access, std::string &result) 
     {
+        if (!rocksdb_ || !cfhandle_) {
+            std::cerr << "FATAL: TestRocksDB state is invalid in Read! rocksdb_ = " << rocksdb_
+                      << ", cfhandle_ = " << cfhandle_ << std::endl;
+            exit(1);
+        }
         if (index_access) {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->SeekToFirst();
@@ -102,6 +111,11 @@ namespace ycsbc {
                           const std::string &req_dist, bool index_access,
                           std::vector<std::string> &result) 
     {
+        if (!rocksdb_ || !cfhandle_) {
+            std::cerr << "FATAL: TestRocksDB state is invalid in Scan! rocksdb_ = " << rocksdb_
+                      << ", cfhandle_ = " << cfhandle_ << std::endl;
+            exit(1);
+        }
         if (index_access) {
             auto it = rocksdb_->NewIterator(rocksdb::ReadOptions(), cfhandle_);
             it->SeekToFirst();
@@ -151,6 +165,11 @@ namespace ycsbc {
 
     int TestRocksDB::Insert(const std::string &table, const std::string &key, std::string &values)
     {
+        if (!rocksdb_ || !cfhandle_) {
+            std::cerr << "FATAL: TestRocksDB state is invalid in Insert! rocksdb_ = " << rocksdb_
+                      << ", cfhandle_ = " << cfhandle_ << std::endl;
+            exit(1);
+        }
         rocksdb::Status s = rocksdb_->Put(write_options_, cfhandle_, key, values);
         if (s.ok()) {
             return 0;
@@ -165,6 +184,11 @@ namespace ycsbc {
 
     int TestRocksDB::Delete(const std::string &table, const std::string &key)
     {
+        if (!rocksdb_ || !cfhandle_) {
+            std::cerr << "FATAL: TestRocksDB state is invalid in Delete! rocksdb_ = " << rocksdb_
+                      << ", cfhandle_ = " << cfhandle_ << std::endl;
+            exit(1);
+        }
         rocksdb::Status s = rocksdb_->Delete(write_options_, cfhandle_, key);
         if (s.ok()) {
             return 0;
