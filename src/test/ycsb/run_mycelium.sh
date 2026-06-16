@@ -75,6 +75,9 @@ YCSB=$BUILD_DIR/ycsb_test
 
 BASELINE_DB="/holly/results/bench-baseline"
 SPLITTING_DB="/holly/results/bench-splitting"
+CONVERTING_DB="/holly/results/bench-converting"
+INDEXING_DB="/holly/results/bench-indexing"
+MYNOOP_DB="/holly/results/bench-mynoop"
 
 # -------------------------------------------------
 # CSV file paths (named per user request)
@@ -83,6 +86,7 @@ BASELINE_CSV="${OUTPUT_DIR}/baseline_results.csv"
 SPLIT_CSV="${OUTPUT_DIR}/split_results.csv"
 CONVERT_CSV="${OUTPUT_DIR}/convert_results.csv"
 INDEX_CSV="${OUTPUT_DIR}/index_results.csv"
+MYNOOP_CSV="${OUTPUT_DIR}/mynoop_results.csv"
 
 # Warm‑up period to skip (seconds). First 60 s are often dominated by memtable flushes.
 SKIP=60
@@ -109,6 +113,13 @@ if (( RUNTIME <= SKIP )); then
 fi
 
 mkdir -p "${OUTPUT_DIR}"
+
+# -------------------------------------------------
+# Clean up any old databases from previous runs
+# -------------------------------------------------
+echo "Cleaning up temporary databases from previous runs..."
+rm -rf "${BASELINE_DB}" "${SPLITTING_DB}" "${CONVERTING_DB}" "${INDEXING_DB}" "${MYNOOP_DB}" 2>/dev/null || true
+
 
 # -------------------------------------------------
 # Helper: run one phase and echo a label
@@ -172,16 +183,19 @@ case "$TRANSFORM" in
     CSV_PATH="${SPLIT_CSV}"
     ;;
   converting)
-    # Assuming a separate DB directory for converting – adjust as needed
-    DB_PATH="/holly/results/bench-converting"
+    DB_PATH="${CONVERTING_DB}"
     CSV_PATH="${CONVERT_CSV}"
     ;;
   indexing)
-    DB_PATH="/holly/results/bench-indexing"
+    DB_PATH="${INDEXING_DB}"
     CSV_PATH="${INDEX_CSV}"
     ;;
+  mynoop)
+    DB_PATH="${MYNOOP_DB}"
+    CSV_PATH="${MYNOOP_CSV}"
+    ;;
   *)
-    echo "ERROR: Unknown transform type '${TRANSFORM}'. Supported: splitting, converting, indexing"
+    echo "ERROR: Unknown transform type '${TRANSFORM}'. Supported: splitting, converting, indexing, mynoop"
     exit 1
     ;;
 esac
@@ -213,10 +227,8 @@ echo "${TRANSFORM^} CSV appended to: ${CSV_PATH}"
 
 echo
 # -------------------------------------------------
-# Cleanup – run after every execution (both phases)
-# -------------------------------------------------
-echo "Cleaning up temporary databases..."
-rm -rf "${BASELINE_DB}" "${SPLITTING_DB}" "${DB_PATH}" 2>/dev/null || true
+# echo "Cleaning up temporary databases..."
+# rm -rf "${BASELINE_DB}" "${SPLITTING_DB}" "${DB_PATH}" 2>/dev/null || true
 
 echo "============================================================"
 if $COMPARISON; then
