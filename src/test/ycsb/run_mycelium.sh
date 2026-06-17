@@ -24,6 +24,8 @@
 #   index_results.csv      – results for the "indexing" transform
 #
 # Cleanup is performed after every execution (both baseline and transform phases).
+# Example: 
+#  % ./run_mycelium.sh /holly/htap/build/src/test/ycsb 120 10 /holly/results --comparison true --transform mynoop
 
 set -euo pipefail
 
