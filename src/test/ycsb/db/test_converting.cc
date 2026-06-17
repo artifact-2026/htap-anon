@@ -4,6 +4,7 @@
 #include "test_converting.h"
 #include "mycelium/converter.h"
 #include "mycelium/json_parser.h"
+#include "mycelium/protobuf_parser.h"
 #include "mycelium/protobuf_encoder.h"
 
 #include <iostream>
@@ -24,7 +25,13 @@ namespace ycsbc {
         //std::unique_ptr<google::protobuf::Message> input_proto_template = std::make_unique<data::ByteRow>();
         //const flatbuffers::TypeTable* fb_type_table = flat::RowTypeTable();
 
-        auto parser = std::make_shared<mycelium::JsonColsParser>(num_cols, /*expected_value_len=*/0);
+        std::string format = props.GetProperty("inputdataformat", "protobuf");
+        std::shared_ptr<mycelium::Parser> parser;
+        if (format == "json") {
+            parser = std::make_shared<mycelium::JsonColsParser>(num_cols, /*expected_value_len=*/0);
+        } else {
+            parser = std::make_shared<mycelium::ProtobufParser>(std::make_unique<data::ByteRow>());
+        }
         auto enc = std::make_shared<mycelium::ProtobufBytesRowEncoder>(num_cols);
         mycelium::Codec in{parser, nullptr};
         mycelium::Codec out{nullptr, enc};

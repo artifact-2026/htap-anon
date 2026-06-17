@@ -7,6 +7,8 @@
 #include "lib/coding.h"
 #include "mycelium/json_parser.h"
 #include "mycelium/json_encoder.h"
+#include "mycelium/protobuf_parser.h"
+#include "mycelium/protobuf_encoder.h"
 
 using namespace std;
 
@@ -33,8 +35,17 @@ namespace ycsbc {
         }
         std::vector<std::vector<mycelium::FieldSchema>> out_schemas;
 
-        auto parser = std::make_shared<mycelium::JsonColsParser>(num_cols, /*expected_value_len=*/0);
-        auto enc = std::make_shared<mycelium::JsonEncoder>();
+        std::string format = props.GetProperty("inputdataformat", "protobuf");
+        std::shared_ptr<mycelium::Parser> parser;
+        std::shared_ptr<mycelium::Encoder> enc;
+        if (format == "json") {
+            parser = std::make_shared<mycelium::JsonColsParser>(num_cols, /*expected_value_len=*/0);
+            enc = std::make_shared<mycelium::JsonEncoder>();
+        } else {
+            parser = std::make_shared<mycelium::ProtobufParser>(std::make_unique<data::ByteRow>());
+            enc = std::make_shared<mycelium::ProtobufBytesRowEncoder>(num_cols);
+        }
+
         mycelium::Codec in_codec{parser, nullptr};
         mycelium::Codec out_codec{nullptr, enc};
 

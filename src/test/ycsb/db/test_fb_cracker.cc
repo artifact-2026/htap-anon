@@ -14,6 +14,7 @@
 #include "mycelium/converter.h"
 #include "mycelium/json_parser.h"
 #include "mycelium/json_encoder.h"
+#include "mycelium/protobuf_parser.h"
 #include "mycelium/protobuf_encoder.h"
 
 using namespace std;
@@ -42,8 +43,21 @@ namespace ycsbc {
         options.transformers.push_back(std::make_shared<mycelium::Distributor>(splits));
         options.transformers.push_back(std::make_shared<mycelium::Converter>());
 
-        auto parser = std::make_shared<mycelium::JsonColsParser>(fieldcount, /*expected_value_len=*/0);
-        auto enc = std::make_shared<mycelium::JsonEncoder>();
+        std::string format = props.GetProperty("inputdataformat", "protobuf");
+        std::shared_ptr<mycelium::Parser> parser, parser2;
+        std::shared_ptr<mycelium::Encoder> enc, enc2;
+        if (format == "json") {
+            parser = std::make_shared<mycelium::JsonColsParser>(fieldcount, /*expected_value_len=*/0);
+            enc = std::make_shared<mycelium::JsonEncoder>();
+            parser2 = std::make_shared<mycelium::JsonColsParser>(fieldcount/2, /*expected_value_len=*/0);
+            enc2 = std::make_shared<mycelium::ProtobufBytesRowEncoder>(fieldcount/2);
+        } else {
+            parser = std::make_shared<mycelium::ProtobufParser>(std::make_unique<data::ByteRow>());
+            enc = std::make_shared<mycelium::ProtobufBytesRowEncoder>(fieldcount);
+            parser2 = std::make_shared<mycelium::ProtobufParser>(std::make_unique<data::BytesRow>());
+            enc2 = std::make_shared<mycelium::ProtobufBytesRowEncoder>(fieldcount/2);
+        }
+
         mycelium::Codec in_codec{parser, nullptr}, out_codec{nullptr, enc};
 
         std::vector<mycelium::FieldSchema> in_schema; 
@@ -55,8 +69,6 @@ namespace ycsbc {
         options.schemaDescriptors.push_back(std::make_shared<mycelium::SchemaDescriptor>(
             in_codec, out_codec, in_schema, out_schemas));
 
-        auto parser2 = std::make_shared<mycelium::JsonColsParser>(fieldcount/2, /*expected_value_len=*/0);
-        auto enc2 = std::make_shared<mycelium::ProtobufBytesRowEncoder>(fieldcount/2);
         mycelium::Codec in2_codec{parser2, nullptr};
         mycelium::Codec out2_codec{nullptr, enc2};
 
