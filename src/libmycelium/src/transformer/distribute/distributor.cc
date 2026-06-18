@@ -34,4 +34,27 @@ std::vector<ParsedRow> Distributor::Transform(std::string_view /*key*/,
   return outputs;
 }
 
+std::vector<ParsedRow> Distributor::TransformMove(std::string_view /*key*/,
+                                                  ParsedRow&&      input) const {
+  if (input.empty()) return {};
+
+  // For overlapping splits (rare), fall back to the copy-based path.
+  if (!disjoint_) {
+    return Transform("", input);
+  }
+
+  std::vector<ParsedRow> outputs;
+  outputs.reserve(splits_.size());
+
+  for (const auto& cols : splits_) {
+    if (!ValidateSplitGroup(cols, input.size())) return {};
+    // MoveColumns steals each field's string data rather than copying it.
+    // Safe here because disjoint_ guarantees every index appears in at most
+    // one split group.
+    outputs.push_back(input.MoveColumns(cols));
+  }
+
+  return outputs;
+}
+
 }  // namespace mycelium

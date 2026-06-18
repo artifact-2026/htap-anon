@@ -198,6 +198,20 @@ struct ParsedRow {
     }
     return out;
   }
+
+  // Move-based variant: transfers field ownership to the new row.
+  // Safe when each source field index appears in at most one call (disjoint
+  // splits). Moved-from slots are left in a valid but unspecified state.
+  ParsedRow MoveColumns(const std::vector<int>& indices) {
+    ParsedRow out;
+    out.fields.reserve(indices.size());
+    for (int idx : indices) {
+      if (idx >= 0 && static_cast<size_t>(idx) < fields.size()) {
+        out.fields.push_back(std::move(fields[static_cast<size_t>(idx)]));
+      }
+    }
+    return out;
+  }
 };
 
 // ── Parser ───────────────────────────────────────────────────────────────────
@@ -316,6 +330,16 @@ class Transformer {
   virtual std::vector<ParsedRow> Transform(
       std::string_view    key,
       const ParsedRow&    input) const = 0;
+
+  // Move-based variant: callers that own the input and do not need it after
+  // this call should prefer this overload so implementations can steal field
+  // data instead of copying it.  The default falls back to the copy-based
+  // Transform; subclasses override for efficiency.
+  virtual std::vector<ParsedRow> TransformMove(
+      std::string_view key,
+      ParsedRow&&      input) const {
+    return Transform(key, input);
+  }
 
   // Declares which transformation features this transformer supports.
   virtual TransformerType Supports() const = 0;
