@@ -539,8 +539,7 @@ int RunSplitPhase(const Options &opt) {
 
     // process_record: shared logic for both buffered and direct-IO paths.
     auto process_record = [&](const std::string &key, const std::string &value) -> bool {
-      const mycelium::ByteBuffer buf(value.begin(), value.end());
-      mycelium::Result<mycelium::ParsedRow> parsed = parser.Parse(buf);
+      mycelium::Result<mycelium::ParsedRow> parsed = parser.Parse(value);
       if (!parsed.ok()) { ++rows_failed; return true; }
       const mycelium::ParsedRow &row = *parsed;
 

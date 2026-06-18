@@ -119,8 +119,7 @@ mkdir -p "${OUTPUT_DIR}"
 # -------------------------------------------------
 # Clean up any old databases from previous runs
 # -------------------------------------------------
-echo "Cleaning up temporary databases from previous runs..."
-rm -rf "${BASELINE_DB}" "${SPLITTING_DB}" "${CONVERTING_DB}" "${INDEXING_DB}" "${MYNOOP_DB}" 2>/dev/null || true
+# Only clean up the specific databases being benchmarked in this run (handled below)
 
 
 # -------------------------------------------------

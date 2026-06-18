@@ -18,7 +18,7 @@ InputOutputDataType ProtobufParser::InputType() const {
   return InputOutputDataType::PROTOBUF;
 }
 
-bool ProtobufParser::Validate(const ByteBuffer& input_data) const {
+bool ProtobufParser::Validate(std::string_view input_data) const {
   if (!template_) return false;
   auto msg = std::unique_ptr<google::protobuf::Message>(template_->New());
   return msg->ParseFromArray(input_data.data(), static_cast<int>(input_data.size()));
@@ -134,7 +134,7 @@ static FieldValue ProtoScalarToFieldValue(const google::protobuf::Message& msg,
 
 }  // namespace
 
-Result<ParsedRow> ProtobufParser::Parse(const ByteBuffer& data) const {
+Result<ParsedRow> ProtobufParser::Parse(std::string_view data) const {
   if (!template_)
     return Result<ParsedRow>::Err("ProtobufParser::Parse: template_ is null");
 

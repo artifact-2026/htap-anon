@@ -144,9 +144,9 @@ static FieldValue ParseFieldValue(const std::string& raw,
 CsvParser::CsvParser(std::vector<FieldSchema> input_schema, CsvParserOptions opts)
     : input_schema_(std::move(input_schema)), opts_(opts) {}
 
-bool CsvParser::Validate(const ByteBuffer& input_data) const {
+bool CsvParser::Validate(std::string_view input_data) const {
   if (input_data.empty()) return false;
-  std::string line(reinterpret_cast<const char*>(input_data.data()), input_data.size());
+  std::string line(input_data);
   StripLineEndings(&line);
   std::vector<std::string> fields;
   std::string err;
@@ -156,8 +156,8 @@ bool CsvParser::Validate(const ByteBuffer& input_data) const {
   return true;
 }
 
-Result<ParsedRow> CsvParser::Parse(const ByteBuffer& data) const {
-  std::string line(reinterpret_cast<const char*>(data.data()), data.size());
+Result<ParsedRow> CsvParser::Parse(std::string_view data) const {
+  std::string line(data);
   StripLineEndings(&line);
 
   std::vector<std::string> fields;

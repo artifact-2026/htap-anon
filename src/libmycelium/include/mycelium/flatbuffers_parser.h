@@ -50,8 +50,8 @@ class FlatbuffersParser final : public Parser {
   }
 
   InputOutputDataType InputType() const override { return InputOutputDataType::FLATBUFFERS; }
-  bool Validate(const ByteBuffer& input_data) const override;
-  Result<ParsedRow> Parse(const ByteBuffer& data) const override;
+  bool Validate(std::string_view input_data) const override;
+  Result<ParsedRow> Parse(std::string_view data) const override;
 
  private:
   std::string bfbs_bytes_;

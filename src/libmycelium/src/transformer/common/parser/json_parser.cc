@@ -18,9 +18,9 @@ JsonColsParser::JsonColsParser(size_t num_cols, size_t expected_value_len)
   }
 }
 
-bool JsonColsParser::Validate(const ByteBuffer& input_data) const {
+bool JsonColsParser::Validate(std::string_view input_data) const {
   if (input_data.empty()) return false;
-  const char* s = reinterpret_cast<const char*>(input_data.data());
+  const char* s = input_data.data();
   const size_t n = input_data.size();
   return n >= 2 && s[0] == '{' && s[n - 1] == '}';
 }
@@ -59,11 +59,11 @@ bool JsonColsParser::ExtractStringValueForKey(const char* json,
   return true;
 }
 
-Result<ParsedRow> JsonColsParser::Parse(const ByteBuffer& data) const {
+Result<ParsedRow> JsonColsParser::Parse(std::string_view data) const {
   if (!Validate(data))
     return Result<ParsedRow>::Err("JsonColsParser::Parse: invalid JSON envelope");
 
-  const char* s = reinterpret_cast<const char*>(data.data());
+  const char* s = data.data();
   const size_t n = data.size();
 
   ParsedRow row;

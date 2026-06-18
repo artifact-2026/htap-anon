@@ -223,10 +223,10 @@ class Parser {
   virtual InputOutputDataType InputType() const = 0;
 
   // Optional cheap validation pass.
-  virtual bool Validate(const ByteBuffer& input_data) const { return !input_data.empty(); }
+  virtual bool Validate(std::string_view input_data) const { return !input_data.empty(); }
 
   // Parse bytes into a ParsedRow.  Returns Err on malformed input.
-  virtual Result<ParsedRow> Parse(const ByteBuffer& data) const = 0;
+  virtual Result<ParsedRow> Parse(std::string_view data) const = 0;
 
   // Optional: expose schema of the parsed representation.
   virtual const std::vector<FieldSchema>& GetInputFieldSchema() const {
@@ -282,12 +282,12 @@ class SchemaDescriptor {
   InputOutputDataType OutputType() const {
     return out_.encoder ? out_.encoder->OutputType() : InputOutputDataType::UNKNOWN;
   }
-  bool Validate(const ByteBuffer& data) const {
+  bool Validate(std::string_view data) const {
     return in_.parser ? in_.parser->Validate(data) : true;
   }
 
   // Parse raw bytes → ParsedRow using the input codec's parser.
-  Result<ParsedRow> Parse(const ByteBuffer& data) const {
+  Result<ParsedRow> Parse(std::string_view data) const {
     if (!in_.parser) return Result<ParsedRow>::Err("No parser configured");
     if (!in_.parser->Validate(data))
       return Result<ParsedRow>::Err("Validation failed");

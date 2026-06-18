@@ -8,7 +8,7 @@
 
 namespace mycelium {
 
-bool FlatbuffersParser::Validate(const ByteBuffer& input_data) const {
+bool FlatbuffersParser::Validate(std::string_view input_data) const {
   return !input_data.empty();
 }
 
@@ -129,7 +129,7 @@ static FieldValue ReadVectorField(const flatbuffers::Table& tbl,
 
 }  // namespace
 
-Result<ParsedRow> FlatbuffersParser::Parse(const ByteBuffer& data) const {
+Result<ParsedRow> FlatbuffersParser::Parse(std::string_view data) const {
   if (!schema_ || !root_obj_)
     return Result<ParsedRow>::Err(
         "FlatbuffersParser::Parse: schema_ or root_obj_ is null");
