@@ -162,8 +162,26 @@ Result<ParsedRow> ProtobufParser::Parse(std::string_view data) const {
   if (!desc)
     return Result<ParsedRow>::Err("ProtobufParser::Parse: message descriptor is null");
 
+  const auto* refl = msg->GetReflection();
+  size_t total_fields = 0;
+  if (refl) {
+    for (int i = 0; i < desc->field_count(); ++i) {
+      const FD* f = desc->field(i);
+      if (f->is_repeated()) {
+        total_fields += refl->FieldSize(*msg, f);
+      } else {
+        total_fields += 1;
+      }
+    }
+  }
+
   ParsedRow row;
-  row.fields.reserve(static_cast<size_t>(desc->field_count()));
+  row.fields.reserve(total_fields);
+
+  struct NameCache {
+    std::vector<std::string> names;
+  };
+  thread_local NameCache tl_name_cache;
 
   for (int i = 0; i < desc->field_count(); ++i) {
     const FD* f = desc->field(i);
@@ -171,11 +189,16 @@ Result<ParsedRow> ProtobufParser::Parse(std::string_view data) const {
       // Expand each element of a repeated field into its own ParsedField so
       // that the Distributor can split on individual elements (e.g. the YCSB
       // ByteRow.values repeated field where each element is one column).
-      const auto* refl = msg->GetReflection();
-      const int n = refl->FieldSize(*msg, f);
+      const int n = refl ? refl->FieldSize(*msg, f) : 0;
       for (int j = 0; j < n; ++j) {
         ParsedField pf;
-        pf.name         = f->name() + "_" + std::to_string(j);
+        if (static_cast<size_t>(j) >= tl_name_cache.names.size()) {
+          tl_name_cache.names.resize(j + 1);
+        }
+        if (tl_name_cache.names[j].empty()) {
+          tl_name_cache.names[j] = f->name() + "_" + std::to_string(j);
+        }
+        pf.name         = tl_name_cache.names[j];
         pf.field_number = f->number();
         // Re-use the scalar helper by temporarily extracting the sub-message
         // or primitive via the repeated accessor.

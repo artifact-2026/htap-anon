@@ -102,8 +102,17 @@ static bool FieldValueToRawBytes(const FieldValue& fv,
 std::vector<ByteBuffer> ProtobufBytesRowEncoder::Serialize(const ParsedRow& row) const {
   if (row.empty()) return {};
 
+  size_t estimated_size = 0;
+  for (size_t c = 0; c < row.size(); ++c) {
+    if (row.at(c).value.kind == FieldValue::Kind::Bytes) {
+      estimated_size += row.at(c).value.bytes.size() + 5;
+    } else {
+      estimated_size += 16;
+    }
+  }
+
   ByteBuffer msg;
-  msg.reserve(row.size() * 64);
+  msg.reserve(estimated_size);
 
   std::string tmp_str;
 
