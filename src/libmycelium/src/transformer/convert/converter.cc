@@ -9,4 +9,11 @@ std::vector<ParsedRow> Converter::Transform(std::string_view /*key*/,
   return {input};
 }
 
+std::vector<ParsedRow> Converter::TransformMove(std::string_view /*key*/,
+                                                ParsedRow&& input) const {
+  std::vector<ParsedRow> out;
+  out.push_back(std::move(input));
+  return out;
+}
+
 }  // namespace mycelium
