@@ -28,6 +28,10 @@ class Augmenter : public Transformer {
       std::string_view  key,
       const ParsedRow&  input) const override;
 
+  std::vector<ParsedRow> TransformMove(
+      std::string_view  key,
+      ParsedRow&&       input) const override;
+
   const std::vector<std::vector<int>>& GetPositionedIndexKeys() const {
     return index_positions_;
   }
