@@ -15,6 +15,10 @@ class Mynooper : public Transformer {
   std::vector<ParsedRow> Transform(
       std::string_view  key,
       const ParsedRow&  input) const override;
+
+  std::vector<ParsedRow> TransformMove(
+      std::string_view  key,
+      ParsedRow&&       input) const override;
 };
 
 }  // namespace mycelium
