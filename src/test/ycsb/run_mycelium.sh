@@ -75,11 +75,11 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKLOAD=$SCRIPT_DIR/workloads/test_workloada.spec
 YCSB=$BUILD_DIR/ycsb_test
 
-BASELINE_DB="/holly/results/bench-baseline"
-SPLITTING_DB="/holly/results/bench-splitting"
-CONVERTING_DB="/holly/results/bench-converting"
-INDEXING_DB="/holly/results/bench-indexing"
-MYNOOP_DB="/holly/results/bench-mynoop"
+BASELINE_DB="${OUTPUT_DIR}/bench-baseline"
+SPLITTING_DB="${OUTPUT_DIR}/bench-splitting"
+CONVERTING_DB="${OUTPUT_DIR}/bench-converting"
+INDEXING_DB="${OUTPUT_DIR}/bench-indexing"
+MYNOOP_DB="${OUTPUT_DIR}/bench-mynoop"
 
 # -------------------------------------------------
 # CSV file paths (named per user request)
