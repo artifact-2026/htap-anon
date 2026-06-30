@@ -1,0 +1,11 @@
+namespace flat;
+
+table Column {
+  value:[ubyte];   // binary-safe column payload
+}
+
+table Row {
+  columns:[Column];
+}
+
+root_type Row;

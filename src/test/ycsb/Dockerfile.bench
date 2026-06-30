@@ -1,0 +1,24 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=America/Los_Angeles
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Runtime dependencies for ycsb_test (no build tools needed)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgflags-dev \
+    libsnappy-dev \
+    zlib1g-dev \
+    libbz2-dev \
+    libzstd-dev \
+    liblz4-dev \
+    libprotobuf-dev \
+    libjsoncpp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Volumes expected at runtime:
+#   /bench/build  – directory containing the ycsb_test binary (read-only)
+#   /bench/ycsb   – src/test/ycsb (workloads/ + run_mycelium.sh) (read-only)
+#   /bench/results – output directory for CSVs and DB files
+
+WORKDIR /bench

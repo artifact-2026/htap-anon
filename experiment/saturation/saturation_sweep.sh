@@ -1,0 +1,783 @@
+#!/usr/bin/env bash
+# =============================================================================
+# saturation_sweep.sh — RocksDB single-workload characterization sweep
+#
+# Sweeps client thread counts for one YCSB workload and records per-thread
+# throughput, disk I/O, CPU, and memory utilization.  All results are
+# consolidated into a single summary CSV that the standalone plotting script
+# (plot_bottleneck.py) can consume alongside CSVs from other nodes/workloads.
+#
+# Run from the project BUILD directory:
+#   cd /path/to/build && bash ../utility/saturation_sweep.sh
+#
+# ── Selecting the workload ────────────────────────────────────────────────────
+# Required: set WORKLOAD_SPEC to the path of a YCSB .spec file.
+# Optional: set WORKLOAD_LABEL to a human-readable name used in the CSV and
+#           in plot titles (defaults to the spec filename without extension).
+#
+#   WORKLOAD_SPEC=../src/test/ycsb/workloads/workloada.spec \
+#   WORKLOAD_LABEL="IO-bound (workload A)" \
+#   bash ../utility/saturation_sweep.sh \
+#     --disk-read-max-bandwidth=3500 \
+#     --disk-write-max-bandwidth=3000 \
+#     --iops-max=500000
+#
+# The spec file controls the operation mix (readproportion, updateproportion,
+# scanproportion, insertproportion).  Infra overrides (fieldcount, fieldlength,
+# recordcount, metrics_output) are appended automatically so they always win.
+#
+# ── Output ────────────────────────────────────────────────────────────────────
+# <OUTPUT_DIR>/
+#   load.log                   — DB load phase output
+#   sweep/
+#     run_t<N>/
+#       ycsb_t<N>.log          — raw YCSB output for this thread count
+#       system_t<N>.csv        — per-second CPU / disk / memory samples
+#       compaction_metrics.csv — per-compaction-event RocksDB metrics
+#   summary.csv                — THE deliverable: one row per thread count,
+#                                all metrics aggregated over the steady-state
+#                                window.  Feed this to plot_bottleneck.py.
+#
+# ── Key parsing note ──────────────────────────────────────────────────────────
+# YCSB prints:  throughput mean:<mean>  stddev: <stddev>
+# after skipping the first WARMUP_SKIP_S seconds (configurable, default 90 s).
+# The system monitor collects per-second CPU/disk/mem; the summariser skips the
+# same WARMUP_SKIP_S seconds so both see the same steady-state window.
+#
+# ── Configuration ─────────────────────────────────────────────────────────────
+# =============================================================================
+
+set -euo pipefail
+
+BINARY="${BINARY:-./src/test/ycsb/ycsb_test}"
+OUTPUT_DIR="${OUTPUT_DIR:-./sat_results_$(date +%Y%m%d_%H%M%S)}"
+SRC_ROOT="${SRC_ROOT:-$(dirname "$0")/../src}"
+WORKLOAD_DIR="$SRC_ROOT/test/ycsb/workloads"
+
+# ── Workload ──────────────────────────────────────────────────────────────────
+# WORKLOAD_SPEC: path to a YCSB .spec file (required — no default).
+# WORKLOAD_LABEL: string written into summary.csv and used by the plotter.
+WORKLOAD_SPEC="${WORKLOAD_SPEC:-}"
+WORKLOAD_LABEL="${WORKLOAD_LABEL:-}"
+
+# ── Experiment knobs ──────────────────────────────────────────────────────────
+
+# Thread counts to sweep.
+THREAD_COUNTS="${THREAD_COUNTS:-1 2 4 8 16 32 64}"
+
+# Total number of records to preload into RocksDB.
+# With record size = 16 fields × 128 B + 16 B key = 2064 B ≈ 2 KB per record:
+#   10 000 000 records ≈ 20 GB  ← recommended: reliably exceeds typical
+#   block caches (8–16 GB) so every run is genuinely disk-bound.
+# The script always appends recordcount and operationcount overrides to the
+# spec file so the spec's own values are ignored.
+RECORD_COUNT="${RECORD_COUNT:-10000000}"
+
+# Total experiment duration per thread count (seconds).
+# YCSB discards the first WARMUP_SKIP_S seconds; throughput is averaged over
+# [WARMUP_SKIP_S, RUNTIME_SECS].  With WARMUP_SKIP_S=0 the entire 15-minute
+# window contributes to the throughput/s reported in summary.csv.
+RUNTIME_SECS="${RUNTIME_SECS:-900}"
+
+# Block device for disk I/O monitoring.  Find yours with: lsblk / df -h <dbpath>
+# Use the block device name as it appears in /proc/diskstats (e.g. nvme0n1, sda).
+# NOTE: nvme0n1 is the block device; nvme0c0n1 is the NVMe character device and
+#       will NOT appear in /proc/diskstats — do not use the c0 form here.
+DISK_DEVICE="${DISK_DEVICE:-nvme0n1}"
+
+
+# Warmup seconds to skip.  Passed to the binary via -skip and used by the
+# system-monitor CSV trimmer so both see the same steady-state window.
+# Set to 0 to report total mean throughput over the entire RUNTIME_SECS window.
+WARMUP_SKIP_S="${WARMUP_SKIP_S:-120}"
+
+# Number of RocksDB background compaction/flush threads.
+# Passed into the workload spec as rocksdb_parallelism=<n>.
+# Set to match the number of logical cores on the test machine (lscpu / nproc).
+ROCKSDB_PARALLELISM="${ROCKSDB_PARALLELISM:-32}"
+
+# Number of independent trials to run for each thread count.
+# When > 1, each trial's output goes into run_t<N>/trial_<k>/ and the
+# summariser reports the median across trials.  Taking the median of 3 runs
+# is usually enough to filter out compaction-driven throughput spikes that
+# can shift a single 60 s window by 10-20 %.  Default 1 preserves the
+# original single-run behaviour and experiment duration.
+TRIALS_PER_THREAD="${TRIALS_PER_THREAD:-3}"
+
+# Drop the OS page cache before every run so that disk reads are not silently
+# served from RAM.  Requires passwordless sudo for tee /proc/sys/vm/drop_caches,
+# or run the script as root.  Set to false to skip (reads may show as 0 MB/s).
+DROP_CACHES="${DROP_CACHES:-true}"
+
+# =============================================================================
+# Internals
+# =============================================================================
+
+MONITOR_SCRIPT=""
+SUMMARIZER_SCRIPT=""
+TMPSPEC=""
+MONITOR_PID=""
+
+SAT_TMPDIR="/data/htap/build"
+
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
+die() { echo "ERROR: $*" >&2; exit 1; }
+sep() { echo ""; log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"; }
+
+cleanup() {
+    [[ -n "${MONITOR_PID:-}" ]]       && kill "$MONITOR_PID" 2>/dev/null || true
+    [[ -n "${MONITOR_SCRIPT:-}" ]]    && rm -f "$MONITOR_SCRIPT"
+    [[ -n "${SUMMARIZER_SCRIPT:-}" ]] && rm -f "$SUMMARIZER_SCRIPT"
+    [[ -n "${TMPSPEC:-}" ]]           && rm -f "$TMPSPEC"
+}
+trap cleanup EXIT
+
+# ── Pre-flight ────────────────────────────────────────────────────────────────
+
+check_prereqs() {
+    [[ -x "$BINARY" ]] || die "ycsb_test binary not found at '$BINARY'."
+    [[ -n "$WORKLOAD_SPEC" ]]  || die "WORKLOAD_SPEC is not set.  Point it at a .spec file."
+    [[ -f "$WORKLOAD_SPEC" ]]  || die "WORKLOAD_SPEC file not found: $WORKLOAD_SPEC"
+    command -v python3 >/dev/null 2>&1 || die "python3 required"
+    python3 -c "import pandas, numpy" 2>/dev/null || {
+        log "Installing required Python packages..."
+        pip3 install --user pandas numpy -q \
+            || sudo apt-get install -y python3-pandas python3-numpy -q
+    }
+    if ! awk '{print $3}' /proc/diskstats 2>/dev/null | grep -qx "$DISK_DEVICE"; then
+        log "WARNING: device '$DISK_DEVICE' not found in /proc/diskstats — disk I/O will be zero."
+        log "  Available: $(awk '{print $3}' /proc/diskstats | sort -u | tr '\n' ' ')"
+    fi
+    (( RUNTIME_SECS > WARMUP_SKIP_S )) || \
+        die "RUNTIME_SECS ($RUNTIME_SECS) must be > WARMUP_SKIP_S ($WARMUP_SKIP_S)"
+    (( WARMUP_SKIP_S >= 0 )) || die "WARMUP_SKIP_S must be >= 0"
+
+    # Derive label from spec filename if not provided.
+    if [[ -z "$WORKLOAD_LABEL" ]]; then
+        WORKLOAD_LABEL="$(basename "$WORKLOAD_SPEC" .spec)"
+    fi
+}
+
+# ── Embedded per-second system monitor ───────────────────────────────────────
+
+setup_monitor_script() {
+    MONITOR_SCRIPT=$(mktemp "${SAT_TMPDIR}/sat_monitor_XXXXX.py")
+    cat > "$MONITOR_SCRIPT" << 'PYMON'
+#!/usr/bin/env python3
+"""Per-second CPU, disk I/O, and memory monitor. Writes a flushed CSV."""
+import sys, time, csv
+
+outfile     = sys.argv[1]
+disk_device = sys.argv[2] if len(sys.argv) > 2 else ""
+
+def read_cpu():
+    with open('/proc/stat') as f:
+        parts = f.readline().split()
+    return [int(x) for x in parts[1:9]]  # user nice sys idle iowait irq softirq steal
+
+def read_disk(dev):
+    if not dev:
+        return 0, 0, 0, 0
+    with open('/proc/diskstats') as f:
+        for line in f:
+            p = line.split()
+            if p[2] == dev:
+                # sectors_read, sectors_written, reads_completed, writes_completed
+                return int(p[5]), int(p[9]), int(p[3]), int(p[7])
+    return 0, 0, 0, 0
+
+def read_mem_mib():
+    info = {}
+    with open('/proc/meminfo') as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) >= 2:
+                info[parts[0].rstrip(':')] = int(parts[1])  # kB
+    total = info.get('MemTotal', 0) / 1024
+    avail = info.get('MemAvailable', 0) / 1024
+    return total, avail, total - avail  # total, avail, used (MiB)
+
+prev_cpu                        = read_cpu()
+prev_rd, prev_wr, prev_rc, prev_wc = read_disk(disk_device)
+prev_t                          = time.time()
+
+with open(outfile, 'w', newline='') as fh:
+    w = csv.writer(fh)
+    w.writerow(['timestamp_s',
+                'cpu_user_pct', 'cpu_sys_pct', 'cpu_iowait_pct', 'cpu_idle_pct',
+                'disk_read_mbs', 'disk_write_mbs',
+                'disk_read_iops', 'disk_write_iops',
+                'mem_total_mib', 'mem_used_mib', 'mem_avail_mib'])
+    fh.flush()
+    while True:
+        time.sleep(1)
+        now                             = time.time()
+        cur_cpu                         = read_cpu()
+        cur_rd, cur_wr, cur_rc, cur_wc  = read_disk(disk_device)
+        m_total, m_avail, m_used        = read_mem_mib()
+
+        dt    = (now - prev_t) or 1
+        delta = [cur_cpu[i] - prev_cpu[i] for i in range(8)]
+        total = sum(delta) or 1
+        w.writerow([int(now),
+                    f'{100*delta[0]/total:.2f}',              # user
+                    f'{100*delta[2]/total:.2f}',              # sys
+                    f'{100*delta[4]/total:.2f}',              # iowait
+                    f'{100*delta[3]/total:.2f}',              # idle
+                    f'{(cur_rd-prev_rd)*512/1024/1024/dt:.2f}',  # read MB/s
+                    f'{(cur_wr-prev_wr)*512/1024/1024/dt:.2f}',  # write MB/s
+                    f'{(cur_rc-prev_rc)/dt:.2f}',             # r/s
+                    f'{(cur_wc-prev_wc)/dt:.2f}',             # w/s
+                    f'{m_total:.2f}', f'{m_used:.2f}', f'{m_avail:.2f}'])
+        fh.flush()
+        prev_cpu = cur_cpu
+        prev_rd, prev_wr, prev_rc, prev_wc = cur_rd, cur_wr, cur_rc, cur_wc
+        prev_t = now
+PYMON
+}
+
+start_monitor() { python3 "$MONITOR_SCRIPT" "$1" "$DISK_DEVICE" & MONITOR_PID=$!; }
+stop_monitor() {
+    [[ -n "${MONITOR_PID:-}" ]] && {
+        kill "$MONITOR_PID" 2>/dev/null || true
+        wait "$MONITOR_PID" 2>/dev/null || true
+        MONITOR_PID=""
+    }
+}
+
+# ── Page-cache flush ──────────────────────────────────────────────────────────
+# Without this, the kernel serves RocksDB reads from the OS page cache (populated
+# during the load phase) so /proc/diskstats never sees any read I/O.
+# sync first to flush dirty pages so drop_caches doesn't lose data.
+
+drop_page_cache() {
+    if [[ "$DROP_CACHES" != "true" ]]; then
+        return
+    fi
+    log "  Dropping OS page cache (sync + drop_caches=3) ..."
+    # Flush dirty pages via sysctl rather than the sync binary, which may be
+    # built for a different architecture in some environments.
+    sudo sysctl -w vm.dirty_expire_centisecs=0 > /dev/null 2>&1 || true
+    if echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null 2>&1; then
+        log "  Page cache dropped."
+    else
+        log "  WARNING: drop_caches failed (need sudo or root). Disk reads may still be 0."
+        log "           Re-run as root or grant passwordless sudo for tee /proc/sys/vm/drop_caches."
+    fi
+}
+
+# ── Spec builder ──────────────────────────────────────────────────────────────
+# Always makes a fresh temp copy of WORKLOAD_SPEC so that load_db's
+# "rm -f $spec" never deletes the original file.  recordcount and
+# operationcount are always overridden to RECORD_COUNT so the spec file's
+# own values are ignored — the dataset size is controlled here.
+# Callers may append extra key=value pairs as positional arguments
+# (e.g. create_spec "metrics_output=/path/to/file").
+
+create_spec() {
+    TMPSPEC=$(mktemp "${SAT_TMPDIR}/sat_spec_XXXXX.spec")
+    cp "$WORKLOAD_SPEC" "$TMPSPEC"
+    printf '\n' >> "$TMPSPEC"
+    # Always override dataset size — these lines win over anything in the spec.
+    printf 'recordcount=%s\n'   "$RECORD_COUNT" >> "$TMPSPEC"
+    printf 'operationcount=%s\n' "$RECORD_COUNT" >> "$TMPSPEC"
+    for kv in "$@"; do printf '%s\n' "$kv" >> "$TMPSPEC"; done
+    echo "$TMPSPEC"
+}
+
+# ── Load phase ────────────────────────────────────────────────────────────────
+
+load_db() {
+    local dbpath="$1"
+    # Optional second argument: path for the load log.
+    # Defaults to OUTPUT_DIR/load.log for callers that do not need per-run logs.
+    local logfile="${2:-$OUTPUT_DIR/load.log}"
+    log "Loading ${RECORD_COUNT} records into $dbpath (~$(( RECORD_COUNT * 2064 / 1024 / 1024 / 1024 )) GiB) ..."
+    local spec; spec=$(create_spec "rocksdb_parallelism=${ROCKSDB_PARALLELISM}")
+    "$BINARY" \
+        -db baseline -dbpath "$dbpath" -P "$spec" \
+        -bootstrap true -threads 8 \
+        -load true -run false -throughput false \
+        -runtime 0 \
+        -levels 7 -table baseline \
+        2>&1 | tee "$logfile"
+    rm -f "$spec"; TMPSPEC=""
+    log "Load complete."
+}
+
+# ── Single thread-count run ───────────────────────────────────────────────────
+
+run_one() {
+    local threads="$1" run_dir="$2" dbpath="$3"
+
+    local sys_csv="$run_dir/system_t${threads}.csv"
+    local log_file="$run_dir/ycsb_t${threads}.log"
+    local cmp_csv="$run_dir/compaction_metrics.csv"
+
+    local spec; spec=$(create_spec "metrics_output=${cmp_csv}" "rocksdb_parallelism=${ROCKSDB_PARALLELISM}")
+
+    log "  Running $threads thread(s) for ${RUNTIME_SECS}s" \
+        "(skip first ${WARMUP_SKIP_S}s, measure [${WARMUP_SKIP_S}, ${RUNTIME_SECS}]s) ..."
+    start_monitor "$sys_csv"
+    "$BINARY" \
+        -db baseline -dbpath "$dbpath" -P "$spec" \
+        -bootstrap false -threads "$threads" \
+        -load false -run false -throughput true \
+        -runtime "$RUNTIME_SECS" \
+        -skip "$WARMUP_SKIP_S" \
+        -levels 7 -table baseline \
+        -dbstatistics true \
+        2>&1 | tee "$log_file"
+    stop_monitor
+
+    rm -f "$spec"; TMPSPEC=""
+    log "  → log:        $log_file"
+    log "  → sys:        $sys_csv"
+    log "  → compaction: $cmp_csv"
+}
+
+# ── CSV summarizer ────────────────────────────────────────────────────────────
+# Reads all per-thread-count raw files and writes OUTPUT_DIR/summary.csv.
+# One row per thread count; columns are the metrics needed by plot_bottleneck.py.
+
+setup_summarizer_script() {
+    SUMMARIZER_SCRIPT=$(mktemp "${SAT_TMPDIR}/sat_summarize_XXXXX.py")
+    cat > "$SUMMARIZER_SCRIPT" << 'PYSUM'
+#!/usr/bin/env python3
+"""
+Aggregate per-thread raw files → summary.csv
+
+Columns written
+---------------
+workload_label          : human label (from argv)
+threads                 : client thread count
+xput_mean               : mean throughput (ops/s) over steady-state window
+xput_std                : std-dev of per-second throughput
+cpu_compute_mean        : mean CPU compute utilization % (100 - idle - iowait).
+                          Excludes iowait so the value matches what `top` shows
+                          as "CPU busy" (user+sys+irq+softirq).  For RocksDB with
+                          active NVMe compaction, iowait can be 30-50 %, so
+                          cpu_busy would overstate actual compute utilization badly.
+cpu_busy_mean           : mean (100 - idle) %, i.e. including iowait — represents
+                          total non-idle CPU time, equivalent to 100%%-%idle in tools
+                          like iostat.  Plot alongside cpu_compute_mean to visualize
+                          how much of the "busy" time is I/O-wait vs real compute.
+cpu_iowait_mean         : mean iowait % — the gap between cpu_busy_mean and
+                          cpu_compute_mean; large values confirm I/O-bound compaction.
+cpu_active_std
+disk_read_mb/s          : mean disk read bandwidth (MB/s) over steady-state window
+disk_read_std
+disk_write_mb/s         : mean disk write bandwidth (MB/s) over steady-state window
+disk_write_std
+r/s                     : mean disk read IOPS over steady-state window
+r/s_std
+w/s                     : mean disk write IOPS over steady-state window
+w/s_std
+mem_used_mean           : mean memory used (GiB)  — system-wide, from /proc/meminfo
+mem_used_std
+mem_avail_mean          : mean memory available (GiB)
+mem_used_pct_mean       : mem_used / mem_total * 100  (supplementary context)
+block_cache_hits        : cumulative block cache hits over the full run
+block_cache_misses      : cumulative block cache misses over the full run
+block_cache_hit_rate    : hits / (hits + misses)  — primary memory-bound indicator
+
+Note on block_cache_hit_rate vs mem_used_pct
+--------------------------------------------
+mem_used_pct shows gross RAM pressure but cannot distinguish between a workload
+that is IO-bound (working set exceeds cache, lots of disk reads) and one that is
+memory-bound (working set fits in cache, reads served from DRAM).
+block_cache_hit_rate is the direct indicator: a high rate (≈ 1.0) combined with
+low disk I/O and a throughput plateau identifies a memory-bound workload.
+These are cumulative over the full run (including warmup) since RocksDB
+statistics are printed once at the end via PrintStats().
+"""
+import sys, os, re, glob
+import pandas as pd
+import numpy as np
+
+sweep_dir              = sys.argv[1]
+output_csv             = sys.argv[2]
+warmup_skip            = int(sys.argv[3])
+workload_label         = sys.argv[4]
+runtime_s              = int(sys.argv[5]) if len(sys.argv) > 5 else 600
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def thread_from_path(p):
+    m = re.search(r'_t(\d+)', os.path.basename(p))
+    return int(m.group(1)) if m else 0
+
+def parse_ycsb_log(path):
+    """Return (xput_mean, xput_std, cache_hits, cache_misses)."""
+    nan = float('nan')
+    xput_mean = xput_std = nan
+    cache_hits = cache_misses = nan
+    try:
+        text = open(path).read()
+
+        # Throughput summary line written by runXput().
+        m = re.search(
+            r'throughput mean:\s*([\d.eE+\-]+)\s+stddev:\s*([\d.eE+\-]+)', text)
+        if m:
+            xput_mean, xput_std = float(m.group(1)), float(m.group(2))
+
+        # RocksDB Statistics block written by PrintStats() when -dbstatistics true.
+        # Format (from Statistics::ToString):
+        #   rocksdb.block.cache.hit COUNT : 1234567
+        #   rocksdb.block.cache.miss COUNT : 12345
+        mh = re.search(r'rocksdb\.block\.cache\.hit\s+COUNT\s*:\s*(\d+)', text)
+        mm = re.search(r'rocksdb\.block\.cache\.miss\s+COUNT\s*:\s*(\d+)', text)
+        if mh:
+            cache_hits = int(mh.group(1))
+        if mm:
+            cache_misses = int(mm.group(1))
+
+    except Exception as e:
+        print(f'  [warn] {path}: {e}')
+    return xput_mean, xput_std, cache_hits, cache_misses
+
+def parse_system_csv(path, skip_s):
+    nan = float('nan')
+    empty = dict(
+        cpu_compute_mean=nan, cpu_compute_std=nan,
+        cpu_compute_min=nan,  cpu_compute_max=nan,
+        cpu_schedule_mean=nan, cpu_schedule_std=nan,
+        cpu_schedule_min=nan,  cpu_schedule_max=nan,
+        disk_read_mean=nan,   disk_read_std=nan,
+        disk_read_min=nan,    disk_read_max=nan,
+        disk_write_mean=nan,  disk_write_std=nan,
+        disk_write_min=nan,   disk_write_max=nan,
+        disk_read_iops_mean=nan,  disk_read_iops_std=nan,
+        disk_read_iops_min=nan,   disk_read_iops_max=nan,
+        disk_write_iops_mean=nan, disk_write_iops_std=nan,
+        disk_write_iops_min=nan,  disk_write_iops_max=nan,
+        mem_used_mean=nan,    mem_used_std=nan,
+        mem_used_min=nan,     mem_used_max=nan,
+        mem_avail_mean=nan,   mem_used_pct_mean=nan,
+    )
+    try:
+        df = pd.read_csv(path)
+        df['elapsed_s'] = df['timestamp_s'] - df['timestamp_s'].iloc[0]
+        # Clip to the intended measurement window [skip_s, runtime_s].
+        # Lower bound removes warmup; upper bound removes the compaction-drain
+        # tail that accumulates after YCSB finishes its timed window but before
+        # RocksDB background threads stop writing to disk.
+        steady = df[(df['elapsed_s'] >= skip_s) & (df['elapsed_s'] <= runtime_s)]
+        if steady.empty:
+            steady = df
+        # cpu_active excludes iowait so it matches what `top` shows as "CPU busy"
+        # (user+sys+irq+softirq).  iowait is CPU-idle time waiting for I/O; for
+        # RocksDB with active NVMe compaction it can be 30-50 %, causing (100-idle)
+        # to overstate compute utilisation significantly.
+        iowait     = steady['cpu_iowait_pct'] if 'cpu_iowait_pct' in steady.columns \
+                     else pd.Series([0.0] * len(steady), index=steady.index)
+        schedule   = 100.0 - steady['cpu_idle_pct']     # cpu_schedule = 1 - idle (incl. iowait)
+        compute    = schedule - iowait                   # cpu_compute  = 1 - idle - iowait
+        dr = steady['disk_read_mbs']
+        dw = steady['disk_write_mbs']
+        # IOPS columns (present in new-format CSVs; fall back to NaN if absent)
+        dri = steady['disk_read_iops']  if 'disk_read_iops'  in steady.columns \
+              else pd.Series(dtype=float)
+        dwi = steady['disk_write_iops'] if 'disk_write_iops' in steady.columns \
+              else pd.Series(dtype=float)
+        has_mem = 'mem_used_mib' in steady.columns
+        if has_mem:
+            mu  = steady['mem_used_mib']  / 1024   # GiB
+            ma  = steady['mem_avail_mib'] / 1024   # GiB
+            mt  = steady['mem_total_mib'] / 1024   # GiB
+            pct = (steady['mem_used_mib'] / steady['mem_total_mib'] * 100)
+        else:
+            mu = ma = mt = pct = pd.Series(dtype=float)
+        return dict(
+            cpu_compute_mean     = compute.mean(),
+            cpu_compute_std      = compute.std(ddof=1),
+            cpu_compute_min      = compute.min(),
+            cpu_compute_max      = compute.max(),
+            cpu_schedule_mean    = schedule.mean(),
+            cpu_schedule_std     = schedule.std(ddof=1),
+            cpu_schedule_min     = schedule.min(),
+            cpu_schedule_max     = schedule.max(),
+            disk_read_mean       = dr.mean(),
+            disk_read_std        = dr.std(ddof=1),
+            disk_read_min        = dr.min(),
+            disk_read_max        = dr.max(),
+            disk_write_mean      = dw.mean(),
+            disk_write_std       = dw.std(ddof=1),
+            disk_write_min       = dw.min(),
+            disk_write_max       = dw.max(),
+            disk_read_iops_mean  = dri.mean()      if not dri.empty else nan,
+            disk_read_iops_std   = dri.std(ddof=1) if not dri.empty else nan,
+            disk_read_iops_min   = dri.min()       if not dri.empty else nan,
+            disk_read_iops_max   = dri.max()       if not dri.empty else nan,
+            disk_write_iops_mean = dwi.mean()      if not dwi.empty else nan,
+            disk_write_iops_std  = dwi.std(ddof=1) if not dwi.empty else nan,
+            disk_write_iops_min  = dwi.min()       if not dwi.empty else nan,
+            disk_write_iops_max  = dwi.max()       if not dwi.empty else nan,
+            mem_used_mean        = mu.mean()       if not mu.empty  else nan,
+            mem_used_std         = mu.std(ddof=1)  if not mu.empty  else nan,
+            mem_used_min         = mu.min()        if not mu.empty  else nan,
+            mem_used_max         = mu.max()        if not mu.empty  else nan,
+            mem_avail_mean       = ma.mean()       if not ma.empty  else nan,
+            mem_used_pct_mean    = pct.mean()      if not pct.empty else nan,
+        )
+    except Exception as e:
+        print(f'  [warn] {path}: {e}')
+        return empty
+
+# ── collect ───────────────────────────────────────────────────────────────────
+# Supports two directory layouts:
+#   Single-trial (TRIALS_PER_THREAD=1):
+#     run_t<N>/ycsb_t<N>.log          run_t<N>/system_t<N>.csv
+#   Multi-trial  (TRIALS_PER_THREAD>1):
+#     run_t<N>/trial_<k>/ycsb_t<N>.log  run_t<N>/trial_<k>/system_t<N>.csv
+#
+# For multi-trial runs, xput_mean is the median of per-trial means and
+# xput_std is the std across those means (cross-trial variability), which
+# directly captures compaction-driven run-to-run noise.  All system metrics
+# are also medians across trials.
+
+def collect_trial(td, t):
+    """Parse one trial directory; return (xput_mean, xput_std, cache_hits,
+    cache_misses, sys_stats)."""
+    xm, xs, ch, cm = parse_ycsb_log(os.path.join(td, f'ycsb_t{t}.log'))
+    ss = parse_system_csv(os.path.join(td, f'system_t{t}.csv'), warmup_skip)
+    return xm, xs, ch, cm, ss
+
+run_dirs = sorted(
+    glob.glob(os.path.join(sweep_dir, 'run_t*')),
+    key=thread_from_path)
+
+rows = []
+for rd in run_dirs:
+    t = thread_from_path(rd)
+
+    # Detect trial subdirs.
+    trial_dirs = sorted(
+        glob.glob(os.path.join(rd, 'trial_*')),
+        key=lambda p: int(re.search(r'trial_(\d+)', os.path.basename(p)).group(1))
+                      if re.search(r'trial_(\d+)', os.path.basename(p)) else 0)
+
+    if trial_dirs:
+        # Multi-trial: collect each trial then take medians.
+        trial_xputs = []   # per-trial xput_mean values
+        trial_sys   = {}   # key → list of per-trial values
+        trial_ch    = []
+        trial_cm    = []
+        for td in trial_dirs:
+            xm, _xs, ch, cm, ss = collect_trial(td, t)
+            trial_xputs.append(xm)
+            trial_ch.append(ch)
+            trial_cm.append(cm)
+            for k, v in ss.items():
+                trial_sys.setdefault(k, []).append(v)
+        xput_mean  = float(np.nanmedian(trial_xputs))
+        xput_std   = float(np.nanstd(trial_xputs, ddof=1)) \
+                     if len(trial_xputs) > 1 else float('nan')
+        cache_hits   = float(np.nanmedian(trial_ch))
+        cache_misses = float(np.nanmedian(trial_cm))
+        sys_stats  = {k: float(np.nanmedian(vs)) for k, vs in trial_sys.items()}
+        # Fill any keys that the single-trial path provides but trials dict may lack.
+        for k in ('cpu_compute_std', 'cpu_compute_min', 'cpu_compute_max',
+                  'cpu_schedule_std', 'cpu_schedule_min', 'cpu_schedule_max',
+                  'disk_read_std', 'disk_read_min', 'disk_read_max',
+                  'disk_write_std', 'disk_write_min', 'disk_write_max',
+                  'disk_read_iops_std', 'disk_read_iops_min', 'disk_read_iops_max',
+                  'disk_write_iops_std', 'disk_write_iops_min', 'disk_write_iops_max',
+                  'mem_used_std', 'mem_used_min', 'mem_used_max',
+                  'mem_avail_mean', 'mem_used_pct_mean'):
+            sys_stats.setdefault(k, float('nan'))
+    else:
+        # Single-trial (original behaviour).
+        xput_mean, xput_std, cache_hits, cache_misses = \
+            parse_ycsb_log(os.path.join(rd, f'ycsb_t{t}.log'))
+        sys_stats = parse_system_csv(os.path.join(rd, f'system_t{t}.csv'), warmup_skip)
+
+    disk_r  = sys_stats['disk_read_mean']
+    disk_w  = sys_stats['disk_write_mean']
+    disk_rs = sys_stats['disk_read_std']
+    disk_ws = sys_stats['disk_write_std']
+    iops_r  = sys_stats['disk_read_iops_mean']
+    iops_w  = sys_stats['disk_write_iops_mean']
+    iops_rs = sys_stats['disk_read_iops_std']
+    iops_ws = sys_stats['disk_write_iops_std']
+
+    # Block cache hit rate — nan if stats were not printed.
+    if not (np.isnan(cache_hits) or np.isnan(cache_misses)):
+        total_accesses = cache_hits + cache_misses
+        hit_rate = cache_hits / total_accesses if total_accesses > 0 else float('nan')
+    else:
+        hit_rate = float('nan')
+
+    rows.append(dict(
+        workload_label        = workload_label,
+        threads               = t,
+        xput_mean             = xput_mean,
+        xput_std              = xput_std,
+        cpu_compute_mean      = sys_stats['cpu_compute_mean'],
+        cpu_compute_std       = sys_stats['cpu_compute_std'],
+        cpu_compute_min       = sys_stats.get('cpu_compute_min',  float('nan')),
+        cpu_compute_max       = sys_stats.get('cpu_compute_max',  float('nan')),
+        cpu_schedule_mean     = sys_stats.get('cpu_schedule_mean', float('nan')),
+        cpu_schedule_std      = sys_stats.get('cpu_schedule_std',  float('nan')),
+        cpu_schedule_min      = sys_stats.get('cpu_schedule_min',  float('nan')),
+        cpu_schedule_max      = sys_stats.get('cpu_schedule_max',  float('nan')),
+        **{'disk_read_mb/s'      : sys_stats['disk_read_mean']},
+        **{'disk_read_mb/s_std'  : sys_stats['disk_read_std']},
+        **{'disk_read_mb/s_min'  : sys_stats.get('disk_read_min',  float('nan'))},
+        **{'disk_read_mb/s_max'  : sys_stats.get('disk_read_max',  float('nan'))},
+        **{'disk_write_mb/s'     : sys_stats['disk_write_mean']},
+        **{'disk_write_mb/s_std' : sys_stats['disk_write_std']},
+        **{'disk_write_mb/s_min' : sys_stats.get('disk_write_min', float('nan'))},
+        **{'disk_write_mb/s_max' : sys_stats.get('disk_write_max', float('nan'))},
+        **{'r/s'                 : sys_stats['disk_read_iops_mean']},
+        **{'r/s_std'             : sys_stats['disk_read_iops_std']},
+        **{'r/s_min'             : sys_stats.get('disk_read_iops_min',  float('nan'))},
+        **{'r/s_max'             : sys_stats.get('disk_read_iops_max',  float('nan'))},
+        **{'w/s'                 : sys_stats['disk_write_iops_mean']},
+        **{'w/s_std'             : sys_stats['disk_write_iops_std']},
+        **{'w/s_min'             : sys_stats.get('disk_write_iops_min', float('nan'))},
+        **{'w/s_max'             : sys_stats.get('disk_write_iops_max', float('nan'))},
+        mem_used_mean         = sys_stats['mem_used_mean'],
+        mem_used_std          = sys_stats['mem_used_std'],
+        mem_used_min          = sys_stats.get('mem_used_min', float('nan')),
+        mem_used_max          = sys_stats.get('mem_used_max', float('nan')),
+        mem_avail_mean        = sys_stats['mem_avail_mean'],
+        mem_used_pct_mean     = sys_stats['mem_used_pct_mean'],
+        block_cache_hits      = cache_hits,
+        block_cache_misses    = cache_misses,
+        block_cache_hit_rate  = hit_rate,
+    ))
+
+if not rows:
+    print('No run directories found — summary.csv not written.')
+    sys.exit(0)
+
+df = pd.DataFrame(rows).sort_values('threads').reset_index(drop=True)
+
+# Round all float columns to 2 decimal places for clean, readable output.
+float_cols = df.select_dtypes(include='float').columns
+df[float_cols] = df[float_cols].round(2)
+
+df.to_csv(output_csv, index=False)
+print(f'summary.csv written → {output_csv}')
+preview_cols = ['threads', 'xput_mean', 'xput_std',
+                'cpu_compute_mean', 'cpu_compute_std', 'cpu_compute_min', 'cpu_compute_max',
+                'cpu_schedule_mean', 'cpu_schedule_std', 'cpu_schedule_min', 'cpu_schedule_max',
+                'disk_read_mb/s', 'disk_read_mb/s_min', 'disk_read_mb/s_max',
+                'disk_write_mb/s', 'disk_write_mb/s_min', 'disk_write_mb/s_max',
+                'r/s', 'r/s_min', 'r/s_max', 'w/s', 'w/s_min', 'w/s_max',
+                'mem_used_mean', 'mem_used_min', 'mem_used_max',
+                'mem_used_pct_mean', 'block_cache_hit_rate']
+print(df[[c for c in preview_cols if c in df.columns]].to_string(index=False))
+PYSUM
+}
+
+run_summarizer() {
+    sep
+    log "Aggregating results → summary.csv ..."
+    setup_summarizer_script
+    python3 "$SUMMARIZER_SCRIPT" \
+        "$OUTPUT_DIR/sweep" \
+        "$OUTPUT_DIR/summary.csv" \
+        "$WARMUP_SKIP_S" \
+        "$WORKLOAD_LABEL" \
+        "$RUNTIME_SECS"
+    log "  → $OUTPUT_DIR/summary.csv"
+}
+
+# ── Main sweep ────────────────────────────────────────────────────────────────
+
+run_sweep() {
+    sep
+    log "Sweep: $WORKLOAD_LABEL"
+    log "  Spec:    $WORKLOAD_SPEC"
+    log "  Threads: $THREAD_COUNTS"
+    log "  Runtime: ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
+
+    local sweep_dir="$OUTPUT_DIR/sweep"
+    mkdir -p "$sweep_dir"
+    # DB is placed inside sweep_dir and wiped+reloaded before every measurement
+    # so that no run inherits compaction debt or LSM state from previous runs.
+    local dbpath="$sweep_dir/rocksdb"
+
+    for threads in $THREAD_COUNTS; do
+        sep
+        log "Thread count: $threads  (${TRIALS_PER_THREAD} trial(s))"
+        local run_dir="$sweep_dir/run_t${threads}"
+        mkdir -p "$run_dir"
+        if (( TRIALS_PER_THREAD == 1 )); then
+            log "  Wiping DB and loading fresh dataset ..."
+            rm -rf "$dbpath"
+            load_db "$dbpath" "$run_dir/load.log"
+            drop_page_cache
+            run_one "$threads" "$run_dir" "$dbpath"
+        else
+            for (( trial=1; trial<=TRIALS_PER_THREAD; trial++ )); do
+                log "  Trial ${trial}/${TRIALS_PER_THREAD}: wiping DB and loading fresh dataset ..."
+                rm -rf "$dbpath"
+                local trial_dir="$run_dir/trial_${trial}"
+                mkdir -p "$trial_dir"
+                load_db "$dbpath" "$trial_dir/load.log"
+                drop_page_cache
+                run_one "$threads" "$trial_dir" "$dbpath"
+            done
+        fi
+    done
+
+    log "Sweep complete."
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+main() {
+    # ── Command-line flags (override env vars) ────────────────────────────────
+    # Accepted forms: --flag=VALUE  or  --flag VALUE
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --rocksdb-parallelism=*) ROCKSDB_PARALLELISM="${1#*=}" ;;
+            --rocksdb-parallelism)   ROCKSDB_PARALLELISM="$2"; shift ;;
+            *) die "Unknown argument: $1.  Use env vars or --rocksdb-parallelism, --disk-read-max-bandwidth, --disk-write-max-bandwidth, --iops-read-max, --iops-write-max" ;;
+        esac
+        shift
+    done
+
+    check_prereqs
+
+    log "saturation_sweep.sh starting"
+    log "  Binary:              $BINARY"
+    log "  Output dir:          $OUTPUT_DIR"
+    log "  Device:              $DISK_DEVICE"
+    log "  Workload:            $WORKLOAD_LABEL"
+    log "  Spec:                $WORKLOAD_SPEC"
+    log "  Threads:             $THREAD_COUNTS"
+    log "  Runtime/pt:          ${RUNTIME_SECS}s  (warmup skip: ${WARMUP_SKIP_S}s)"
+    log "  Trials/thread:       ${TRIALS_PER_THREAD}  (summary uses median across trials)"
+    log "  RocksDB parallelism: ${ROCKSDB_PARALLELISM}  (IncreaseParallelism)"
+    echo ""
+
+    python3 -c "import pandas, numpy" 2>/dev/null || {
+        log "Installing required Python packages..."
+        pip3 install --user pandas numpy -q
+    }
+
+    mkdir -p "$OUTPUT_DIR"
+    setup_monitor_script
+
+    run_sweep
+    run_summarizer
+
+    sep
+    log "Done."
+    log "  Results:     $OUTPUT_DIR"
+    log "  Summary CSV: $OUTPUT_DIR/summary.csv"
+    log ""
+    log "  When you have all workload CSVs, plot with:"
+    log "    python3 plot_bottleneck.py \\"
+    log "      --csv io-bound:node1/summary.csv \\"
+    log "      --csv cpu-bound:node2/summary.csv \\"
+    log "      --csv mem-bound:node3/summary.csv \\"
+    log "      --csv none-bound:node4/summary.csv \\"
+    log "      --out bottleneck_characterization.pdf"
+}
+
+main "$@"

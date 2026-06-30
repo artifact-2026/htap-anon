@@ -1,0 +1,69 @@
+#ifndef YCSB_CPLUSPLUS_MYCELIUMWRITEBOTH_H
+#define YCSB_CPLUSPLUS_MYCELIUMWRITEBOTH_H
+
+#include "core/db.h"
+
+#include <iostream>
+#include <errno.h>
+#include <string>
+#include <vector>
+
+#include <rocksdb/options.h>
+#include <rocksdb/db.h>
+#include <rocksdb/cache.h>
+#include <rocksdb/table.h>
+#include <rocksdb/filter_policy.h>
+
+#include "core/properties.h"
+#include "core/core_workload.h"
+#include "data.pb.h"
+
+#include "db/db_helper.h"
+
+namespace ycsbc {
+
+class MyceliumWriteBoth : public DB{
+    public :
+        MyceliumWriteBoth(const std::string& dbname, const char *dbfilename, utils::Properties &props);
+        int Read(const std::string &table, const std::string &key,
+                 const std::set<int> *fields,
+                 const std::string &req_dist, bool index_access,
+                 std::string &result);
+
+        int Scan(const std::string &table, const std::string &begin_key,
+                 const std::string &end_key, const std::set<int> *fields,
+                 const std::string &req_dist, bool index_access,
+                 std::vector<std::string> &result);
+
+        int Insert(const std::string &table, const std::string &key,
+                   std::string &values);
+
+        int Update(const std::string &table, const std::string &key,
+                   std::string &values);
+
+        int Delete(const std::string &table, const std::string &key);
+
+        ~MyceliumWriteBoth() {};
+    
+    private:
+        rocksdb::DB *rocksdb_;
+        rocksdb::Options options_;
+        rocksdb::WriteOptions write_options_;
+        std::map<std::string, rocksdb::ColumnFamilyHandle*> cfhandles_;
+        std::vector<rocksdb::ColumnFamilyHandle*> cfhandlelist_;
+        std::map<int, std::vector<rocksdb::ColumnFamilyHandle*>> cached_cfhandles_;
+
+        void SetOptions(const char *dbfilename, bool logging, int levels, int fieldcount,
+                        mycelium::InputOutputDataType inputType,
+                        mycelium::InputOutputDataType outputType);
+        void GetColumnFamilyDescriptors(const std::string& dbname,
+                                    std::vector<rocksdb::ColumnFamilyDescriptor>& column_families,
+                                    int num_splits);
+        void BuildColumnFamilyHandleMap(std::vector<rocksdb::ColumnFamilyDescriptor>& column_family_descriptors,
+                                    std::vector<rocksdb::ColumnFamilyHandle*> handles);
+        void BuildQueryHandles(std::set<std::string> fields);
+};  
+
+}
+
+#endif
